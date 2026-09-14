@@ -1,3 +1,4 @@
+from app.models.message import Message
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from app.schemas.conversation import (
     ConversationUpdate,
     ConversationRead,
     ConversationDetail,
+    MessageRead,
 )
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -92,3 +94,19 @@ def delete_conversation(
     db.delete(convo)
     db.commit()
     return None
+@router.get("/{conversation_id}/messages", response_model=list[MessageRead])
+def list_messages(
+    conversation_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    convo = db.get(Conversation, conversation_id)
+    if not convo or convo.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    stmt = (
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.asc())
+    )
+    return db.execute(stmt).scalars().all()

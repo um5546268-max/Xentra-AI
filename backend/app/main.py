@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routes import auth as auth_routes
 from app.routes import conversations as conversation_routes
+from app.routes import chat as chat_routes
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -23,6 +24,7 @@ if settings.CORS_ORIGINS:
 
 app.include_router(auth_routes.router, prefix=settings.API_V1_STR)
 app.include_router(conversation_routes.router, prefix=settings.API_V1_STR)
+app.include_router(chat_routes.router, prefix=settings.API_V1_STR)  # ← AND THIS
 
 @app.get("/api/health")
 def health_check():
