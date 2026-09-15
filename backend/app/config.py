@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     AI_MAX_TOKENS: int = 2048
     AI_TEMPERATURE: float = 0.7
 
+    # TAVILY API key
+    TAVILY_API_KEY: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

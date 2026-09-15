@@ -7,6 +7,12 @@ export type Conversation = {
   updated_at: string;
 };
 
+export type Source = {
+  title: string;
+  url: string;
+  content?: string;
+};
+
 export type Message = {
   id: string;
   role: string;
@@ -14,7 +20,10 @@ export type Message = {
   created_at: string;
   _temp?: boolean;      // local-only optimistic message
   _streaming?: boolean; // currently streaming
+  _sources?: Source[];  // web search citations (Phase 4)
 };
+
+// ---------- Conversations ----------
 
 export const getConversations = async (): Promise<Conversation[]> => {
   const res = await api.get("/api/conversations");
@@ -40,6 +49,8 @@ export const updateConversation = async (
   return res.data;
 };
 
+// ---------- Messages ----------
+
 export const getMessages = async (
   conversationId: string
 ): Promise<Message[]> => {
@@ -47,15 +58,20 @@ export const getMessages = async (
   return res.data;
 };
 
+// ---------- Chat (streaming) ----------
+
 export const streamChat = async (
   conversationId: string,
   messages: { role: string; content: string }[],
   onDelta: (text: string) => void,
-  signal?: AbortSignal
+  options?: {
+    useWebSearch?: boolean;
+    onSources?: (sources: Source[]) => void;
+    signal?: AbortSignal;
+  }
 ): Promise<void> => {
   const token = localStorage.getItem("xentra_token");
-  const API_URL =
-    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   const res = await fetch(`${API_URL}/api/chat/stream`, {
     method: "POST",
@@ -63,8 +79,12 @@ export const streamChat = async (
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ conversation_id: conversationId, messages }),
-    signal,
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      messages,
+      use_web_search: options?.useWebSearch || false,
+    }),
+    signal: options?.signal,
   });
 
   if (!res.ok || !res.body) throw new Error(`Stream failed: ${res.status}`);
@@ -84,18 +104,19 @@ export const streamChat = async (
     for (const part of parts) {
       const line = part.trim();
       if (!line.startsWith("data:")) continue;
-      const payload = line.slice(5).trim();
-      if (payload === "[DONE]") return;
+      const payloadStr = line.slice(5).trim();
+      if (payloadStr === "[DONE]") return;
       try {
-        const parsed = JSON.parse(payload);
+        const parsed = JSON.parse(payloadStr);
         if (parsed.delta) onDelta(parsed.delta);
+        if (parsed.sources && options?.onSources) options.onSources(parsed.sources);
         if (parsed.error) throw new Error(parsed.error);
-      } catch {
-        // skip bad chunks
-      }
+      } catch {}
     }
   }
 };
+
+// ---------- Regenerate ----------
 
 export const regenerateChat = async (
   conversationId: string,

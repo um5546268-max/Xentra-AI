@@ -9,9 +9,11 @@ import {
   RotateCcw,
   Square,
   Pencil,
+  Globe,
 } from "lucide-react";
 import {
   Message,
+  Source,
   getMessages,
   streamChat,
   regenerateChat,
@@ -38,6 +40,7 @@ export default function ConversationPage({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState(MODELS[0].id);
+  const [useWebSearch, setUseWebSearch] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -106,7 +109,17 @@ export default function ConversationPage({
             )
           );
         },
-        controller.signal
+        {
+          useWebSearch,
+          onSources: (sources) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === tempAi.id ? { ...m, _sources: sources } : m
+              )
+            );
+          },
+          signal: controller.signal,
+        }
       );
       setMessages((prev) =>
         prev.map((m) =>
@@ -239,7 +252,17 @@ export default function ConversationPage({
             )
           );
         },
-        controller.signal
+        {
+          useWebSearch,
+          onSources: (sources) => {
+            setMessages((prev) =>
+              prev.map((x) =>
+                x.id === tempAi.id ? { ...x, _sources: sources } : x
+              )
+            );
+          },
+          signal: controller.signal,
+        }
       );
       setMessages((prev) =>
         prev.map((x) =>
@@ -349,7 +372,12 @@ export default function ConversationPage({
                         {m.role === "user" ? (
                           m.content
                         ) : m.content ? (
-                          <MarkdownMessage content={m.content} />
+                          <>
+                            <MarkdownMessage content={m.content} />
+                            {m._sources && m._sources.length > 0 && (
+                              <Sources sources={m._sources} />
+                            )}
+                          </>
                         ) : (
                           <span className="inline-flex items-center gap-2 text-slate-500">
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -419,6 +447,21 @@ export default function ConversationPage({
 
       {/* Input */}
       <form onSubmit={handleSend} className="border-t border-slate-800 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <button
+            type="button"
+            onClick={() => setUseWebSearch(!useWebSearch)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+              useWebSearch
+                ? "border-violet-500 bg-violet-500/20 text-violet-300"
+                : "border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            Web search {useWebSearch ? "on" : "off"}
+          </button>
+        </div>
+
         <div className="flex gap-2 items-end">
           <textarea
             value={input}
@@ -454,6 +497,42 @@ export default function ConversationPage({
           )}
         </div>
       </form>
+    </div>
+  );
+}
+
+// ---------- Sources component ----------
+
+function Sources({ sources }: { sources: Source[] }) {
+  if (!sources?.length) return null;
+  return (
+    <div className="mt-3 space-y-1.5 border-t border-slate-700 pt-3">
+      <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">
+        Sources
+      </div>
+      {sources.map((s, i) => (
+        <a
+          key={i}
+          href={s.url}
+          target="_blank"
+          rel="noreferrer"
+          className="block rounded-lg border border-slate-700/50 bg-slate-900/40 px-2.5 py-1.5 hover:border-violet-500/50 hover:bg-slate-900 transition"
+        >
+          <div className="flex items-start gap-2">
+            <span className="text-[11px] font-mono text-violet-400 shrink-0 mt-0.5">
+              [{i + 1}]
+            </span>
+            <div className="min-w-0">
+              <div className="text-xs text-slate-300 truncate">
+                {s.title || s.url}
+              </div>
+              <div className="text-[11px] text-slate-500 truncate">
+                {s.url}
+              </div>
+            </div>
+          </div>
+        </a>
+      ))}
     </div>
   );
 }
