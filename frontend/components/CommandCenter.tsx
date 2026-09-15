@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   Activity,
   Pause,
@@ -10,8 +11,19 @@ import {
   ExternalLink,
   RotateCcw,
   Trash2,
+  Music,
+  SkipForward,
+  SkipBack,
 } from "lucide-react";
 import { useTasks } from "@/lib/tasks-store";
+import {
+  spotifyNowPlaying,
+  spotifyPlay,
+  spotifyPause,
+  spotifyNext,
+  spotifyPrevious,
+  NowPlaying,
+} from "@/lib/media";
 
 export default function CommandCenter() {
   const { tasks, run, pause, resume, cancel, retry, remove } = useTasks();
@@ -24,7 +36,12 @@ export default function CommandCenter() {
   );
 
   const recentFinished = tasks
-    .filter((t) => t.status === "done" || t.status === "failed" || t.status === "cancelled")
+    .filter(
+      (t) =>
+        t.status === "done" ||
+        t.status === "failed" ||
+        t.status === "cancelled"
+    )
     .slice(0, 3);
 
   return (
@@ -182,6 +199,9 @@ export default function CommandCenter() {
         </div>
       )}
 
+      {/* Now Playing */}
+      <NowPlayingCard />
+
       {/* Connected Apps */}
       <div className="p-3 border-b border-slate-800 space-y-2">
         <div className="flex items-center justify-between px-1">
@@ -193,10 +213,10 @@ export default function CommandCenter() {
           </button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <AppChip label="YouTube" color="red" />
-          <AppChip label="Spotify" color="green" />
-          <AppChip label="Google" color="blue" />
+          <AppChip label="Google" color="red" />
           <AppChip label="GitHub" color="gray" />
+          <AppChip label="Spotify" color="green" />
+          <AppChip label="YouTube" color="red" />
         </div>
       </div>
 
@@ -217,28 +237,171 @@ export default function CommandCenter() {
           <PermRow label="App Integration" allowed />
         </div>
       </div>
-
-      {/* Now Playing */}
-      <div className="p-3 space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-            Now Playing
-          </div>
-          <button className="text-xs text-slate-600 hover:text-slate-400">
-            View
-          </button>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-center text-xs text-slate-600">
-          Nothing playing.
-          <br />
-          <span className="text-slate-700">Media agent in Phase 7.</span>
-        </div>
-      </div>
     </aside>
   );
 }
 
-// --- Helpers ---
+// ============================================================
+// Now Playing Card
+// ============================================================
+
+function NowPlayingCard() {
+  const [now, setNow] = useState<NowPlaying | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = async () => {
+    try {
+      const data = await spotifyNowPlaying();
+      setNow(data);
+      setError(null);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || null);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  const handlePause = async () => {
+    setBusy(true);
+    try {
+      await spotifyPause();
+      setTimeout(refresh, 500);
+    } catch {}
+    setBusy(false);
+  };
+
+  const handleResume = async () => {
+    setBusy(true);
+    try {
+      await spotifyPlay();
+      setTimeout(refresh, 800);
+    } catch {}
+    setBusy(false);
+  };
+
+  const handleNext = async () => {
+    setBusy(true);
+    try {
+      await spotifyNext();
+      setTimeout(refresh, 800);
+    } catch {}
+    setBusy(false);
+  };
+
+  const handlePrev = async () => {
+    setBusy(true);
+    try {
+      await spotifyPrevious();
+      setTimeout(refresh, 800);
+    } catch {}
+    setBusy(false);
+  };
+
+  return (
+    <div className="p-3 border-b border-slate-800 space-y-2">
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-500 uppercase tracking-wider">
+          <Music className="w-3.5 h-3.5" />
+          Now Playing
+        </div>
+      </div>
+
+      {!now?.track ? (
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-center text-xs text-slate-600">
+          {error ? (
+            <>
+              Spotify not connected.
+              <br />
+              <span className="text-slate-700">
+                Connect it in Integrations.
+              </span>
+            </>
+          ) : (
+            <>
+              Nothing playing.
+              <br />
+              <span className="text-slate-700">Start playback in Spotify.</span>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-violet-500/30 bg-violet-500/5 p-3 space-y-2">
+          <div className="flex gap-3 items-center">
+            {now.track.image && (
+              <img
+                src={now.track.image}
+                alt={now.track.name}
+                className="w-12 h-12 rounded shrink-0"
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium truncate text-slate-100">
+                {now.track.name}
+              </div>
+              <div className="text-[11px] text-slate-400 truncate">
+                {now.track.artist}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={handlePrev}
+              disabled={busy}
+              className="p-1.5 rounded hover:bg-slate-800 text-slate-300 disabled:opacity-40"
+            >
+              <SkipBack className="w-3.5 h-3.5" />
+            </button>
+            {now.playing ? (
+              <button
+                onClick={handlePause}
+                disabled={busy}
+                className="p-2 rounded-full bg-violet-600 hover:bg-violet-500 disabled:opacity-40"
+              >
+                <Pause className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={handleResume}
+                disabled={busy}
+                className="p-2 rounded-full bg-violet-600 hover:bg-violet-500 disabled:opacity-40"
+              >
+                <Play className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={handleNext}
+              disabled={busy}
+              className="p-1.5 rounded hover:bg-slate-800 text-slate-300 disabled:opacity-40"
+            >
+              <SkipForward className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {now.progress_ms > 0 && now.track.duration_ms > 0 && (
+            <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
+              <div
+                className="h-full bg-violet-500 transition-all"
+                style={{
+                  width: `${(now.progress_ms / now.track.duration_ms) * 100}%`,
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Helpers
+// ============================================================
 
 function TaskIcon({ type, status }: { type: string; status: string }) {
   const wrapper = "w-7 h-7 rounded-md flex items-center justify-center shrink-0";
@@ -247,6 +410,7 @@ function TaskIcon({ type, status }: { type: string; status: string }) {
     code: "bg-blue-500/20 text-blue-300",
     shopping: "bg-emerald-500/20 text-emerald-300",
     media: "bg-pink-500/20 text-pink-300",
+    browser: "bg-cyan-500/20 text-cyan-300",
     chat: "bg-slate-500/20 text-slate-300",
     generic: "bg-slate-500/20 text-slate-300",
   };
@@ -288,6 +452,7 @@ function taskDescription(t: { type: string; payload: any }): string {
   if (t.payload.query) return String(t.payload.query);
   if (t.payload.prompt) return String(t.payload.prompt).slice(0, 40);
   if (t.payload.item) return String(t.payload.item);
+  if (t.payload.url) return String(t.payload.url);
   return "Working…";
 }
 
