@@ -90,6 +90,9 @@ def disconnect(
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_USER_URL = "https://api.github.com/user"
 
 
 @router.get("/google/connect")
@@ -258,3 +261,122 @@ async def get_valid_google_token(integration: Integration, db: Session) -> str:
     db.commit()
 
     return integration.access_token
+# ============================================================
+# GitHub OAuth
+# ============================================================
+
+
+@router.get("/github/connect")
+def github_connect(current_user: User = Depends(get_current_user)):
+    """Return the GitHub OAuth URL for the frontend to redirect to."""
+    if not settings.GITHUB_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="GitHub OAuth not configured")
+
+    state = str(current_user.id)
+
+    params = {
+        "client_id": settings.GITHUB_CLIENT_ID,
+        "redirect_uri": settings.GITHUB_REDIRECT_URI,
+        "scope": "repo read:user user:email",
+        "state": state,
+    }
+
+    auth_url = f"{GITHUB_AUTH_URL}?{urlencode(params)}"
+    return {"url": auth_url}
+
+
+@router.get("/github/callback")
+async def github_callback(
+    code: str,
+    state: str,
+    db: Session = Depends(get_db),
+):
+    """
+    GitHub redirects here after the user authorizes.
+    """
+    import uuid as uuid_lib
+
+    try:
+        user_id = uuid_lib.UUID(state)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid state")
+
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Exchange code for token
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(
+            GITHUB_TOKEN_URL,
+            data={
+                "client_id": settings.GITHUB_CLIENT_ID,
+                "client_secret": settings.GITHUB_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": settings.GITHUB_REDIRECT_URI,
+            },
+            headers={"Accept": "application/json"},
+        )
+
+    if token_resp.status_code != 200:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Token exchange failed: {token_resp.text}",
+        )
+
+    tokens = token_resp.json()
+    access_token = tokens.get("access_token")
+    scopes = tokens.get("scope", "")
+
+    if not access_token:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No access token: {tokens}",
+        )
+
+    # Fetch user info
+    async with httpx.AsyncClient() as client:
+        info_resp = await client.get(
+            GITHUB_USER_URL,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+
+    account_email = None
+    account_name = None
+    if info_resp.status_code == 200:
+        info = info_resp.json()
+        account_email = info.get("email")  # may be null
+        account_name = info.get("login")   # username
+
+    # Upsert
+    existing = db.execute(
+        select(Integration)
+        .where(Integration.user_id == user.id)
+        .where(Integration.provider == "github")
+    ).scalar_one_or_none()
+
+    if existing:
+        existing.status = "connected"
+        existing.access_token = access_token
+        existing.scopes = scopes
+        existing.account_email = account_email
+        existing.account_name = account_name
+    else:
+        db.add(Integration(
+            user_id=user.id,
+            provider="github",
+            status="connected",
+            access_token=access_token,
+            refresh_token=None,   # GitHub tokens don't expire by default
+            expires_at=None,
+            scopes=scopes,
+            account_email=account_email,
+            account_name=account_name,
+        ))
+
+    db.commit()
+
+    return RedirectResponse(url=f"{settings.FRONTEND_URL}/app/integrations?connected=github")

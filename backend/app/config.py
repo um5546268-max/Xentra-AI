@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     AI_MAX_TOKENS: int = 2048
     AI_TEMPERATURE: float = 0.7
 
+        # Integrations - GitHub
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    GITHUB_REDIRECT_URI: str = "http://localhost:8000/api/integrations/github/callback"
+
         # Integrations
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""

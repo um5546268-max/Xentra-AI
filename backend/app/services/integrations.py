@@ -23,7 +23,7 @@ INTEGRATIONS = {
         "icon": "github",
         "auth_type": "oauth2",
         "scopes": ["repo", "read:user", "user:email"],
-        "enabled": False,
+        "enabled": True,
     },
     "spotify": {
         "name": "Spotify",
