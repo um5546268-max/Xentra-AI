@@ -1,6 +1,17 @@
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.schemas.browser import (
+    BrowserOpenRequest,
+    BrowserClickRequest,
+    BrowserFillRequest,
+    BrowserResult,
+    BrowserChainRequest,
+    BrowserChainResult,
+    BrowserAutoRequest,
+    BrowserAutoResponse,
+)
+from app.services.chain_generator import generate_chain
 from app.deps import get_current_user
 from app.models.user import User
 from app.schemas.browser import (
@@ -104,6 +115,48 @@ async def browser_chain(
         raise HTTPException(
             status_code=502,
             detail=f"Browser chain error: {result['error']}",
+        )
+
+    return BrowserChainResult(**result)
+@router.post("/auto", response_model=BrowserAutoResponse)
+async def browser_auto(
+    payload: BrowserAutoRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a browser chain from a natural language goal (does not run it)."""
+    result = await asyncio.to_thread(generate_chain, payload.goal)
+    if result.get("error"):
+        raise HTTPException(
+            status_code=502,
+            detail=f"Chain generation failed: {result['error']}",
+        )
+    return BrowserAutoResponse(
+        goal=payload.goal,
+        steps=result["steps"],
+        error=None,
+    )
+
+
+@router.post("/auto-run", response_model=BrowserChainResult)
+async def browser_auto_run(
+    payload: BrowserAutoRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a chain AND run it in one shot."""
+    gen = await asyncio.to_thread(generate_chain, payload.goal)
+    if gen.get("error"):
+        raise HTTPException(
+            status_code=502,
+            detail=f"Chain generation failed: {gen['error']}",
+        )
+
+    steps = gen["steps"]
+    result = await asyncio.to_thread(run_chain, steps)
+
+    if result.get("error") and not result.get("steps"):
+        raise HTTPException(
+            status_code=502,
+            detail=f"Browser run failed: {result['error']}",
         )
 
     return BrowserChainResult(**result)

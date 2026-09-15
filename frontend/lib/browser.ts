@@ -85,3 +85,26 @@ export const browserChain = async (
   );
   return res.data;
 };
+export type BrowserAutoResult = {
+  goal: string;
+  steps: ChainStep[];
+  error: string | null;
+};
+
+export const browserAuto = async (goal: string): Promise<BrowserAutoResult> => {
+  const res = await api.post(
+    "/api/browser/auto",
+    { goal },
+    { timeout: 60_000 }
+  );
+  return res.data;
+};
+
+export const browserAutoRun = async (goal: string): Promise<ChainResult> => {
+  const res = await api.post(
+    "/api/browser/auto-run",
+    { goal },
+    { timeout: 300_000 }
+  );
+  return res.data;
+};

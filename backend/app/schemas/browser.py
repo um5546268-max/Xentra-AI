@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 
 
+# ---------- Single actions ----------
+
 class BrowserOpenRequest(BaseModel):
     url: str = Field(min_length=4, max_length=2000)
 
@@ -23,6 +25,8 @@ class BrowserResult(BaseModel):
     screenshot_b64: str
     error: str | None = None
 
+
+# ---------- Chains ----------
 
 class BrowserStep(BaseModel):
     action: str = Field(pattern="^(open|click|fill|wait|screenshot)$")
@@ -50,4 +54,16 @@ class BrowserChainResult(BaseModel):
     steps: list[BrowserStepResult]
     final_url: str
     final_title: str
+    error: str | None = None
+
+
+# ---------- Auto (AI-generated chains) ----------
+
+class BrowserAutoRequest(BaseModel):
+    goal: str = Field(min_length=3, max_length=500)
+
+
+class BrowserAutoResponse(BaseModel):
+    goal: str
+    steps: list[BrowserStep]
     error: str | None = None
