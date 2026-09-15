@@ -1,4 +1,6 @@
 from tavily import TavilyClient
+from urllib.parse import urlparse
+
 from app.config import settings
 
 
@@ -26,9 +28,7 @@ def _to_dict(obj) -> dict:
         return obj.model_dump()
     if hasattr(obj, "dict"):
         return obj.dict()
-    return {
-        k: v for k, v in vars(obj).items() if not k.startswith("_")
-    }
+    return {k: v for k, v in vars(obj).items() if not k.startswith("_")}
 
 
 def web_search(
@@ -106,3 +106,108 @@ def extract_pages(urls: list[str]) -> list[dict]:
             "content": rd.get("raw_content") or rd.get("content") or "",
         })
     return results
+
+
+def enrich_sources(sources: list[dict], query: str) -> list[dict]:
+    """
+    Deduplicate, score, and annotate search results with a trust score.
+    Each source gets:
+      _domain, _kind, _score, _trust, _trust_level, _trust_reasons
+    """
+    seen = set()
+    enriched = []
+
+    q_words = [w.lower() for w in query.split() if len(w) > 3]
+
+    for s in sources:
+        url = s.get("url", "").strip()
+        if not url:
+            continue
+
+        parsed = urlparse(url)
+        normalized = f"{parsed.netloc}{parsed.path}".rstrip("/")
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+
+        domain = parsed.netloc.replace("www.", "")
+
+        # ---- Classify domain ----
+        kind = "other"
+        if any(d in domain for d in ["wikipedia.org", "britannica.com"]):
+            kind = "wiki"
+        elif any(d in domain for d in [".gov", ".edu", ".org"]):
+            kind = "official"
+        elif any(
+            d in domain
+            for d in [
+                "bbc.", "reuters.", "apnews.", "nytimes.",
+                "wsj.", "guardian.", "cnn.", "theverge.",
+                "techcrunch.", "arstechnica.", "wired.",
+            ]
+        ):
+            kind = "news"
+        elif any(
+            d in domain for d in ["reddit.", "twitter.", "x.com", "facebook."]
+        ):
+            kind = "social"
+
+        # ---- Compute trust score ----
+        trust = 50
+        reasons: list[str] = []
+
+        if kind == "official":
+            trust += 30
+            reasons.append("Official/educational domain")
+        elif kind == "news":
+            trust += 25
+            reasons.append("Established news outlet")
+        elif kind == "wiki":
+            trust += 15
+            reasons.append("Reference site")
+        elif kind == "social":
+            trust -= 25
+            reasons.append("User-generated content")
+
+        title = (s.get("title") or "").lower()
+        title_hits = sum(1 for w in q_words if w in title)
+        if title_hits >= 2:
+            trust += 10
+            reasons.append("Title matches query strongly")
+        elif title_hits == 1:
+            trust += 5
+
+        content_len = len(s.get("content") or "")
+        if content_len > 800:
+            trust += 5
+        elif content_len < 200:
+            trust -= 10
+            reasons.append("Very short content")
+
+        if parsed.scheme == "https":
+            trust += 5
+        else:
+            trust -= 15
+            reasons.append("Not HTTPS")
+
+        trust = max(0, min(100, trust))
+
+        if trust >= 80:
+            trust_level = "high"
+        elif trust >= 55:
+            trust_level = "medium"
+        else:
+            trust_level = "low"
+
+        enriched.append({
+            **s,
+            "_domain": domain,
+            "_kind": kind,
+            "_score": trust,
+            "_trust": trust,
+            "_trust_level": trust_level,
+            "_trust_reasons": reasons,
+        })
+
+    enriched.sort(key=lambda x: x["_trust"], reverse=True)
+    return enriched

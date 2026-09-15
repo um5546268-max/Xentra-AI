@@ -11,6 +11,12 @@ export type Source = {
   title: string;
   url: string;
   content?: string;
+  _domain?: string;
+  _kind?: string;
+  _score?: number;
+  _trust?: number;
+  _trust_level?: "high" | "medium" | "low";
+  _trust_reasons?: string[];
 };
 
 export type Message = {

@@ -373,7 +373,10 @@ export default function ConversationPage({
                           m.content
                         ) : m.content ? (
                           <>
-                            <MarkdownMessage content={m.content} />
+                                                        <MarkdownMessage
+                              content={m.content}
+                              sources={m._sources}
+                            />
                             {m._sources && m._sources.length > 0 && (
                               <Sources sources={m._sources} />
                             )}
@@ -505,29 +508,74 @@ export default function ConversationPage({
 
 function Sources({ sources }: { sources: Source[] }) {
   if (!sources?.length) return null;
+
+  const avgTrust =
+    sources.reduce((sum, s) => sum + (s._trust || 0), 0) / sources.length;
+
   return (
-    <div className="mt-3 space-y-1.5 border-t border-slate-700 pt-3">
-      <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">
-        Sources
+    <div className="mt-3 space-y-2 border-t border-slate-700 pt-3">
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] uppercase tracking-wider text-slate-500">
+          Sources · {sources.length}
+        </div>
+        <div className="flex items-center gap-1.5 text-[11px]">
+          <span className="text-slate-500">Avg trust</span>
+          <span
+            className={`font-mono font-semibold ${trustTextColor(avgTrust)}`}
+          >
+            {Math.round(avgTrust)}
+          </span>
+        </div>
       </div>
+
       {sources.map((s, i) => (
         <a
           key={i}
           href={s.url}
           target="_blank"
           rel="noreferrer"
-          className="block rounded-lg border border-slate-700/50 bg-slate-900/40 px-2.5 py-1.5 hover:border-violet-500/50 hover:bg-slate-900 transition"
+          title={s._trust_reasons?.join(" · ") || ""}
+          className="block rounded-lg border border-slate-700/50 bg-slate-900/40 px-2.5 py-2 hover:border-violet-500/50 hover:bg-slate-900 transition"
         >
           <div className="flex items-start gap-2">
             <span className="text-[11px] font-mono text-violet-400 shrink-0 mt-0.5">
               [{i + 1}]
             </span>
-            <div className="min-w-0">
-              <div className="text-xs text-slate-300 truncate">
-                {s.title || s.url}
+
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-slate-300 truncate flex-1">
+                  {s.title || s.url}
+                </div>
+                {s._kind && s._kind !== "other" && (
+                  <span
+                    className={`shrink-0 rounded px-1 py-0.5 text-[9px] uppercase font-semibold tracking-wide ${kindColor(
+                      s._kind
+                    )}`}
+                  >
+                    {s._kind}
+                  </span>
+                )}
               </div>
-              <div className="text-[11px] text-slate-500 truncate">
-                {s.url}
+
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] text-slate-500 truncate">
+                  {s._domain || s.url}
+                </div>
+                {s._trust_level && (
+                  <div
+                    className={`shrink-0 flex items-center gap-1 text-[10px] font-semibold ${trustTextColor(
+                      s._trust || 0
+                    )}`}
+                  >
+                    <TrustDot level={s._trust_level} />
+                    {s._trust_level === "high"
+                      ? "Verified"
+                      : s._trust_level === "medium"
+                      ? "OK"
+                      : "Low"}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -535,4 +583,35 @@ function Sources({ sources }: { sources: Source[] }) {
       ))}
     </div>
   );
+}
+
+function kindColor(kind: string): string {
+  switch (kind) {
+    case "official":
+      return "bg-emerald-500/20 text-emerald-300";
+    case "news":
+      return "bg-blue-500/20 text-blue-300";
+    case "wiki":
+      return "bg-violet-500/20 text-violet-300";
+    case "social":
+      return "bg-yellow-500/20 text-yellow-300";
+    default:
+      return "bg-slate-500/20 text-slate-400";
+  }
+}
+
+function trustTextColor(score: number): string {
+  if (score >= 80) return "text-emerald-400";
+  if (score >= 55) return "text-yellow-400";
+  return "text-red-400";
+}
+
+function TrustDot({ level }: { level: string }) {
+  const color =
+    level === "high"
+      ? "bg-emerald-400"
+      : level === "medium"
+      ? "bg-yellow-400"
+      : "bg-red-400";
+  return <span className={`inline-block w-1.5 h-1.5 rounded-full ${color}`} />;
 }

@@ -13,6 +13,7 @@ from app.models.message import Message
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.ai import chat_completion, chat_completion_stream
 from app.services.search import web_search, extract_pages
+from app.services.search import web_search, extract_pages, enrich_sources
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -127,24 +128,33 @@ def chat_stream(
                 "latest", "current", "today", "now", "2025", "2026", "recent"
             ]):
                 query = f"latest {query}"
-            sr = web_search(query, max_results=5)
-            sources = sr.get("results", [])
+            sr = web_search(query, max_results=8)
+            sources = enrich_sources(sr.get("results", []), query)[:5]
 
             if sources:
-                lines = []
-                for i, s in enumerate(sources, 1):
-                    lines.append(f"Source [{i}]: {s['title']}")
+                                lines = []
+            for i, s in enumerate(sources, 1):
+                    trust = s.get("_trust_level", "medium")
+                    kind = s.get("_kind", "other")
+                    lines.append(
+                        f"Source [{i}] ({kind}, trust={trust}): {s['title']}"
+                    )
                     lines.append(f"URL: {s['url']}")
                     lines.append(f"Content: {s['content'][:800]}")
                     lines.append("")
 
-                search_context = (
+            search_context = (
                     "You are Xentra with LIVE WEB SEARCH enabled.\n\n"
                     "The following search results were JUST retrieved from the web. "
                     "They are UP-TO-DATE and AUTHORITATIVE. "
                     "You MUST use them to answer the user's question. "
                     "Do NOT say 'I don't have live data' — you do have live data below. "
                     "Do NOT suggest the user check other websites — the data is here.\n\n"
+                    "IMPORTANT — TRUST LEVELS:\n"
+                    "- Sources marked 'trust=high' are authoritative. Rely on them.\n"
+                    "- Sources marked 'trust=medium' are usable but prefer higher ones.\n"
+                    "- Sources marked 'trust=low' are suspicious. Use with caution.\n"
+                    "- If trust=high sources contradict trust=low sources, follow the high one.\n\n"
                     "Rules:\n"
                     "1. Read the search results carefully.\n"
                     "2. Extract the specific answer from them.\n"
@@ -247,8 +257,8 @@ def research(
 
     query = payload.messages[-1].content
     try:
-        sr = web_search(query, max_results=5)
-        sources = sr.get("results", [])
+        sr = web_search(query, max_results=8)
+        sources = enrich_sources(sr.get("results", []), query)[:5]
         top_urls = [s["url"] for s in sources[:3]]
         pages = extract_pages(top_urls)
     except Exception as e:
