@@ -17,6 +17,8 @@ export type Source = {
   _trust?: number;
   _trust_level?: "high" | "medium" | "low";
   _trust_reasons?: string[];
+  _freshness?: "today" | "week" | "month" | "older" | "unknown";
+  _freshness_hint?: string;
 };
 
 export type Message = {
@@ -89,6 +91,59 @@ export const streamChat = async (
       conversation_id: conversationId,
       messages,
       use_web_search: options?.useWebSearch || false,
+    }),
+    signal: options?.signal,
+  });
+
+  if (!res.ok || !res.body) throw new Error(`Stream failed: ${res.status}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+
+    for (const part of parts) {
+      const line = part.trim();
+      if (!line.startsWith("data:")) continue;
+      const payloadStr = line.slice(5).trim();
+      if (payloadStr === "[DONE]") return;
+      try {
+        const parsed = JSON.parse(payloadStr);
+        if (parsed.delta) onDelta(parsed.delta);
+        if (parsed.sources && options?.onSources) options.onSources(parsed.sources);
+        if (parsed.error) throw new Error(parsed.error);
+      } catch {}
+    }
+  }
+};
+export const streamResearch = async (
+  conversationId: string,
+  messages: { role: string; content: string }[],
+  onDelta: (text: string) => void,
+  options?: {
+    onSources?: (sources: Source[]) => void;
+    signal?: AbortSignal;
+  }
+): Promise<void> => {
+  const token = localStorage.getItem("xentra_token");
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  const res = await fetch(`${API_URL}/api/chat/research`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      messages,
     }),
     signal: options?.signal,
   });

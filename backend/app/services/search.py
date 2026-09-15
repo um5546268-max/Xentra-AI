@@ -1,5 +1,7 @@
 from tavily import TavilyClient
 from urllib.parse import urlparse
+import re
+from datetime import datetime, timezone
 
 from app.config import settings
 
@@ -108,11 +110,60 @@ def extract_pages(urls: list[str]) -> list[dict]:
     return results
 
 
+def detect_freshness(content: str) -> dict:
+    """
+    Look for date hints in content and classify freshness.
+    Returns {"level": "today"|"week"|"month"|"older"|"unknown", "hint": str}
+    """
+    if not content:
+        return {"level": "unknown", "hint": ""}
+
+    now = datetime.now(timezone.utc)
+    text = content[:2000].lower()
+
+    # Relative markers
+    if any(w in text for w in ["today", "just now", "hours ago", "minutes ago"]):
+        return {"level": "today", "hint": "mentions 'today'"}
+    if any(w in text for w in ["yesterday", "this week", "days ago"]):
+        return {"level": "week", "hint": "mentions recent days"}
+
+    # Absolute dates: e.g. "September 14, 2026" or "September 14 2026"
+    month_names = [
+        "january", "february", "march", "april", "may", "june",
+        "july", "august", "september", "october", "november", "december",
+    ]
+    pattern = r"(" + "|".join(month_names) + r")\s+(\d{1,2}),?\s+(\d{4})"
+    matches = re.findall(pattern, text)
+    if matches:
+        try:
+            latest = None
+            for m, d, y in matches:
+                dt = datetime(
+                    int(y), month_names.index(m) + 1, int(d), tzinfo=timezone.utc
+                )
+                if not latest or dt > latest:
+                    latest = dt
+            if latest:
+                days = (now - latest).days
+                if days <= 1:
+                    return {"level": "today", "hint": latest.strftime("%b %d, %Y")}
+                if days <= 7:
+                    return {"level": "week", "hint": latest.strftime("%b %d, %Y")}
+                if days <= 30:
+                    return {"level": "month", "hint": latest.strftime("%b %d, %Y")}
+                return {"level": "older", "hint": latest.strftime("%b %d, %Y")}
+        except (ValueError, IndexError):
+            pass
+
+    return {"level": "unknown", "hint": ""}
+
+
 def enrich_sources(sources: list[dict], query: str) -> list[dict]:
     """
-    Deduplicate, score, and annotate search results with a trust score.
+    Deduplicate, score, and annotate search results with a trust score and freshness.
     Each source gets:
-      _domain, _kind, _score, _trust, _trust_level, _trust_reasons
+      _domain, _kind, _score, _trust, _trust_level, _trust_reasons,
+      _freshness, _freshness_hint
     """
     seen = set()
     enriched = []
@@ -199,6 +250,9 @@ def enrich_sources(sources: list[dict], query: str) -> list[dict]:
         else:
             trust_level = "low"
 
+        # ---- Freshness ----
+        fresh = detect_freshness(s.get("content") or "")
+
         enriched.append({
             **s,
             "_domain": domain,
@@ -207,6 +261,8 @@ def enrich_sources(sources: list[dict], query: str) -> list[dict]:
             "_trust": trust,
             "_trust_level": trust_level,
             "_trust_reasons": reasons,
+            "_freshness": fresh["level"],
+            "_freshness_hint": fresh["hint"],
         })
 
     enriched.sort(key=lambda x: x["_trust"], reverse=True)

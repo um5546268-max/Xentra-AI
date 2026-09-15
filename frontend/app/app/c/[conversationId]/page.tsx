@@ -10,12 +10,16 @@ import {
   Square,
   Pencil,
   Globe,
+  BookOpen,
+  MessageSquare,
+  X,
 } from "lucide-react";
 import {
   Message,
   Source,
   getMessages,
   streamChat,
+  streamResearch,
   regenerateChat,
 } from "@/lib/conversations";
 import MarkdownMessage from "@/components/MarkdownMessage";
@@ -40,10 +44,12 @@ export default function ConversationPage({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState(MODELS[0].id);
-  const [useWebSearch, setUseWebSearch] = useState(false);
+  const [mode, setMode] = useState<"chat" | "web" | "research">("chat");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareSources, setCompareSources] = useState<Source[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -98,29 +104,35 @@ export default function ConversationPage({
     const controller = new AbortController();
     abortRef.current = controller;
 
-    try {
-      await streamChat(
-        conversationId,
-        history,
-        (delta) => {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === tempAi.id ? { ...m, content: m.content + delta } : m
-            )
-          );
-        },
-        {
-          useWebSearch,
-          onSources: (sources) => {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === tempAi.id ? { ...m, _sources: sources } : m
-              )
-            );
-          },
-          signal: controller.signal,
-        }
+    const onDelta = (delta: string) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempAi.id ? { ...m, content: m.content + delta } : m
+        )
       );
+    };
+
+    const onSources = (sources: Source[]) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempAi.id ? { ...m, _sources: sources } : m
+        )
+      );
+    };
+
+    try {
+      if (mode === "research") {
+        await streamResearch(conversationId, history, onDelta, {
+          onSources,
+          signal: controller.signal,
+        });
+      } else {
+        await streamChat(conversationId, history, onDelta, {
+          useWebSearch: mode === "web",
+          onSources,
+          signal: controller.signal,
+        });
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id === tempAi.id ? { ...m, _streaming: false, _temp: false } : m
@@ -242,28 +254,23 @@ export default function ConversationPage({
     abortRef.current = controller;
 
     try {
-      await streamChat(
-        conversationId,
-        history,
-        (delta) => {
+      await streamChat(conversationId, history, (delta) => {
+        setMessages((prev) =>
+          prev.map((x) =>
+            x.id === tempAi.id ? { ...x, content: x.content + delta } : x
+          )
+        );
+      }, {
+        useWebSearch: mode === "web",
+        onSources: (sources) => {
           setMessages((prev) =>
             prev.map((x) =>
-              x.id === tempAi.id ? { ...x, content: x.content + delta } : x
+              x.id === tempAi.id ? { ...x, _sources: sources } : x
             )
           );
         },
-        {
-          useWebSearch,
-          onSources: (sources) => {
-            setMessages((prev) =>
-              prev.map((x) =>
-                x.id === tempAi.id ? { ...x, _sources: sources } : x
-              )
-            );
-          },
-          signal: controller.signal,
-        }
-      );
+        signal: controller.signal,
+      });
       setMessages((prev) =>
         prev.map((x) =>
           x.id === tempAi.id ? { ...x, _streaming: false, _temp: false } : x
@@ -373,12 +380,18 @@ export default function ConversationPage({
                           m.content
                         ) : m.content ? (
                           <>
-                                                        <MarkdownMessage
+                            <MarkdownMessage
                               content={m.content}
                               sources={m._sources}
                             />
                             {m._sources && m._sources.length > 0 && (
-                              <Sources sources={m._sources} />
+                              <Sources
+                                sources={m._sources}
+                                onCompare={() => {
+                                  setCompareSources(m._sources!);
+                                  setCompareOpen(true);
+                                }}
+                              />
                             )}
                           </>
                         ) : (
@@ -450,19 +463,25 @@ export default function ConversationPage({
 
       {/* Input */}
       <form onSubmit={handleSend} className="border-t border-slate-800 p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <button
-            type="button"
-            onClick={() => setUseWebSearch(!useWebSearch)}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-              useWebSearch
-                ? "border-violet-500 bg-violet-500/20 text-violet-300"
-                : "border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
-            }`}
-          >
-            <Globe className="w-3.5 h-3.5" />
-            Web search {useWebSearch ? "on" : "off"}
-          </button>
+        <div className="flex items-center gap-1 mb-2">
+          <ModeButton
+            active={mode === "chat"}
+            onClick={() => setMode("chat")}
+            icon={<MessageSquare className="w-3.5 h-3.5" />}
+            label="Chat"
+          />
+          <ModeButton
+            active={mode === "web"}
+            onClick={() => setMode("web")}
+            icon={<Globe className="w-3.5 h-3.5" />}
+            label="Web search"
+          />
+          <ModeButton
+            active={mode === "research"}
+            onClick={() => setMode("research")}
+            icon={<BookOpen className="w-3.5 h-3.5" />}
+            label="Research"
+          />
         </div>
 
         <div className="flex gap-2 items-end">
@@ -500,13 +519,59 @@ export default function ConversationPage({
           )}
         </div>
       </form>
+
+      {compareOpen && (
+        <CompareModal
+          sources={compareSources}
+          onClose={() => setCompareOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
-// ---------- Sources component ----------
+// ============================================================
+// ModeButton
+// ============================================================
 
-function Sources({ sources }: { sources: Source[] }) {
+function ModeButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+        active
+          ? "border-violet-500 bg-violet-500/20 text-violet-300"
+          : "border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+// ============================================================
+// Sources
+// ============================================================
+
+function Sources({
+  sources,
+  onCompare,
+}: {
+  sources: Source[];
+  onCompare?: () => void;
+}) {
   if (!sources?.length) return null;
 
   const avgTrust =
@@ -518,13 +583,23 @@ function Sources({ sources }: { sources: Source[] }) {
         <div className="text-[11px] uppercase tracking-wider text-slate-500">
           Sources · {sources.length}
         </div>
-        <div className="flex items-center gap-1.5 text-[11px]">
-          <span className="text-slate-500">Avg trust</span>
-          <span
-            className={`font-mono font-semibold ${trustTextColor(avgTrust)}`}
-          >
-            {Math.round(avgTrust)}
-          </span>
+        <div className="flex items-center gap-3">
+          {onCompare && sources.length >= 2 && (
+            <button
+              onClick={onCompare}
+              className="text-[11px] text-violet-400 hover:text-violet-300 transition"
+            >
+              Compare
+            </button>
+          )}
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <span className="text-slate-500">Avg trust</span>
+            <span
+              className={`font-mono font-semibold ${trustTextColor(avgTrust)}`}
+            >
+              {Math.round(avgTrust)}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -559,8 +634,16 @@ function Sources({ sources }: { sources: Source[] }) {
               </div>
 
               <div className="flex items-center justify-between gap-2">
-                <div className="text-[11px] text-slate-500 truncate">
-                  {s._domain || s.url}
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="text-[11px] text-slate-500 truncate">
+                    {s._domain || s.url}
+                  </div>
+                  {s._freshness && s._freshness !== "unknown" && (
+                    <FreshnessChip
+                      level={s._freshness}
+                      hint={s._freshness_hint}
+                    />
+                  )}
                 </div>
                 {s._trust_level && (
                   <div
@@ -614,4 +697,119 @@ function TrustDot({ level }: { level: string }) {
       ? "bg-yellow-400"
       : "bg-red-400";
   return <span className={`inline-block w-1.5 h-1.5 rounded-full ${color}`} />;
+}
+
+function FreshnessChip({ level, hint }: { level: string; hint?: string }) {
+  const map: Record<string, { label: string; color: string }> = {
+    today: { label: "Today", color: "bg-emerald-500/20 text-emerald-300" },
+    week: { label: "This week", color: "bg-blue-500/20 text-blue-300" },
+    month: { label: "This month", color: "bg-violet-500/20 text-violet-300" },
+    older: { label: "Older", color: "bg-slate-500/20 text-slate-400" },
+  };
+  const cfg = map[level];
+  if (!cfg) return null;
+  return (
+    <span
+      title={hint || cfg.label}
+      className={`shrink-0 rounded px-1 py-0.5 text-[9px] uppercase font-semibold tracking-wide ${cfg.color}`}
+    >
+      {cfg.label}
+    </span>
+  );
+}
+
+// ============================================================
+// Compare Modal
+// ============================================================
+
+function CompareModal({
+  sources,
+  onClose,
+}: {
+  sources: Source[];
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-5xl max-h-[85vh] rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+          <h2 className="text-lg font-semibold">
+            Compare {sources.length} sources
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-slate-500 hover:text-slate-300"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          <div className="grid grid-cols-2 gap-3 p-4">
+            {sources.map((s, i) => (
+              <div
+                key={i}
+                className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 space-y-2"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-violet-400">
+                    [{i + 1}]
+                  </span>
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm font-medium text-slate-200 hover:text-violet-400 truncate flex-1"
+                  >
+                    {s.title || s.url}
+                  </a>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] text-slate-500">
+                    {s._domain}
+                  </span>
+                  {s._trust_level && (
+                    <span
+                      className={`text-[10px] font-semibold ${trustTextColor(
+                        s._trust || 0
+                      )}`}
+                    >
+                      Trust {s._trust} · {s._trust_level}
+                    </span>
+                  )}
+                  {s._kind && (
+                    <span
+                      className={`rounded px-1 py-0.5 text-[9px] uppercase font-semibold ${kindColor(
+                        s._kind
+                      )}`}
+                    >
+                      {s._kind}
+                    </span>
+                  )}
+                  {s._freshness && s._freshness !== "unknown" && (
+                    <FreshnessChip
+                      level={s._freshness}
+                      hint={s._freshness_hint}
+                    />
+                  )}
+                </div>
+
+                <div className="text-xs text-slate-400 leading-relaxed max-h-40 overflow-y-auto">
+                  {s.content?.slice(0, 600) || "(no preview)"}
+                  {(s.content?.length || 0) > 600 ? "…" : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
