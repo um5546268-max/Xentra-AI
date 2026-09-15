@@ -8,8 +8,15 @@ from app.schemas.browser import (
     BrowserClickRequest,
     BrowserFillRequest,
     BrowserResult,
+    BrowserChainRequest,
+    BrowserChainResult,
 )
-from app.services.browser_agent import open_and_read, click_element, fill_form
+from app.services.browser_agent import (
+    open_and_read,
+    click_element,
+    fill_form,
+    run_chain,
+)
 
 router = APIRouter(prefix="/browser", tags=["browser"])
 
@@ -60,3 +67,43 @@ async def browser_fill(
     if result.get("error"):
         raise HTTPException(status_code=502, detail=f"Browser error: {result['error']}")
     return BrowserResult(**result)
+@router.post("/chain", response_model=BrowserChainResult)
+async def browser_chain(
+    payload: BrowserChainRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Run a sequence of browser steps in one session."""
+    # Validate all `open` steps have URLs
+    for i, step in enumerate(payload.steps):
+        if step.action == "open" and not step.url:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Step {i}: 'open' requires a url",
+            )
+        if step.action in ("click", "fill") and not step.selector:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Step {i}: '{step.action}' requires a selector",
+            )
+        if step.action == "fill" and step.value is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Step {i}: 'fill' requires a value",
+            )
+        if step.action == "open" and step.url:
+            if not step.url.startswith(("http://", "https://")):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Step {i}: url must start with http:// or https://",
+                )
+
+    steps = [s.model_dump(exclude_none=True) for s in payload.steps]
+    result = await asyncio.to_thread(run_chain, steps)
+
+    if result.get("error") and not result.get("steps"):
+        raise HTTPException(
+            status_code=502,
+            detail=f"Browser chain error: {result['error']}",
+        )
+
+    return BrowserChainResult(**result)

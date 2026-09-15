@@ -1,5 +1,7 @@
 import api from "./api";
 
+// ----- Single URL -----
+
 export type BrowserResult = {
   url: string;
   title: string;
@@ -12,7 +14,7 @@ export const browserOpen = async (url: string): Promise<BrowserResult> => {
   const res = await api.post(
     "/api/browser/open",
     { url },
-    { timeout: 90_000 }  // 90 seconds — cold Playwright start + slow sites
+    { timeout: 90_000 }
   );
   return res.data;
 };
@@ -42,6 +44,44 @@ export const browserFill = async (
       submit_selector: submitSelector || null,
     },
     { timeout: 90_000 }
+  );
+  return res.data;
+};
+
+// ----- Chain mode -----
+
+export type ChainStep = {
+  action: "open" | "click" | "fill" | "wait" | "screenshot";
+  url?: string;
+  selector?: string;
+  value?: string;
+  ms?: number;
+};
+
+export type ChainStepResult = {
+  index: number;
+  action: string;
+  url: string;
+  title: string;
+  text: string;
+  screenshot_b64: string;
+  error: string | null;
+};
+
+export type ChainResult = {
+  steps: ChainStepResult[];
+  final_url: string;
+  final_title: string;
+  error: string | null;
+};
+
+export const browserChain = async (
+  steps: ChainStep[]
+): Promise<ChainResult> => {
+  const res = await api.post(
+    "/api/browser/chain",
+    { steps },
+    { timeout: 240_000 }
   );
   return res.data;
 };

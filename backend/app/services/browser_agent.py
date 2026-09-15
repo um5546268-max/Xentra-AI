@@ -72,3 +72,6 @@ def fill_form(
         "fields": fields,
         "submit_selector": submit_selector,
     })
+def run_chain(steps: list[dict]) -> dict[str, Any]:
+    """Run a sequence of browser steps in a single session."""
+    return _run_worker({"action": "chain", "steps": steps}, timeout=180)

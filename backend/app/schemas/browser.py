@@ -22,3 +22,32 @@ class BrowserResult(BaseModel):
     text: str
     screenshot_b64: str
     error: str | None = None
+
+
+class BrowserStep(BaseModel):
+    action: str = Field(pattern="^(open|click|fill|wait|screenshot)$")
+    url: str | None = None
+    selector: str | None = None
+    value: str | None = None
+    ms: int | None = None
+
+
+class BrowserChainRequest(BaseModel):
+    steps: list[BrowserStep] = Field(min_length=1, max_length=20)
+
+
+class BrowserStepResult(BaseModel):
+    index: int
+    action: str
+    url: str
+    title: str
+    text: str
+    screenshot_b64: str
+    error: str | None = None
+
+
+class BrowserChainResult(BaseModel):
+    steps: list[BrowserStepResult]
+    final_url: str
+    final_title: str
+    error: str | None = None

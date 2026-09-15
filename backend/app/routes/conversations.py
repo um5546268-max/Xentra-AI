@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -18,6 +19,10 @@ from app.schemas.conversation import (
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
+class FromPageRequest(BaseModel):
+    url: str = Field(min_length=4, max_length=2000)
+    title: str = Field(default="", max_length=500)
+    text: str = Field(min_length=1, max_length=20_000)
 
 @router.get("", response_model=list[ConversationRead])
 def list_conversations(
@@ -110,3 +115,50 @@ def list_messages(
         .order_by(Message.created_at.asc())
     )
     return db.execute(stmt).scalars().all()
+@router.post("/from-page", response_model=ConversationRead, status_code=201)
+def create_conversation_from_page(
+    payload: FromPageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Create a new conversation pre-loaded with content from a web page.
+    The AI sees the page content as a system message.
+    """
+    # Create the conversation
+    title = payload.title.strip()[:60] or "New conversation"
+    convo = Conversation(
+        user_id=current_user.id,
+        title=title,
+    )
+    db.add(convo)
+    db.commit()
+    db.refresh(convo)
+
+    # Store a system message with the page content
+    system_content = (
+        f"SOURCE PAGE\n"
+        f"URL: {payload.url}\n"
+        f"Title: {payload.title}\n\n"
+        f"--- PAGE CONTENT ---\n"
+        f"{payload.text[:15_000]}\n"
+        f"--- END OF PAGE CONTENT ---\n\n"
+        f"The user opened this page in the browser agent and wants to discuss it. "
+        f"Be ready to answer questions about the content."
+    )
+
+    db.add(Message(
+        conversation_id=convo.id,
+        role="system",
+        content=system_content,
+    ))
+
+    # Store the first user prompt so there's something to reply to
+    db.add(Message(
+        conversation_id=convo.id,
+        role="user",
+        content=f"Summarize this page in 3 bullet points.",
+    ))
+    db.commit()
+
+    return convo
