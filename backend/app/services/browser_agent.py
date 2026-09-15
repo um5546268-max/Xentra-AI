@@ -8,7 +8,7 @@ from typing import Any
 WORKER_PATH = Path(__file__).parent / "browser_worker.py"
 
 
-def _run_worker(payload: dict, timeout: int = 60) -> dict[str, Any]:
+def _run_worker(payload: dict, timeout: int = 90) -> dict[str, Any]:
     """
     Run browser_worker.py in a separate Python process.
     Passes payload via stdin, reads JSON result via stdout.

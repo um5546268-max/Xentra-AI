@@ -18,8 +18,8 @@ def _do_open(url: str) -> dict:
         )
         try:
             page = browser.new_page(viewport={"width": 1280, "height": 800})
-            page.set_default_timeout(15_000)
-            page.goto(url, wait_until="domcontentloaded")
+            page.set_default_timeout(30_000)
+            page.goto(url, wait_until="domcontentloaded", timeout=30_000)
             page.wait_for_timeout(800)
 
             text = ""
