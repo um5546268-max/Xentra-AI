@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # YouTube
     YOUTUBE_API_KEY: str = ""
 
+        # Local media
+    MEDIA_ROOTS: str = ""
+
     # TAVILY API key
     TAVILY_API_KEY: str = ""
 
