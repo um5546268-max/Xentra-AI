@@ -66,15 +66,24 @@ async def get_profile(db: Session, user: User) -> dict:
 
 async def get_now_playing(db: Session, user: User) -> dict:
     token = await _token(db, user)
-    async with httpx.AsyncClient() as client:
-        r = await client.get(SPOTIFY_CURRENT_URL, headers=_headers(token))
+
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(SPOTIFY_CURRENT_URL, headers=_headers(token))
+    except Exception:
+        return {"playing": False, "track": None, "progress_ms": 0}
 
     # 204 = nothing playing
     if r.status_code == 204:
-        return {"playing": False, "track": None}
+        return {"playing": False, "track": None, "progress_ms": 0}
+
+    # Some Spotify errors (no active device, etc.) also mean "nothing playing"
+    if r.status_code in (404, 403):
+        return {"playing": False, "track": None, "progress_ms": 0}
 
     if r.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Spotify error: {r.text}")
+        # Any other error → return empty state instead of crashing
+        return {"playing": False, "track": None, "progress_ms": 0}
 
     data = r.json()
     item = data.get("item") or {}
