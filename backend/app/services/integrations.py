@@ -36,7 +36,7 @@ INTEGRATIONS = {
             "user-read-currently-playing",
             "playlist-read-private",
         ],
-        "enabled": False,
+        "enabled": True,
     },
     "notion": {
         "name": "Notion",

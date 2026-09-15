@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/integrations/google/callback"
     FRONTEND_URL: str = "http://localhost:3000"
 
+        # Integrations - Spotify
+    SPOTIFY_CLIENT_ID: str = "2f1f4c33ceed468dba381d2f9293c052"
+    SPOTIFY_CLIENT_SECRET: str = "88824100c4614486ad9ccaad4d039042"
+    SPOTIFY_REDIRECT_URI: str = "http://127.0.0.1:8000/api/integrations/spotify/callback"
+
     # TAVILY API key
     TAVILY_API_KEY: str = ""
 

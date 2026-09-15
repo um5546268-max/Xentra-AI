@@ -93,6 +93,9 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_USER_URL = "https://api.github.com/user"
+SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize"
+SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
+SPOTIFY_USER_URL = "https://api.spotify.com/v1/me"
 
 
 @router.get("/google/connect")
@@ -380,3 +383,175 @@ async def github_callback(
     db.commit()
 
     return RedirectResponse(url=f"{settings.FRONTEND_URL}/app/integrations?connected=github")
+# ============================================================
+# Spotify OAuth
+# ============================================================
+
+
+@router.get("/spotify/connect")
+def spotify_connect(current_user: User = Depends(get_current_user)):
+    """Return the Spotify OAuth URL."""
+    if not settings.SPOTIFY_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="Spotify OAuth not configured")
+
+    state = str(current_user.id)
+
+    params = {
+        "client_id": settings.SPOTIFY_CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": settings.SPOTIFY_REDIRECT_URI,
+        "scope": " ".join([
+            "user-read-playback-state",
+            "user-modify-playback-state",
+            "user-read-currently-playing",
+            "user-read-email",
+            "user-read-private",
+            "playlist-read-private",
+            "playlist-read-collaborative",
+        ]),
+        "state": state,
+        "show_dialog": "false",
+    }
+
+    auth_url = f"{SPOTIFY_AUTH_URL}?{urlencode(params)}"
+    return {"url": auth_url}
+
+
+@router.get("/spotify/callback")
+async def spotify_callback(
+    code: str,
+    state: str,
+    db: Session = Depends(get_db),
+):
+    """Spotify redirects here after authorization."""
+    import uuid as uuid_lib
+    import base64
+
+    try:
+        user_id = uuid_lib.UUID(state)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid state")
+
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Spotify requires Basic Auth header with base64(client_id:client_secret)
+    creds = f"{settings.SPOTIFY_CLIENT_ID}:{settings.SPOTIFY_CLIENT_SECRET}"
+    auth_header = base64.b64encode(creds.encode()).decode()
+
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(
+            SPOTIFY_TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": settings.SPOTIFY_REDIRECT_URI,
+            },
+            headers={
+                "Authorization": f"Basic {auth_header}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
+
+    if token_resp.status_code != 200:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Token exchange failed: {token_resp.text}",
+        )
+
+    tokens = token_resp.json()
+    access_token = tokens.get("access_token")
+    refresh_token = tokens.get("refresh_token")
+    expires_in = tokens.get("expires_in", 3600)
+    scopes = tokens.get("scope", "")
+
+    # Fetch user info
+    async with httpx.AsyncClient() as client:
+        info_resp = await client.get(
+            SPOTIFY_USER_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    account_email = None
+    account_name = None
+    if info_resp.status_code == 200:
+        info = info_resp.json()
+        account_email = info.get("email")
+        account_name = info.get("display_name") or info.get("id")
+
+    # Upsert
+    existing = db.execute(
+        select(Integration)
+        .where(Integration.user_id == user.id)
+        .where(Integration.provider == "spotify")
+    ).scalar_one_or_none()
+
+    if existing:
+        existing.status = "connected"
+        existing.access_token = access_token
+        existing.refresh_token = refresh_token or existing.refresh_token
+        existing.expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        existing.scopes = scopes
+        existing.account_email = account_email
+        existing.account_name = account_name
+    else:
+        db.add(Integration(
+            user_id=user.id,
+            provider="spotify",
+            status="connected",
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=expires_in),
+            scopes=scopes,
+            account_email=account_email,
+            account_name=account_name,
+        ))
+
+    db.commit()
+
+    return RedirectResponse(url=f"{settings.FRONTEND_URL}/app/integrations?connected=spotify")
+
+
+async def get_valid_spotify_token(integration: Integration, db: Session) -> str:
+    """Return a valid Spotify access token, refreshing if needed."""
+    import base64
+
+    now = datetime.now(timezone.utc)
+    expires_at = integration.expires_at
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at and expires_at > now + timedelta(minutes=2):
+        return integration.access_token or ""
+
+    if not integration.refresh_token:
+        raise HTTPException(status_code=401, detail="No refresh token — reconnect Spotify")
+
+    creds = f"{settings.SPOTIFY_CLIENT_ID}:{settings.SPOTIFY_CLIENT_SECRET}"
+    auth_header = base64.b64encode(creds.encode()).decode()
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            SPOTIFY_TOKEN_URL,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": integration.refresh_token,
+            },
+            headers={
+                "Authorization": f"Basic {auth_header}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
+
+    if resp.status_code != 200:
+        integration.status = "expired"
+        db.commit()
+        raise HTTPException(status_code=401, detail="Token refresh failed — reconnect")
+
+    tokens = resp.json()
+    integration.access_token = tokens["access_token"]
+    integration.expires_at = now + timedelta(seconds=tokens.get("expires_in", 3600))
+    db.commit()
+
+    return integration.access_token
