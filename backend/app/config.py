@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     AI_MAX_TOKENS: int = 2048
     AI_TEMPERATURE: float = 0.7
 
+        # Integrations
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/integrations/google/callback"
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # TAVILY API key
     TAVILY_API_KEY: str = ""
 

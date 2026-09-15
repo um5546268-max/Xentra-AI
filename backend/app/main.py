@@ -8,6 +8,8 @@ from app.routes import conversations as conversation_routes
 from app.routes import chat as chat_routes
 from app.routes import tasks as task_routes
 from app.routes import browser as browser_routes
+from app.routes import integrations as integration_routes
+from app.routes import google as google_routes
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -29,6 +31,8 @@ app.include_router(conversation_routes.router, prefix=settings.API_V1_STR)
 app.include_router(chat_routes.router, prefix=settings.API_V1_STR)  # ← AND THIS
 app.include_router(task_routes.router, prefix=settings.API_V1_STR)
 app.include_router(browser_routes.router, prefix=settings.API_V1_STR)
+app.include_router(integration_routes.router, prefix=settings.API_V1_STR)
+app.include_router(google_routes.router, prefix=settings.API_V1_STR)
 @app.get("/api/health")
 def health_check():
     return {
