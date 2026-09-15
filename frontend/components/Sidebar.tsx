@@ -2,7 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Plus, Search, Trash2, LogOut, Moon, Sun, MessageSquare } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Trash2,
+  LogOut,
+  Moon,
+  Sun,
+  MessageSquare,
+  ListTodo,
+  Play,
+  Check,
+  AlertCircle,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import {
@@ -11,20 +25,29 @@ import {
   createConversation,
   deleteConversation,
 } from "@/lib/conversations";
+import { useTasks } from "@/lib/tasks-store";
+import NewTaskModal from "./NewTaskModal";
 
 export default function Sidebar() {
   const router = useRouter();
   const params = useParams<{ conversationId?: string }>();
   const { user, logout } = useAuth();
   const { theme, toggle, load } = useTheme();
+  const { tasks, startPolling, stopPolling, run } = useTasks();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showNewTask, setShowNewTask] = useState(false);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    startPolling();
+    return () => stopPolling();
+  }, [startPolling, stopPolling]);
 
   useEffect(() => {
     getConversations()
@@ -56,6 +79,7 @@ export default function Sidebar() {
   };
 
   const handleLogout = () => {
+    stopPolling();
     logout();
     router.push("/login");
   };
@@ -67,7 +91,9 @@ export default function Sidebar() {
         <h1 className="text-xl font-bold bg-gradient-to-r from-violet-400 via-cyan-300 to-violet-400 bg-clip-text text-transparent">
           Xentra AI
         </h1>
-        <p className="text-xs text-slate-500 mt-0.5">Your AI Operating Assistant</p>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Your AI Operating Assistant
+        </p>
       </div>
 
       {/* New + Search */}
@@ -78,6 +104,14 @@ export default function Sidebar() {
         >
           <Plus className="w-4 h-4" />
           New conversation
+        </button>
+
+        <button
+          onClick={() => setShowNewTask(true)}
+          className="w-full flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
+        >
+          <Sparkles className="w-4 h-4" />
+          New task
         </button>
 
         <div className="relative">
@@ -91,10 +125,63 @@ export default function Sidebar() {
         </div>
       </div>
 
+      {/* Tasks */}
+      {tasks.length > 0 && (
+        <div className="border-b border-slate-800 p-3 space-y-1">
+          <div className="flex items-center justify-between px-2 py-1">
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500 uppercase tracking-wider">
+              <ListTodo className="w-3.5 h-3.5" />
+              Tasks
+            </div>
+            <span className="text-xs text-slate-600">
+              {tasks.filter((t) => t.status === "running").length} running
+            </span>
+          </div>
+
+          <div className="space-y-1 max-h-64 overflow-y-auto">
+            {tasks.slice(0, 8).map((t) => (
+              <div
+                key={t.id}
+                className="rounded-lg bg-slate-900/60 px-2 py-1.5 space-y-1"
+              >
+                <div className="flex items-center gap-2 text-xs">
+                  <StatusDot status={t.status} />
+                  <span className="truncate flex-1 text-slate-300">
+                    {t.type}
+                  </span>
+                  <span className="text-slate-500 font-mono">
+                    {t.progress}%
+                  </span>
+                  {t.status === "queued" && (
+                    <button
+                      onClick={() => run(t.id)}
+                      className="text-violet-400 hover:text-violet-300"
+                      title="Run"
+                    >
+                      <Play className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+                <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-500 ${progressColor(
+                      t.status
+                    )}`}
+                    style={{ width: `${t.progress}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Conversation list */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {loading ? (
-          <div className="text-xs text-slate-600 text-center py-8">Loading…</div>
+          <div className="text-xs text-slate-600 text-center py-8">
+            Loading…
+          </div>
         ) : filtered.length === 0 ? (
           <div className="text-xs text-slate-600 text-center py-8">
             {conversations.length === 0 ? "No conversations yet" : "No matches"}
@@ -159,6 +246,32 @@ export default function Sidebar() {
           </button>
         </div>
       </div>
+
+      {showNewTask && (
+        <NewTaskModal onClose={() => setShowNewTask(false)} />
+      )}
     </aside>
   );
+}
+
+function StatusDot({ status }: { status: string }) {
+  if (status === "running")
+    return <Loader2 className="w-3 h-3 text-violet-400 animate-spin" />;
+  if (status === "done")
+    return <Check className="w-3 h-3 text-emerald-400" />;
+  if (status === "failed")
+    return <AlertCircle className="w-3 h-3 text-red-400" />;
+  if (status === "paused")
+    return <span className="w-3 h-3 text-yellow-400">⏸</span>;
+  if (status === "cancelled")
+    return <span className="w-3 h-3 text-slate-500">✕</span>;
+  return <span className="w-3 h-3 text-slate-500">○</span>;
+}
+
+function progressColor(status: string) {
+  if (status === "done") return "bg-emerald-500";
+  if (status === "failed") return "bg-red-500";
+  if (status === "paused") return "bg-yellow-500";
+  if (status === "running") return "bg-violet-500";
+  return "bg-slate-600";
 }
