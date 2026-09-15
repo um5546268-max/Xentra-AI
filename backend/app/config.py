@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     SPOTIFY_CLIENT_SECRET: str = "88824100c4614486ad9ccaad4d039042"
     SPOTIFY_REDIRECT_URI: str = "http://127.0.0.1:8000/api/integrations/spotify/callback"
 
+    # YouTube
+    YOUTUBE_API_KEY: str = ""
+
     # TAVILY API key
     TAVILY_API_KEY: str = ""
 
