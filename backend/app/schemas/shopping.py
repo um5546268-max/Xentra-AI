@@ -67,3 +67,4 @@ class ShoppingEnrichedResponse(BaseModel):
     count: int
     enriched_count: int
     products: list[ProductEnriched]
+    

@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from app.services.query_parser import parse_shopping_query
 from app.services.product_search import search_products_shopping
 from app.services.spec_extractor import extract_specs, score_product
+from app.services.spec_extractor import extract_specs, score_product, compute_trust_score
 
 
 def _domain(url: str) -> str:
@@ -36,13 +37,14 @@ def search_products(
     # Map country to 2-letter code
     country_code = "pk" if country == "PK" else country.lower()
 
+    # 2. Build a SHORT search query — Daraz needs keywords, not sentences
         # 2. Build a SHORT search query — Daraz needs keywords, not sentences
-    #    "best laptop under 100000 for university" → "laptop 100000"
-    #    Daraz matches product titles, not semantic meaning
+    #    Keep it minimal: just product_type + budget.
+    #    Extra keywords kill results because Daraz uses AND matching.
     search_parts = [product_type]
     if budget:
-        # Round budget to nearest 1000 so it's more likely to match listings
         search_parts.append(str(int(budget)))
+
     search_query = " ".join(search_parts)
     print(f"[shopping] Daraz search query: '{search_query}'")
 
@@ -138,8 +140,6 @@ def enrich_and_rank(
             if result.get("error"):
                 p["enrich_error"] = result["error"]
                 p["specs"] = {}
-                p["score"] = 30
-                p["score_reasons"] = ["Could not extract specs"]
             else:
                 spec_data = result["specs"]
                 p["specs"] = spec_data.get("specs") or {}
@@ -148,24 +148,57 @@ def enrich_and_rank(
                 p["model"] = spec_data.get("model")
                 p["highlights"] = spec_data.get("highlights") or []
                 p["release_year"] = spec_data.get("release_year")
+                p["reviews"] = spec_data.get("reviews") or {}
+                p["trust_signals"] = spec_data.get("trust_signals") or {}
 
-                # If the extractor found a better price, use it
+                # If the extractor found a price, use it
                 if spec_data.get("price") and not p["price"]:
                     p["price"] = spec_data["price"]
                     p["currency"] = spec_data.get("currency") or p["currency"]
 
-                # Score
-                scored = score_product(spec_data, intent)
-                p["score"] = scored["score"]
-                p["score_reasons"] = scored["reasons"]
+                # Ratings from the spec extraction
+                ratings = spec_data.get("ratings") or {}
+                if ratings.get("overall") and not p.get("rating"):
+                    p["rating"] = ratings["overall"]
+                if ratings.get("count") and not p.get("reviews_count"):
+                    p["reviews_count"] = ratings["count"]
+
+            # Compute intent score (ALWAYS — even if enrichment failed)
+            spec_data_for_scoring = {
+                "specs": p.get("specs") or {},
+                "price": p.get("price"),
+            }
+            scored = score_product(spec_data_for_scoring, intent)
+            p["score"] = scored["score"]
+            p["score_reasons"] = scored["reasons"]
+
+            # Compute trust score (ALWAYS)
+            trust = compute_trust_score(p)
+            p["trust_score"] = trust["score"]
+            p["trust_level"] = trust["level"]
+            p["trust_reasons"] = trust["reasons"]
+
         except Exception as e:
             p["enrich_error"] = str(e)
             p["score"] = 30
-            p["score_reasons"] = ["Enrichment failed"]
+            p["score_reasons"] = [f"Enrichment failed: {str(e)[:60]}"]
+            p["trust_score"] = 30
+            p["trust_level"] = "low"
+            p["trust_reasons"] = ["Enrichment failed"]
+
         enriched.append(p)
 
-    # Step 3: sort by score (highest first)
+        # Sort by intent score (highest first)
     enriched.sort(key=lambda p: p.get("score", 0), reverse=True)
+
+    # Filter out low-quality results for university/work/gaming use cases
+    use_case = intent.get("use_case", "general")
+    if use_case in ("university", "work", "gaming"):
+        # Keep products scoring at least 45
+        filtered = [p for p in enriched if p.get("score", 0) >= 45]
+        # But don't return empty if everything is bad
+        if filtered:
+            enriched = filtered
 
     return {
         **search_result,

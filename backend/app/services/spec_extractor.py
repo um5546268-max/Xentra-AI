@@ -1,5 +1,5 @@
 """
-Extract structured specs from a product page.
+Extract structured specs + reviews from a product page.
 Uses Tavily's extract API + LLM parsing.
 """
 import json
@@ -8,23 +8,23 @@ from app.services.search import extract_pages
 from app.services.ai import chat_completion
 
 
-SYSTEM_PROMPT = """You extract product specifications from web page content.
+SYSTEM_PROMPT = """You extract product specifications, reviews, and trust signals from web page content.
 
 Return ONLY a JSON object with these fields (null if unknown):
 {
-  "product_name": "full product name (e.g. 'HP Pavilion 15-eg2000')",
+  "product_name": "full product name",
   "brand": "brand name",
   "model": "model number/name",
   "price": number | null,
   "currency": "PKR" | "USD" | "INR" | "EUR" | "GBP" | null,
   "specs": {
-    "cpu": "processor (e.g. 'Intel Core i5-1235U')",
-    "ram": "RAM (e.g. '16GB DDR4')",
-    "storage": "storage (e.g. '512GB SSD')",
-    "gpu": "graphics (e.g. 'Intel Iris Xe')",
-    "display": "screen (e.g. '15.6 inch FHD')",
-    "battery": "battery (e.g. '41Wh' or '6-cell')",
-    "weight": "weight (e.g. '1.75 kg')",
+    "cpu": "processor",
+    "ram": "RAM",
+    "storage": "storage",
+    "gpu": "graphics",
+    "display": "screen",
+    "battery": "battery",
+    "weight": "weight",
     "os": "operating system",
     "ports": "port summary",
     "camera": "webcam spec",
@@ -34,13 +34,29 @@ Return ONLY a JSON object with these fields (null if unknown):
     "overall": number | null,
     "count": number | null
   },
+  "reviews": {
+    "summary": "1-2 sentence summary of what reviewers say",
+    "positives": ["what users like"],
+    "negatives": ["what users complain about"],
+    "sentiment": "positive" | "mixed" | "negative" | "unknown",
+    "sample_count": number
+  },
+  "trust_signals": {
+    "official_seller": true | false,
+    "has_warranty": true | false,
+    "return_policy": "string or null",
+    "suspicious_flags": ["list of concerns, if any"]
+  },
   "highlights": ["3-4 short selling points"],
   "release_year": number | null
 }
 
 Rules:
 - Extract only what's present. Do NOT invent specs.
-- If the page is a list of products, pick the FIRST product mentioned.
+- For reviews: summarize only if actual reviews/comments appear in the content.
+  If no reviews are present, set sentiment to "unknown" and review arrays empty.
+- For trust_signals: flag suspicious patterns like "like new", "used", "refurbished",
+  "no warranty", "imported", missing brand, or mismatched prices.
 - If the page doesn't look like a single product page, set "product_name" to null.
 - Output ONLY JSON. No markdown, no explanation.
 
@@ -64,7 +80,20 @@ Example output for a laptop page:
     "camera": "720p HD",
     "warranty": "1 year international"
   },
-  "ratings": { "overall": null, "count": null },
+  "ratings": { "overall": 4.5, "count": 87 },
+  "reviews": {
+    "summary": "Users praise battery life and portability; a few mention fan noise under load.",
+    "positives": ["Battery life", "Lightweight", "Good screen"],
+    "negatives": ["Fan noise under load"],
+    "sentiment": "positive",
+    "sample_count": 87
+  },
+  "trust_signals": {
+    "official_seller": true,
+    "has_warranty": true,
+    "return_policy": "7-day return",
+    "suspicious_flags": []
+  },
   "highlights": ["12th gen i5", "16GB RAM", "Lightweight 1.75kg"],
   "release_year": 2024
 }
@@ -79,7 +108,7 @@ def _strip_json(raw: str) -> str:
 
 def extract_specs(url: str) -> dict:
     """
-    Fetch a product page and extract structured specs.
+    Fetch a product page and extract structured specs + reviews.
     Returns {"specs": {...}, "error": str | None}.
     """
     # Fetch the page
@@ -91,16 +120,16 @@ def extract_specs(url: str) -> dict:
     if not pages or not pages[0].get("content"):
         return {"specs": {}, "error": "No content extracted"}
 
-    content = pages[0]["content"][:6000]
+    content = pages[0]["content"][:8000]
 
-    # Ask the LLM to parse specs
+    # Ask the LLM to parse specs + reviews
     try:
         result = chat_completion(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"URL: {url}\n\nContent:\n{content}"},
             ],
-            max_tokens=1500,
+            max_tokens=2000,
             temperature=0.1,
         )
     except Exception as e:
@@ -152,8 +181,9 @@ def score_product(product_specs: dict, intent: dict) -> dict:
 
     # Use-case specific scoring
     if use_case == "university":
-        # Care about: RAM, storage, weight, battery
-        if specs.get("ram") and any(x in specs["ram"].lower() for x in ["16gb", "32gb"]):
+        if specs.get("ram") and any(
+            x in specs["ram"].lower() for x in ["16gb", "32gb"]
+        ):
             score += 8
             reasons.append("Good RAM for university")
         if specs.get("storage") and "ssd" in specs["storage"].lower():
@@ -175,21 +205,29 @@ def score_product(product_specs: dict, intent: dict) -> dict:
             if any(x in gpu for x in ["rtx", "gtx", "radeon rx"]):
                 score += 15
                 reasons.append("Dedicated gaming GPU")
-        if specs.get("ram") and any(x in specs["ram"].lower() for x in ["16gb", "32gb"]):
+        if specs.get("ram") and any(
+            x in specs["ram"].lower() for x in ["16gb", "32gb"]
+        ):
             score += 5
             reasons.append("Enough RAM for gaming")
 
     elif use_case == "work":
         if specs.get("cpu"):
             cpu = specs["cpu"].lower()
-            if any(x in cpu for x in ["i5", "i7", "i9", "ryzen 5", "ryzen 7", "m1", "m2", "m3"]):
+            if any(
+                x in cpu
+                for x in [
+                    "i5", "i7", "i9",
+                    "ryzen 5", "ryzen 7",
+                    "m1", "m2", "m3",
+                ]
+            ):
                 score += 10
                 reasons.append("Strong CPU for work")
 
     # Priority features
     for feature in priority:
         feature_l = feature.lower()
-        # Search for it in all spec values
         for k, v in specs.items():
             if v and feature_l in str(v).lower():
                 score += 3
@@ -201,7 +239,106 @@ def score_product(product_specs: dict, intent: dict) -> dict:
         score -= 20
         reasons.append("No specs available")
 
-    # Clamp
     score = max(0, min(100, score))
 
     return {"score": score, "reasons": reasons[:6]}
+
+
+def compute_trust_score(product: dict) -> dict:
+    """
+    Compute a 0-100 trust score for a product.
+    Returns {"score": int, "level": "high|medium|low", "reasons": [...]}.
+    """
+    score = 50  # neutral
+    reasons = []
+
+    rating = product.get("rating")
+    reviews = product.get("reviews_count") or 0
+    source = (product.get("source") or "").lower()
+    specs = product.get("specs") or {}
+    trust_signals = product.get("trust_signals") or {}
+
+    # Rating weight (up to +25)
+    if rating:
+        try:
+            r = float(rating)
+            if r >= 4.5:
+                score += 25
+                reasons.append(f"Excellent rating ({r}★)")
+            elif r >= 4.0:
+                score += 15
+                reasons.append(f"Good rating ({r}★)")
+            elif r >= 3.5:
+                score += 5
+                reasons.append(f"Okay rating ({r}★)")
+            elif r < 3.0:
+                score -= 15
+                reasons.append(f"Poor rating ({r}★)")
+        except (ValueError, TypeError):
+            pass
+
+    # Review count weight (up to +15)
+    try:
+        reviews_int = int(reviews) if reviews else 0
+    except (ValueError, TypeError):
+        reviews_int = 0
+
+    if reviews_int >= 100:
+        score += 15
+        reasons.append(f"{reviews_int} reviews")
+    elif reviews_int >= 20:
+        score += 8
+        reasons.append(f"{reviews_int} reviews")
+    elif reviews_int >= 5:
+        score += 3
+    elif reviews_int == 0:
+        score -= 10
+        reasons.append("No reviews yet")
+
+    # Source trust
+    trusted_stores = [
+        "daraz.pk", "mega.pk", "priceoye.pk",
+        "homeshopping.pk", "telemart.pk", "symbios.pk",
+    ]
+    if any(s in source for s in trusted_stores):
+        score += 10
+        reasons.append("Trusted store")
+
+    # Specs present
+    spec_count = sum(1 for v in specs.values() if v)
+    if spec_count >= 6:
+        score += 10
+        reasons.append("Complete specs")
+    elif spec_count >= 3:
+        score += 5
+        reasons.append("Some specs available")
+    elif spec_count == 0:
+        score -= 10
+        reasons.append("No specs available")
+
+    # Warranty
+    if trust_signals.get("has_warranty"):
+        score += 5
+        reasons.append("Warranty included")
+
+    # Suspicious flags
+    flags = trust_signals.get("suspicious_flags") or []
+    if flags:
+        score -= len(flags) * 5
+        for f in flags[:2]:
+            reasons.append(f"Suspicious: {f}")
+
+    score = max(0, min(100, score))
+
+    if score >= 80:
+        level = "high"
+    elif score >= 55:
+        level = "medium"
+    else:
+        level = "low"
+
+    return {
+        "score": score,
+        "level": level,
+        "reasons": reasons[:6],
+    }
