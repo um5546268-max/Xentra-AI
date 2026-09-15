@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models.task import Task
+from app.services.browser_agent import open_and_read
 
 
 def _update_task(db: Session, task_id, **kwargs):
@@ -30,12 +31,11 @@ def _check_paused_or_cancelled(db: Session, task_id) -> str | None:
 
 def run_task(task_id):
     """
-    Background task runner.
-    Checks status between steps to support pause / cancel.
+    Generic simulated task runner.
+    Real logic per task type lives in dedicated runners below.
     """
     db = SessionLocal()
     try:
-        # Don't override if user already cancelled
         task = db.get(Task, task_id)
         if not task:
             return
@@ -53,18 +53,16 @@ def run_task(task_id):
         ]
 
         for progress, note in steps:
-            # Pause / cancel check BEFORE each step
             state = _check_paused_or_cancelled(db, task_id)
             if state == "cancelled":
                 return
             if state == "paused":
-                # Poll until resumed or cancelled
                 while True:
                     time.sleep(0.5)
                     state = _check_paused_or_cancelled(db, task_id)
                     if state == "cancelled":
                         return
-                    if state is None:  # resumed (status set back to running)
+                    if state is None:
                         break
 
             _update_task(db, task_id, progress=progress)
@@ -78,6 +76,53 @@ def run_task(task_id):
             result={
                 "message": "Task completed (simulated).",
                 "finished_at": datetime.utcnow().isoformat(),
+            },
+        )
+    except Exception as e:
+        _update_task(
+            db,
+            task_id,
+            status="failed",
+            result={"error": str(e)},
+        )
+    finally:
+        db.close()
+
+
+def run_browser_task(task_id, url: str):
+    """
+    Background browser task: open a URL and store title + text + screenshot in result.
+    """
+    db = SessionLocal()
+    try:
+        _update_task(db, task_id, status="running", progress=10)
+
+        result = open_and_read(url)
+
+        if result.get("error"):
+            _update_task(
+                db,
+                task_id,
+                status="failed",
+                progress=100,
+                result={"error": result["error"]},
+            )
+            return
+
+        screenshot = result.get("screenshot_b64", "")
+        if len(screenshot) > 500_000:
+            screenshot = screenshot[:500_000]
+
+        _update_task(
+            db,
+            task_id,
+            status="done",
+            progress=100,
+            result={
+                "url": result["url"],
+                "title": result["title"],
+                "text": result["text"][:3000],
+                "screenshot_b64": screenshot,
             },
         )
     except Exception as e:

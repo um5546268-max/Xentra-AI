@@ -5,7 +5,10 @@ from pydantic import BaseModel, Field
 
 
 TaskStatus = Literal["queued", "running", "done", "failed", "paused", "cancelled"]
-TaskType = Literal["chat", "research", "code", "shopping", "media", "generic"]
+TaskType = Literal[
+    "chat", "research", "code", "shopping", "media",
+    "browser", "generic",
+]
 
 
 class TaskCreate(BaseModel):

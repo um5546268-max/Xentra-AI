@@ -30,15 +30,25 @@ def run_task_endpoint(
     if task.status == "running":
         raise HTTPException(status_code=409, detail="Task is already running")
 
-    # Reset to queued
     task.status = "queued"
     task.progress = 0
     task.result = None
     db.commit()
     db.refresh(task)
 
-    # Fire off the background job
-    background_tasks.add_task(run_task, task.id)
+    # Route by task type
+    if task.type == "browser":
+        url = (task.payload or {}).get("url", "")
+        if not url:
+            raise HTTPException(
+                status_code=400,
+                detail="Browser task requires payload.url",
+            )
+        from app.services.task_runner import run_browser_task
+        background_tasks.add_task(run_browser_task, task.id, url)
+    else:
+        from app.services.task_runner import run_task
+        background_tasks.add_task(run_task, task.id)
 
     return task
 
