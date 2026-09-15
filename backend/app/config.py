@@ -40,6 +40,9 @@ class Settings(BaseSettings):
         # Local media
     MEDIA_ROOTS: str = ""
 
+        # Shopping
+    SCRAPERAPI_KEY: str = ""
+
     # TAVILY API key
     TAVILY_API_KEY: str = ""
 
