@@ -43,6 +43,9 @@ class Settings(BaseSettings):
         # Shopping
     SCRAPERAPI_KEY: str = ""
 
+        # Maps
+    GOOGLE_MAPS_API_KEY: str = ""
+
     # TAVILY API key
     TAVILY_API_KEY: str = ""
 
