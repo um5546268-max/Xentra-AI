@@ -3,7 +3,9 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from app.services.memory_decay import apply_decay, auto_deactivate_unused
 
+from pydantic import BaseModel
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
@@ -155,3 +157,63 @@ def delete_all_memories(
     db.query(Memory).filter(Memory.user_id == current_user.id).delete()
     db.commit()
     return None
+@router.post("/decay")
+def trigger_decay(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Manually trigger memory decay for the current user.
+    Normally runs automatically once per day.
+    """
+    adjusted = apply_decay(db, current_user.id)
+    deactivated = auto_deactivate_unused(db, current_user.id)
+    return {
+        "adjusted": adjusted,
+        "deactivated": deactivated,
+    }
+
+
+@router.post("/{memory_id}/touch")
+def touch_memory(
+    memory_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Record that a memory was used. Bumps use_count and last_used_at."""
+    from datetime import datetime, timezone
+
+    m = db.get(Memory, memory_id)
+    if not m or m.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Memory not found")
+
+    m.use_count = (m.use_count or 0) + 1
+    m.last_used_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(m)
+    return m
+class BulkToggleRequest(BaseModel):
+    ids: list[uuid.UUID]
+    active: bool
+
+
+@router.post("/bulk/toggle")
+def bulk_toggle(
+    payload: BulkToggleRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Activate or deactivate multiple memories at once."""
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="No IDs provided")
+
+    updated = db.query(Memory).filter(
+        Memory.id.in_(payload.ids),
+        Memory.user_id == current_user.id,
+    ).update(
+        {Memory.active: payload.active},
+        synchronize_session=False,
+    )
+    db.commit()
+
+    return {"updated": updated, "active": payload.active}

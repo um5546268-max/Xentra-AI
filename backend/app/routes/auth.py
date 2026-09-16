@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.deps import get_current_user
 from app.models.user import User as UserModel
+from datetime import datetime, timezone, timedelta
 
 from app.database import get_db
 from app.models.user import User
@@ -50,3 +51,18 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserRead)
 def me(current_user: UserModel = Depends(get_current_user)):
     return current_user
+        # Run memory decay if due
+    try:
+        from app.services.memory_decay import apply_decay, auto_deactivate_unused
+        now = datetime.now(timezone.utc)
+        last_decay = user.last_decay_at
+        if last_decay and last_decay.tzinfo is None:
+            last_decay = last_decay.replace(tzinfo=timezone.utc)
+
+        if not last_decay or (now - last_decay) > timedelta(hours=24):
+            apply_decay(db, user.id)
+            auto_deactivate_unused(db, user.id)
+            user.last_decay_at = now
+            db.commit()
+    except Exception as e:
+        print(f"[auth] Decay failed (non-fatal): {e}")

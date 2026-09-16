@@ -513,12 +513,20 @@ function MemoryCard({
           <div className="text-sm text-slate-400 leading-relaxed">
             {memory.value}
           </div>
-          <div className="flex items-center gap-3 text-[11px] pt-1">
+                    <div className="flex items-center gap-3 text-[11px] pt-1 flex-wrap">
             <span className={importanceColor(memory.importance)}>
               Importance {memory.importance}/10 · {importanceLabel(memory.importance)}
             </span>
+            {memory.use_count > 0 && (
+              <span className="text-slate-500">
+                Used {memory.use_count} time{memory.use_count !== 1 ? "s" : ""}
+                {memory.last_used_at && (
+                  <> · last {new Date(memory.last_used_at).toLocaleDateString()}</>
+                )}
+              </span>
+            )}
             <span className="text-slate-600">
-              {new Date(memory.updated_at).toLocaleDateString()}
+              Created {new Date(memory.created_at).toLocaleDateString()}
             </span>
           </div>
         </div>

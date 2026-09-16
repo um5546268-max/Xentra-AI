@@ -31,6 +31,8 @@ class MemoryRead(BaseModel):
     source: str
     pinned: bool
     active: bool
+    use_count: int = 0
+    last_used_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

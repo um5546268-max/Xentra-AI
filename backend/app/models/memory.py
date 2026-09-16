@@ -59,3 +59,8 @@ class Memory(Base):
     )
 
     user = relationship("User", back_populates="memories")
+        # Usage tracking
+    use_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

@@ -164,7 +164,7 @@ def save_extracted_memories(
     memories: list[dict],
 ) -> int:
     """
-    Save extracted memories to the DB, deduplicating by normalized key.
+    Save extracted memories to the DB with fuzzy deduplication.
     Returns the number of new/updated memories.
     """
     from app.models.memory import Memory
@@ -174,27 +174,66 @@ def save_extracted_memories(
     def normalize(k: str) -> str:
         return re.sub(r"[^a-z0-9]+", " ", k.lower()).strip()
 
+    def keywords(text: str, min_len: int = 4) -> set[str]:
+        words = re.findall(r"\b[a-z0-9]+\b", text.lower())
+        return {w for w in words if len(w) >= min_len}
+
+    # Load all existing memories for this user
+    existing_all = db.execute(
+        select(Memory)
+        .where(Memory.user_id == user_id)
+        .where(Memory.active == True)  # noqa: E712
+    ).scalars().all()
+
     saved = 0
+
     for m in memories:
         normalized = normalize(m["key"])
+        new_keywords = keywords(f"{m['key']} {m['value']}")
 
-        existing = db.execute(
-            select(Memory)
-            .where(Memory.user_id == user_id)
-            .where(Memory.normalized_key == normalized)
-            .where(Memory.active == True)  # noqa: E712
-        ).scalar_one_or_none()
+        # Find best match: exact key OR high keyword overlap
+        best_match: Memory | None = None
+        best_score = 0.0
 
-        if existing:
-            # Only update if new importance is higher OR value differs meaningfully
-            if m["importance"] > existing.importance or existing.value != m["value"]:
-                existing.value = m["value"]
-                existing.importance = max(existing.importance, m["importance"])
-                # Don't downgrade a manual memory's source
-                if existing.source != "manual":
-                    existing.source = "auto"
+        for existing in existing_all:
+            # Exact normalized key match → perfect
+            if existing.normalized_key == normalized:
+                best_match = existing
+                best_score = 1.0
+                break
+
+            # Fuzzy: keyword overlap
+            existing_keywords = keywords(f"{existing.key} {existing.value}")
+            if not existing_keywords or not new_keywords:
+                continue
+
+            overlap = len(new_keywords & existing_keywords)
+            total = len(new_keywords | existing_keywords)
+            similarity = overlap / total if total > 0 else 0
+
+            # Also check kind match
+            if existing.kind == m["kind"] and similarity > best_score:
+                best_score = similarity
+                best_match = existing
+
+        # Decision thresholds
+        # > 0.65 similarity → update
+        # 0.4 - 0.65 → skip (ambiguous, don't duplicate)
+        # < 0.4 → new memory
+
+        if best_match and best_score >= 0.65:
+            # Update existing
+            if m["importance"] > best_match.importance or best_match.value != m["value"]:
+                best_match.value = m["value"]
+                best_match.importance = max(best_match.importance, m["importance"])
+                if best_match.source != "manual":
+                    best_match.source = "auto"
                 saved += 1
+        elif best_match and best_score >= 0.4:
+            # Too similar but not confident — skip to avoid duplication
+            print(f"[memory] Skipped near-duplicate: '{m['key']}' (similarity {best_score:.2f})")
         else:
+            # New memory
             db.add(Memory(
                 user_id=user_id,
                 kind=m["kind"],

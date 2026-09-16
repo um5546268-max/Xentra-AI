@@ -196,6 +196,24 @@ def chat_stream(
             if memories_used:
                 memory_context = format_memories_for_prompt(memories_used)
                 print(f"[chat_stream] Loaded {len(memories_used)} memories")
+
+                # Record usage
+                try:
+                    from datetime import datetime, timezone
+                    from app.models.memory import Memory as MemoryModel
+                    memory_ids = [uuid.UUID(m["id"]) for m in memories_used]
+                    db.query(MemoryModel).filter(
+                        MemoryModel.id.in_(memory_ids)
+                    ).update(
+                        {
+                            MemoryModel.use_count: MemoryModel.use_count + 1,
+                            MemoryModel.last_used_at: datetime.now(timezone.utc),
+                        },
+                        synchronize_session=False,
+                    )
+                    db.commit()
+                except Exception as e:
+                    print(f"[chat_stream] Failed to record memory usage: {e}")
         except Exception as e:
             print(f"[chat_stream] Memory load failed: {e}")
             memories_used = []
@@ -531,13 +549,31 @@ def research(
         db.commit()
 
     # Load memories
-    memories_used: list[dict] = []
+        memories_used: list[dict] = []
     memory_context: str | None = None
     try:
         user_query = payload.messages[-1].content
         memories_used = load_relevant_memories(db, current_user.id, user_query)
         if memories_used:
             memory_context = format_memories_for_prompt(memories_used)
+
+            # Record usage
+            try:
+                from datetime import datetime, timezone
+                from app.models.memory import Memory as MemoryModel
+                memory_ids = [uuid.UUID(m["id"]) for m in memories_used]
+                db.query(MemoryModel).filter(
+                    MemoryModel.id.in_(memory_ids)
+                ).update(
+                    {
+                        MemoryModel.use_count: MemoryModel.use_count + 1,
+                        MemoryModel.last_used_at: datetime.now(timezone.utc),
+                    },
+                    synchronize_session=False,
+                )
+                db.commit()
+            except Exception as e:
+                print(f"[research] Failed to record memory usage: {e}")
     except Exception as e:
         print(f"[research] Memory load failed: {e}")
 
