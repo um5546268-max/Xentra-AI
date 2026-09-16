@@ -1,12 +1,12 @@
 """
 Text extraction service — pulls plain text from various file types.
-Every extractor returns a dict:
-  {"text": str, "pages": int | None, "meta": dict, "error": str | None}
+Includes OCR via Tesseract for images and scanned PDFs.
 """
 import os
 import csv
 import io
 import re
+import shutil
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -16,38 +16,57 @@ MAX_TEXT_CHARS = 500_000  # ~500KB of text is plenty
 
 
 # ============================================================
+# Tesseract detection
+# ============================================================
+
+def _find_tesseract() -> str | None:
+    """Find tesseract binary. Returns None if not found."""
+    p = shutil.which("tesseract")
+    if p:
+        return p
+    for candidate in [
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        "/usr/bin/tesseract",
+        "/usr/local/bin/tesseract",
+    ]:
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
+# ============================================================
 # Public API
 # ============================================================
 
 def extract_text(file_path: Path, extension: str, mime_type: str | None = None) -> dict:
     """
     Route to the correct extractor based on file extension.
+    Returns {"text": str, "pages": int | None, "meta": dict, "error": str | None}.
     """
     ext = (extension or "").lower()
 
     try:
         if ext == ".pdf":
             return _extract_pdf(file_path)
-        elif ext in (".docx",):
+        elif ext == ".docx":
             return _extract_docx(file_path)
         elif ext in (".xlsx", ".xlsm"):
             return _extract_xlsx(file_path)
         elif ext in (".csv", ".tsv"):
             return _extract_csv(file_path, delimiter="\t" if ext == ".tsv" else ",")
-        elif ext in (".txt", ".md", ".rst", ".log", ".py", ".js", ".ts",
-                     ".jsx", ".tsx", ".html", ".css", ".json", ".yaml",
-                     ".yml", ".xml", ".sql", ".sh", ".java", ".go",
-                     ".rs", ".c", ".cpp", ".h", ".rb", ".php"):
+        elif ext in (
+            ".txt", ".md", ".rst", ".log",
+            ".py", ".js", ".ts", ".jsx", ".tsx",
+            ".html", ".htm", ".css", ".json", ".yaml", ".yml", ".xml",
+            ".sql", ".sh", ".java", ".go", ".rs", ".c", ".cpp", ".h",
+            ".rb", ".php",
+        ):
             return _extract_plain_text(file_path, ext)
         elif ext == ".rtf":
             return _extract_rtf(file_path)
         elif ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"):
-            return {
-                "text": "",
-                "pages": None,
-                "meta": {"type": "image", "note": "OCR not yet implemented"},
-                "error": None,
-            }
+            return _extract_image_ocr(file_path)
         else:
             return {
                 "text": "",
@@ -67,7 +86,7 @@ def extract_text(file_path: Path, extension: str, mime_type: str | None = None) 
 
 
 # ============================================================
-# Extractors
+# Helpers
 # ============================================================
 
 def _truncate(text: str) -> str:
@@ -75,6 +94,19 @@ def _truncate(text: str) -> str:
         return text[:MAX_TEXT_CHARS] + "\n\n[TRUNCATED]"
     return text
 
+
+def _detect_encoding(raw: bytes) -> str:
+    try:
+        import chardet
+        enc = chardet.detect(raw[:4096]).get("encoding") or "utf-8"
+        return enc
+    except Exception:
+        return "utf-8"
+
+
+# ============================================================
+# Extractors
+# ============================================================
 
 def _extract_pdf(path: Path) -> dict:
     from pypdf import PdfReader
@@ -89,6 +121,17 @@ def _extract_pdf(path: Path) -> dict:
         pages_text.append(text)
 
     full = "\n\n--- PAGE BREAK ---\n\n".join(pages_text)
+
+    # Detect scanned PDF: very little text relative to page count
+    chars_per_page = len(full.strip()) / max(len(reader.pages), 1)
+
+    if chars_per_page < 50:
+        print(f"[extract] PDF looks scanned ({chars_per_page:.1f} chars/page). Running OCR…")
+        ocr_result = _ocr_pdf(path)
+        if ocr_result["error"] is None and ocr_result["text"]:
+            return ocr_result
+        print(f"[extract] OCR failed or empty: {ocr_result['error']}")
+
     full = _truncate(full)
 
     return {
@@ -111,7 +154,6 @@ def _extract_docx(path: Path) -> dict:
     paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
     text = "\n\n".join(paragraphs)
 
-    # Also extract tables
     tables_text = []
     for table in doc.tables:
         rows = []
@@ -162,25 +204,19 @@ def _extract_xlsx(path: Path) -> dict:
     return {
         "text": text,
         "pages": len(wb.sheetnames),
-        "meta": {
-            "type": "xlsx",
-            "sheets": wb.sheetnames,
-        },
+        "meta": {"type": "xlsx", "sheets": wb.sheetnames},
         "error": None,
     }
 
 
 def _extract_csv(path: Path, delimiter: str = ",") -> dict:
-    import chardet
     raw = path.read_bytes()
-    enc = chardet.detect(raw[:4096]).get("encoding") or "utf-8"
-
+    enc = _detect_encoding(raw)
     try:
         text = raw.decode(enc, errors="replace")
     except Exception:
         text = raw.decode("utf-8", errors="replace")
 
-    # Pretty-print as table for the LLM
     reader = csv.reader(io.StringIO(text), delimiter=delimiter)
     rows = []
     for i, row in enumerate(reader):
@@ -192,7 +228,6 @@ def _extract_csv(path: Path, delimiter: str = ",") -> dict:
     if not rows:
         return {"text": "", "pages": None, "meta": {"type": "csv"}, "error": None}
 
-    # Format as Markdown-like table
     lines = []
     header = rows[0]
     lines.append(" | ".join(header))
@@ -205,32 +240,24 @@ def _extract_csv(path: Path, delimiter: str = ",") -> dict:
     return {
         "text": text,
         "pages": None,
-        "meta": {
-            "type": "csv",
-            "columns": len(header),
-            "rows": len(rows),
-        },
+        "meta": {"type": "csv", "columns": len(header), "rows": len(rows)},
         "error": None,
     }
 
 
 def _extract_plain_text(path: Path, ext: str) -> dict:
-    import chardet
     raw = path.read_bytes()
-    enc = chardet.detect(raw[:4096]).get("encoding") or "utf-8"
-
+    enc = _detect_encoding(raw)
     try:
         text = raw.decode(enc, errors="replace")
     except Exception:
         text = raw.decode("utf-8", errors="replace")
 
-    # HTML — strip tags
     if ext in (".html", ".htm", ".xml"):
         try:
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(text, "html.parser")
             text = soup.get_text(separator="\n")
-            # Collapse blank lines
             text = re.sub(r"\n{3,}", "\n\n", text)
         except Exception:
             pass
@@ -250,9 +277,7 @@ def _extract_rtf(path: Path) -> dict:
         from striprtf.striprtf import rtf_to_text
     except ImportError:
         return {
-            "text": "",
-            "pages": None,
-            "meta": {"type": "rtf"},
+            "text": "", "pages": None, "meta": {"type": "rtf"},
             "error": "striprtf library not installed",
         }
 
@@ -266,3 +291,94 @@ def _extract_rtf(path: Path) -> dict:
         "meta": {"type": "rtf"},
         "error": None,
     }
+
+
+# ============================================================
+# OCR extractors
+# ============================================================
+
+def _extract_image_ocr(path: Path) -> dict:
+    """Run OCR on an image file."""
+    tesseract = _find_tesseract()
+    if not tesseract:
+        return {
+            "text": "", "pages": None, "meta": {"type": "image"},
+            "error": "Tesseract not installed. Install from https://github.com/UB-Mannheim/tesseract/wiki",
+        }
+
+    try:
+        import pytesseract
+        from PIL import Image
+
+        pytesseract.pytesseract.tesseract_cmd = tesseract
+
+        img = Image.open(path)
+        width, height = img.size
+
+        text = pytesseract.image_to_string(img, lang="eng")
+        text = text.strip()
+        text = _truncate(text)
+
+        return {
+            "text": text,
+            "pages": 1,
+            "meta": {
+                "type": "image",
+                "method": "tesseract",
+                "width": width,
+                "height": height,
+                "chars": len(text),
+            },
+            "error": None if text else "No text detected in image",
+        }
+    except Exception as e:
+        return {
+            "text": "", "pages": None, "meta": {"type": "image"},
+            "error": f"OCR failed: {str(e)[:200]}",
+        }
+
+
+def _ocr_pdf(path: Path) -> dict:
+    """OCR a scanned PDF by converting pages to images."""
+    tesseract = _find_tesseract()
+    if not tesseract:
+        return {
+            "text": "", "pages": None, "meta": {"type": "pdf", "method": "ocr"},
+            "error": "Tesseract not installed",
+        }
+
+    try:
+        import pytesseract
+        from pdf2image import convert_from_path
+
+        pytesseract.pytesseract.tesseract_cmd = tesseract
+
+        images = convert_from_path(str(path), dpi=150, first_page=1, last_page=20)
+
+        pages_text = []
+        for i, img in enumerate(images):
+            try:
+                page_text = pytesseract.image_to_string(img, lang="eng")
+                pages_text.append(f"=== Page {i + 1} ===\n{page_text.strip()}")
+            except Exception as e:
+                pages_text.append(f"=== Page {i + 1} ===\n[OCR error: {e}]")
+
+        full = "\n\n".join(pages_text)
+        full = _truncate(full)
+
+        return {
+            "text": full,
+            "pages": len(images),
+            "meta": {"type": "pdf", "method": "ocr", "pages": len(images)},
+            "error": None,
+        }
+    except ImportError as e:
+        return {
+            "text": "", "pages": None, "meta": {"type": "pdf", "method": "ocr"},
+            "error": f"Missing library: {e}. Also may need Poppler installed.",
+        }
+    except Exception as e:
+        return {
+            "text": "", "pages": None, "meta": {"type": "pdf", "method": "ocr"},
+            "error": f"PDF OCR failed: {str(e)[:200]}",
+        }
