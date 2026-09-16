@@ -7,6 +7,8 @@ from sqlalchemy import select
 from app.models.file import UserFile
 from app.models.chunk import FileChunk
 from app.services.chunking import find_relevant_chunks
+from fastapi import BackgroundTasks
+from app.services.memory_extractor import extract_memories, save_extracted_memories
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -93,6 +95,7 @@ def chat(
 
 @router.post("/stream")
 def chat_stream(
+    background_tasks: BackgroundTasks,
     payload: ChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -410,16 +413,17 @@ def chat_stream(
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
 
-        # Save assistant message
+                # Save assistant message
+        final_text_for_extraction = "".join(full)
+
         if conversation_id is not None:
             from app.database import SessionLocal
             bg_db = SessionLocal()
             try:
-                final_text = "".join(full)
                 bg_db.add(Message(
                     conversation_id=conversation_id,
                     role="assistant",
-                    content=final_text,
+                    content=final_text_for_extraction,
                 ))
                 if should_autotitle:
                     first_user = next(
@@ -433,6 +437,20 @@ def chat_stream(
             finally:
                 bg_db.close()
 
+        # Trigger memory extraction in background
+        try:
+            user_msg = payload.messages[-1].content if payload.messages else ""
+            if user_msg and final_text_for_extraction:
+                background_tasks.add_task(
+                    _extract_and_save_memories,
+                    str(current_user.id),
+                    str(conversation_id) if conversation_id else None,
+                    user_msg,
+                    final_text_for_extraction,
+                )
+        except Exception as e:
+            print(f"[chat_stream] Failed to schedule memory extraction: {e}")
+
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -444,6 +462,7 @@ def chat_stream(
 
 @router.post("/research")
 def research(
+    background_tasks: BackgroundTasks,
     payload: ChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -609,3 +628,34 @@ def regenerate(
     db.commit()
 
     return ChatResponse(**result)
+def _extract_and_save_memories(
+    user_id: str,
+    conversation_id: str | None,
+    user_message: str,
+    assistant_message: str,
+):
+    """
+    Background task: extract memories from an exchange and save them.
+    Uses its own DB session so it can run after the request completes.
+    """
+    from app.database import SessionLocal
+    import uuid as _uuid
+
+    db = SessionLocal()
+    try:
+        memories = extract_memories(user_message, assistant_message)
+        if not memories:
+            return
+
+        count = save_extracted_memories(
+            db,
+            _uuid.UUID(user_id),
+            _uuid.UUID(conversation_id) if conversation_id else None,
+            memories,
+        )
+        if count > 0:
+            print(f"[memory] Auto-saved {count} memory(ies) for user {user_id[:8]}")
+    except Exception as e:
+        print(f"[memory] Background extraction failed: {e}")
+    finally:
+        db.close()
