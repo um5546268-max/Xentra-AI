@@ -72,3 +72,19 @@ class GitCommitRequest(BaseModel):
 class CodeAssistantRequest(BaseModel):
     path: str = Field(min_length=1, max_length=500)
     instruction: str = Field(min_length=2, max_length=2000)
+
+
+class RunCodeRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    args: list[str] = Field(default_factory=list)
+    command: str = Field(default="python", pattern="^(python|pytest|unittest)$")
+
+
+class RunCodeResponse(BaseModel):
+    command: str
+    exit_code: int
+    stdout: str
+    stderr: str
+    success: bool
+    timed_out: bool
+    duration_ms: int | None = None

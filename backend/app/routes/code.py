@@ -25,6 +25,15 @@ from app.services.code_agent import (
     git_log,
     git_commit,
 )
+from app.schemas.code import (
+    # ...existing...
+    RunCodeRequest,
+    RunCodeResponse,
+)
+from app.services.code_agent import (
+    # ...existing...
+    run_python,
+)
 from app.services.code_assistant import apply_instruction
 from app.deps import get_current_user
 from app.models.user import User
@@ -136,3 +145,10 @@ def post_assist(
 ):
     """AI applies an instruction to a file — returns new content (does NOT write)."""
     return apply_instruction(payload.path, payload.instruction)
+@router.post("/run", response_model=RunCodeResponse)
+def post_run(
+    payload: RunCodeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Run a Python file inside the workspace (sandboxed, timeout-limited)."""
+    return run_python(payload.path, payload.args, payload.command)

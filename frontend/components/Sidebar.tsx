@@ -20,6 +20,7 @@ import {
   Link2,
   Music,
   ShoppingBag,
+  Code,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -148,6 +149,14 @@ export default function Sidebar() {
         >
           <ShoppingBag className="w-4 h-4" />
           Shopping
+        </button>
+
+                <button
+          onClick={() => router.push("/app/code")}
+          className="w-full flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
+        >
+          <Code className="w-4 h-4" />
+          Code workspace
         </button>
 
         <div className="relative">

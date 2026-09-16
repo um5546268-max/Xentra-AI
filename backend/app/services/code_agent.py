@@ -485,3 +485,107 @@ def git_commit(message: str) -> dict:
         "hash_short": commit_hash[:7] if commit_hash else None,
         "message": message,
     }
+# ============================================================
+# Safe test runner
+# ============================================================
+
+# Only these commands are allowed to execute
+ALLOWED_COMMANDS = {
+    "python": ["python"],
+    "python3": ["python"],
+    "pytest": ["python", "-m", "pytest"],
+    "unittest": ["python", "-m", "unittest"],
+}
+
+
+def run_python(
+    relative_path: str,
+    args: list[str] | None = None,
+    command: str = "python",
+) -> dict:
+    """
+    Run a Python file inside the workspace.
+    Strict limits: whitelisted command, whitelisted file, timeout, workspace-only cwd.
+    """
+    # Validate command
+    if command not in ALLOWED_COMMANDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Command '{command}' not allowed. Allowed: {list(ALLOWED_COMMANDS.keys())}",
+        )
+
+    # Validate the path
+    target = _safe_path(relative_path)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    if not target.is_file():
+        raise HTTPException(status_code=400, detail="Path is not a file")
+    if target.suffix.lower() != ".py":
+        raise HTTPException(
+            status_code=400,
+            detail="Only .py files can be executed",
+        )
+
+    # Validate args — reject anything suspicious
+    safe_args = []
+    if args:
+        if len(args) > 10:
+            raise HTTPException(status_code=400, detail="Too many arguments")
+        for a in args:
+            if any(c in a for c in [";", "&", "|", "`", "$", "<", ">", "\n"]):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsafe character in arg: {a[:30]}",
+                )
+            if len(a) > 200:
+                raise HTTPException(status_code=400, detail="Arg too long")
+            safe_args.append(a)
+
+    # Build the command
+    root = _workspace_root()
+    if command == "python":
+        cmd = ["python", str(target)] + safe_args
+    elif command == "pytest":
+        cmd = ["python", "-m", "pytest", str(target)] + safe_args
+    elif command == "unittest":
+        cmd = ["python", "-m", "unittest", str(target)] + safe_args
+    else:
+        cmd = ALLOWED_COMMANDS[command] + [str(target)] + safe_args
+
+    timeout = settings.CODE_COMMAND_TIMEOUT
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",
+        )
+        return {
+            "command": " ".join(cmd),
+            "exit_code": result.returncode,
+            "stdout": (result.stdout or "")[:10000],
+            "stderr": (result.stderr or "")[:5000],
+            "success": result.returncode == 0,
+            "timed_out": False,
+            "duration_ms": None,
+        }
+    except subprocess.TimeoutExpired as e:
+        return {
+            "command": " ".join(cmd),
+            "exit_code": -1,
+            "stdout": (e.stdout or b"").decode("utf-8", errors="replace")[:5000] if isinstance(e.stdout, bytes) else (e.stdout or "")[:5000],
+            "stderr": f"Timed out after {timeout} seconds",
+            "success": False,
+            "timed_out": True,
+        }
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=500,
+            detail="Python is not available on the server",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Execution failed: {e}")
