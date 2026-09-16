@@ -21,6 +21,7 @@ import {
   Music,
   ShoppingBag,
   Code,
+  FolderOpen,
   Image as ImageIcon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -166,6 +167,14 @@ export default function Sidebar() {
         >
           <ImageIcon className="w-4 h-4" />
           Image generator
+        </button>
+
+                <button
+          onClick={() => router.push("/app/files")}
+          className="w-full flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
+        >
+          <FolderOpen className="w-4 h-4" />
+          Files
         </button>
 
         <div className="relative">
