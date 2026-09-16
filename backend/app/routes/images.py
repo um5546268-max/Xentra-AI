@@ -40,6 +40,15 @@ def generate(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+        # Download the image locally so it persists
+    from app.services.images import download_and_store_image
+    try:
+        local_url = download_and_store_image(
+            result["image_url"], str(current_user.id)
+        )
+    except HTTPException:
+        # If download fails, fall back to the remote URL
+        local_url = result["image_url"]
 
     image = GeneratedImage(
         user_id=current_user.id,
@@ -51,7 +60,7 @@ def generate(
         width=result["width"],
         height=result["height"],
         seed=result["seed"],
-        image_url=result["image_url"],
+        image_url=local_url,
     )
     db.add(image)
     db.commit()

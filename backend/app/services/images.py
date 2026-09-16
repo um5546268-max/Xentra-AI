@@ -2,6 +2,14 @@
 Image generation service — currently uses Pollinations.ai (free, no key).
 Designed so we can swap providers later without touching routes/frontend.
 """
+
+import httpx
+import uuid
+import os
+from pathlib import Path
+from fastapi import HTTPException
+
+from app.config import settings
 import re
 import random
 from urllib.parse import quote
@@ -98,3 +106,29 @@ def extract_image_intent(message: str) -> dict | None:
         return None
 
     return {"prompt": prompt}
+def download_and_store_image(image_url: str, user_id: str) -> str:
+    """
+    Download the image from Pollinations (or any provider) and save it locally.
+    Returns the local URL path.
+    """
+    # Create images dir
+    base = Path(settings.UPLOAD_DIR).expanduser().resolve() / "images" / str(user_id)
+    base.mkdir(parents=True, exist_ok=True)
+
+    filename = f"{uuid.uuid4().hex}.png"
+    dest = base / filename
+
+    try:
+        with httpx.stream("GET", image_url, timeout=60, follow_redirects=True) as r:
+            r.raise_for_status()
+            with dest.open("wb") as f:
+                for chunk in r.iter_bytes(chunk_size=8192):
+                    f.write(chunk)
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not download image: {e}",
+        )
+
+    # Return a path the frontend can fetch
+    return f"/static/images/{user_id}/{filename}"

@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     CODE_MAX_FILE_SIZE: int = 1_048_576
     CODE_COMMAND_TIMEOUT: int = 30
 
+    UPLOAD_DIR: str = "C:/Users/um554/Xentra/backend/uploads"
+    MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024
+
     # TAVILY API key
     TAVILY_API_KEY: str = ""
 

@@ -1,8 +1,13 @@
-from app.models import User, Conversation, Message, Task  # noqa: F401
+from app.models import User, Conversation, Message, Task, Integration, UserFile, GeneratedImage  # noqa: F401
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
 from app.config import settings
+
+# Routers
 from app.routes import auth as auth_routes
 from app.routes import conversations as conversation_routes
 from app.routes import chat as chat_routes
@@ -17,14 +22,19 @@ from app.routes import local_media as media_routes
 from app.routes import shopping as shopping_routes
 from app.routes import maps as maps_routes
 from app.routes import code as code_routes
+from app.routes import files as files_routes
 from app.routes import images as image_routes
 
+
+# ==== Create the app ====
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Xentra AI — Your AI Operating Assistant",
     version="0.1.0",
 )
 
+
+# ==== CORS ====
 if settings.CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -34,9 +44,17 @@ if settings.CORS_ORIGINS:
         allow_headers=["*"],
     )
 
+
+# ==== Static files (uploaded images) ====
+_upload_dir = Path(settings.UPLOAD_DIR).expanduser().resolve()
+_upload_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_upload_dir)), name="static")
+
+
+# ==== Routers ====
 app.include_router(auth_routes.router, prefix=settings.API_V1_STR)
 app.include_router(conversation_routes.router, prefix=settings.API_V1_STR)
-app.include_router(chat_routes.router, prefix=settings.API_V1_STR)  # ← AND THIS
+app.include_router(chat_routes.router, prefix=settings.API_V1_STR)
 app.include_router(task_routes.router, prefix=settings.API_V1_STR)
 app.include_router(browser_routes.router, prefix=settings.API_V1_STR)
 app.include_router(integration_routes.router, prefix=settings.API_V1_STR)
@@ -48,7 +66,11 @@ app.include_router(media_routes.router, prefix=settings.API_V1_STR)
 app.include_router(shopping_routes.router, prefix=settings.API_V1_STR)
 app.include_router(maps_routes.router, prefix=settings.API_V1_STR)
 app.include_router(code_routes.router, prefix=settings.API_V1_STR)
+app.include_router(files_routes.router, prefix=settings.API_V1_STR)
 app.include_router(image_routes.router, prefix=settings.API_V1_STR)
+
+
+# ==== Health & root ====
 @app.get("/api/health")
 def health_check():
     return {
