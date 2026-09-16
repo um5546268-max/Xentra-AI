@@ -16,6 +16,7 @@ from app.routes import youtube as youtube_routes
 from app.routes import local_media as media_routes
 from app.routes import shopping as shopping_routes
 from app.routes import maps as maps_routes
+from app.routes import code as code_routes
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -45,6 +46,8 @@ app.include_router(youtube_routes.router, prefix=settings.API_V1_STR)
 app.include_router(media_routes.router, prefix=settings.API_V1_STR)
 app.include_router(shopping_routes.router, prefix=settings.API_V1_STR)
 app.include_router(maps_routes.router, prefix=settings.API_V1_STR)
+app.include_router(code_routes.router, prefix=settings.API_V1_STR)
+
 @app.get("/api/health")
 def health_check():
     return {

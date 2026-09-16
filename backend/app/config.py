@@ -46,6 +46,11 @@ class Settings(BaseSettings):
         # Maps
     GOOGLE_MAPS_API_KEY: str = ""
 
+        # Code agent
+    CODE_WORKSPACE: str = ""
+    CODE_MAX_FILE_SIZE: int = 1_048_576
+    CODE_COMMAND_TIMEOUT: int = 30
+
     # TAVILY API key
     TAVILY_API_KEY: str = ""
 
