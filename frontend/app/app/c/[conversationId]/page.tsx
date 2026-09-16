@@ -17,11 +17,13 @@ import {
 import {
   Message,
   Source,
+  GeneratedImageEvent,
   getMessages,
   streamChat,
   streamResearch,
   regenerateChat,
 } from "@/lib/conversations";
+import { resolveImageUrl } from "@/lib/images";
 import MarkdownMessage from "@/components/MarkdownMessage";
 
 const MODELS = [
@@ -54,11 +56,27 @@ export default function ConversationPage({
   const abortRef = useRef<AbortController | null>(null);
 
   // Load history
-  useEffect(() => {
+    useEffect(() => {
     setLoading(true);
     setError(null);
     getMessages(conversationId)
-      .then(setMessages)
+      .then((raw) => {
+        // Parse embedded image markers from message content
+        const parsed = raw.map((m) => {
+          if (m.role !== "assistant" || !m.content) return m;
+          const match = m.content.match(/<!--IMAGE:(.*?)-->/);
+          if (!match) return m;
+          try {
+            const img = JSON.parse(match[1]);
+            // Strip the marker from the content so it doesn't render as text
+            const cleanContent = m.content.replace(/<!--IMAGE:.*?-->/, "").trim();
+            return { ...m, content: cleanContent, _image: img };
+          } catch {
+            return m;
+          }
+        });
+        setMessages(parsed);
+      })
       .catch(() => setError("Could not load messages"))
       .finally(() => setLoading(false));
   }, [conversationId]);
@@ -120,6 +138,14 @@ export default function ConversationPage({
       );
     };
 
+    const onImage = (image: GeneratedImageEvent) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempAi.id ? { ...m, _image: image } : m
+        )
+      );
+    };
+
     try {
       if (mode === "research") {
         await streamResearch(conversationId, history, onDelta, {
@@ -130,6 +156,7 @@ export default function ConversationPage({
         await streamChat(conversationId, history, onDelta, {
           useWebSearch: mode === "web",
           onSources,
+          onImage,
           signal: controller.signal,
         });
       }
@@ -193,7 +220,9 @@ export default function ConversationPage({
         )
       );
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err.message || "Regenerate failed");
+      setError(
+        err?.response?.data?.detail || err.message || "Regenerate failed"
+      );
       setMessages((prev) => prev.filter((m) => m.id !== placeholder.id));
     } finally {
       setSending(false);
@@ -254,23 +283,35 @@ export default function ConversationPage({
     abortRef.current = controller;
 
     try {
-      await streamChat(conversationId, history, (delta) => {
-        setMessages((prev) =>
-          prev.map((x) =>
-            x.id === tempAi.id ? { ...x, content: x.content + delta } : x
-          )
-        );
-      }, {
-        useWebSearch: mode === "web",
-        onSources: (sources) => {
+      await streamChat(
+        conversationId,
+        history,
+        (delta) => {
           setMessages((prev) =>
             prev.map((x) =>
-              x.id === tempAi.id ? { ...x, _sources: sources } : x
+              x.id === tempAi.id ? { ...x, content: x.content + delta } : x
             )
           );
         },
-        signal: controller.signal,
-      });
+        {
+          useWebSearch: mode === "web",
+          onSources: (sources) => {
+            setMessages((prev) =>
+              prev.map((x) =>
+                x.id === tempAi.id ? { ...x, _sources: sources } : x
+              )
+            );
+          },
+          onImage: (image) => {
+            setMessages((prev) =>
+              prev.map((x) =>
+                x.id === tempAi.id ? { ...x, _image: image } : x
+              )
+            );
+          },
+          signal: controller.signal,
+        }
+      );
       setMessages((prev) =>
         prev.map((x) =>
           x.id === tempAi.id ? { ...x, _streaming: false, _temp: false } : x
@@ -378,12 +419,21 @@ export default function ConversationPage({
                       >
                         {m.role === "user" ? (
                           m.content
-                        ) : m.content ? (
+                        ) : m.content || m._image ? (
                           <>
-                            <MarkdownMessage
-                              content={m.content}
-                              sources={m._sources}
-                            />
+                            {m._image && (
+                              <img
+                                src={resolveImageUrl(m._image.url)}
+                                alt={m._image.prompt}
+                                className="rounded-lg max-w-full mb-2 border border-slate-700"
+                              />
+                            )}
+                            {m.content && (
+                              <MarkdownMessage
+                                content={m.content}
+                                sources={m._sources}
+                              />
+                            )}
                             {m._sources && m._sources.length > 0 && (
                               <Sources
                                 sources={m._sources}

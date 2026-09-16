@@ -1,5 +1,7 @@
 import api from "./api";
 
+// ---------- Types ----------
+
 export type Conversation = {
   id: string;
   title: string;
@@ -21,14 +23,24 @@ export type Source = {
   _freshness_hint?: string;
 };
 
+export type GeneratedImageEvent = {
+  id: string;
+  url: string;
+  prompt: string;
+  width: number;
+  height: number;
+  seed: number | null;
+};
+
 export type Message = {
   id: string;
   role: string;
   content: string;
   created_at: string;
-  _temp?: boolean;      // local-only optimistic message
-  _streaming?: boolean; // currently streaming
-  _sources?: Source[];  // web search citations (Phase 4)
+  _temp?: boolean;
+  _streaming?: boolean;
+  _sources?: Source[];
+  _image?: GeneratedImageEvent;
 };
 
 // ---------- Conversations ----------
@@ -38,7 +50,9 @@ export const getConversations = async (): Promise<Conversation[]> => {
   return res.data;
 };
 
-export const createConversation = async (title?: string): Promise<Conversation> => {
+export const createConversation = async (
+  title?: string
+): Promise<Conversation> => {
   const res = await api.post("/api/conversations", { title: title || null });
   return res.data;
 };
@@ -75,11 +89,13 @@ export const streamChat = async (
   options?: {
     useWebSearch?: boolean;
     onSources?: (sources: Source[]) => void;
+    onImage?: (image: GeneratedImageEvent) => void;
     signal?: AbortSignal;
   }
 ): Promise<void> => {
   const token = localStorage.getItem("xentra_token");
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const API_URL =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   const res = await fetch(`${API_URL}/api/chat/stream`, {
     method: "POST",
@@ -117,12 +133,17 @@ export const streamChat = async (
       try {
         const parsed = JSON.parse(payloadStr);
         if (parsed.delta) onDelta(parsed.delta);
-        if (parsed.sources && options?.onSources) options.onSources(parsed.sources);
+        if (parsed.sources && options?.onSources)
+          options.onSources(parsed.sources);
+        if (parsed.image && options?.onImage) options.onImage(parsed.image);
         if (parsed.error) throw new Error(parsed.error);
       } catch {}
     }
   }
 };
+
+// ---------- Research (streaming) ----------
+
 export const streamResearch = async (
   conversationId: string,
   messages: { role: string; content: string }[],
@@ -133,7 +154,8 @@ export const streamResearch = async (
   }
 ): Promise<void> => {
   const token = localStorage.getItem("xentra_token");
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const API_URL =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   const res = await fetch(`${API_URL}/api/chat/research`, {
     method: "POST",
@@ -170,7 +192,8 @@ export const streamResearch = async (
       try {
         const parsed = JSON.parse(payloadStr);
         if (parsed.delta) onDelta(parsed.delta);
-        if (parsed.sources && options?.onSources) options.onSources(parsed.sources);
+        if (parsed.sources && options?.onSources)
+          options.onSources(parsed.sources);
         if (parsed.error) throw new Error(parsed.error);
       } catch {}
     }

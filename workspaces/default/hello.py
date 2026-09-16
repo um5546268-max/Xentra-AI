@@ -1,8 +1,25 @@
-# Doesn't need args — analyzes files in the same workspace folder
-import os
+# Simple calculator
+def calculate(a, b, op):
+    if op == '+':
+        return a + b
+    elif op == '-':
+        return a - b
+    elif op == '*':
+        return a * b
+    elif op == '/':
+        return a / b if b != 0 else 'Error: Division by zero'
+    else:
+        return 'Error: Unknown operator'
 
-files = os.listdir(".")
-print(f"Found {len(files)} items:")
-for f in files:
-    size = os.path.getsize(f) if os.path.isfile(f) else "dir"
-    print(f"  {f} — {size}")
+def main():
+    try:
+        a = float(input("Enter first number: "))
+        op = input("Enter operator (+, -, *, /): ")
+        b = float(input("Enter second number: "))
+        result = calculate(a, b, op)
+        print(f"Result: {result}")
+    except ValueError:
+        print("Error: Invalid input")
+
+if __name__ == "__main__":
+    main()
