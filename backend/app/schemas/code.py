@@ -36,3 +36,39 @@ class WorkspaceInfo(BaseModel):
     entries: list[dict]
     total: int
     max_reached: bool
+
+
+class DiffPreviewRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    content: str
+
+
+class DiffPreviewResponse(BaseModel):
+    path: str
+    exists: bool
+    additions: int
+    deletions: int
+    lines_changed: int
+    diff: str
+    old_size: int
+    new_size: int
+
+
+class SyntaxCheckRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    content: str
+
+
+class SyntaxCheckResponse(BaseModel):
+    ok: bool
+    error: str | None = None
+    language: str
+
+
+class GitCommitRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+
+
+class CodeAssistantRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    instruction: str = Field(min_length=2, max_length=2000)

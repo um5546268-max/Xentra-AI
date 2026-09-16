@@ -1,5 +1,31 @@
 from fastapi import APIRouter, Depends, Query
 
+from app.schemas.code import (
+    ReadFileResponse,
+    WriteFileRequest,
+    WriteFileResponse,
+    DeleteFileResponse,
+    WorkspaceInfo,
+    DiffPreviewRequest,
+    DiffPreviewResponse,
+    SyntaxCheckRequest,
+    SyntaxCheckResponse,
+    GitCommitRequest,
+    CodeAssistantRequest,
+)
+from app.services.code_agent import (
+    list_tree,
+    read_file,
+    write_file,
+    delete_file,
+    diff_preview,
+    syntax_check,
+    git_status,
+    git_init,
+    git_log,
+    git_commit,
+)
+from app.services.code_assistant import apply_instruction
 from app.deps import get_current_user
 from app.models.user import User
 from app.schemas.code import (
@@ -54,3 +80,59 @@ def delete(
 ):
     """Delete a file (not a directory)."""
     return delete_file(path)
+
+@router.post("/diff", response_model=DiffPreviewResponse)
+def post_diff(
+    payload: DiffPreviewRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Show what would change if we wrote this content."""
+    return diff_preview(payload.path, payload.content)
+
+
+@router.post("/syntax-check", response_model=SyntaxCheckResponse)
+def post_syntax_check(
+    payload: SyntaxCheckRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Check syntax without writing."""
+    return syntax_check(payload.path, payload.content)
+
+
+@router.get("/git/status")
+def get_git_status(current_user: User = Depends(get_current_user)):
+    """Get git status of the workspace."""
+    return git_status()
+
+
+@router.post("/git/init")
+def post_git_init(current_user: User = Depends(get_current_user)):
+    """Initialize git repo if not already."""
+    return git_init()
+
+
+@router.get("/git/log")
+def get_git_log(
+    limit: int = Query(default=10, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+):
+    """Get recent commits."""
+    return git_log(limit)
+
+
+@router.post("/git/commit")
+def post_git_commit(
+    payload: GitCommitRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Commit all staged changes."""
+    return git_commit(payload.message)
+
+
+@router.post("/assist")
+def post_assist(
+    payload: CodeAssistantRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """AI applies an instruction to a file — returns new content (does NOT write)."""
+    return apply_instruction(payload.path, payload.instruction)

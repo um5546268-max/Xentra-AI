@@ -4,6 +4,10 @@ Every path is resolved and checked against the workspace root.
 """
 import os
 import re
+import difflib
+import ast
+import subprocess
+import sys
 from pathlib import Path
 from datetime import datetime
 from fastapi import HTTPException
@@ -253,3 +257,231 @@ def delete_file(relative_path: str) -> dict:
         raise HTTPException(status_code=500, detail=f"Could not delete file: {e}")
 
     return {"path": relative_path, "deleted": True}
+def diff_preview(relative_path: str, new_content: str) -> dict:
+    """
+    Show a unified diff between the current file and proposed new content.
+    Does NOT write anything.
+    """
+    target = _safe_path(relative_path)
+    old_content = ""
+    if target.exists() and target.is_file():
+        try:
+            old_content = target.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            old_content = ""
+
+    old_lines = old_content.splitlines(keepends=True)
+    new_lines = new_content.splitlines(keepends=True)
+
+    diff = list(difflib.unified_diff(
+        old_lines,
+        new_lines,
+        fromfile=f"a/{relative_path}",
+        tofile=f"b/{relative_path}",
+        lineterm="",
+    ))
+
+    additions = sum(1 for line in diff if line.startswith("+") and not line.startswith("+++"))
+    deletions = sum(1 for line in diff if line.startswith("-") and not line.startswith("---"))
+
+    return {
+        "path": relative_path,
+        "exists": target.exists(),
+        "additions": additions,
+        "deletions": deletions,
+        "lines_changed": additions + deletions,
+        "diff": "".join(diff),
+        "old_size": len(old_content),
+        "new_size": len(new_content),
+    }
+
+
+def syntax_check(relative_path: str, content: str) -> dict:
+    """
+    Check syntax for supported languages.
+    Returns {"ok": bool, "error": str | None, "language": str}.
+    """
+    target = _safe_path(relative_path)
+    ext = target.suffix.lower()
+
+    if ext == ".py":
+        try:
+            ast.parse(content)
+            return {"ok": True, "error": None, "language": "python"}
+        except SyntaxError as e:
+            return {
+                "ok": False,
+                "error": f"Line {e.lineno}: {e.msg}",
+                "language": "python",
+            }
+
+    if ext in (".json",):
+        import json as json_lib
+        try:
+            json_lib.loads(content)
+            return {"ok": True, "error": None, "language": "json"}
+        except Exception as e:
+            return {"ok": False, "error": str(e), "language": "json"}
+
+    # No syntax validation for other languages
+    return {"ok": True, "error": None, "language": ext.lstrip(".") or "unknown"}
+
+
+# ============================================================
+# Git operations
+# ============================================================
+
+def _run_git(args: list[str], timeout: int = 15) -> tuple[int, str, str]:
+    """Run a git command inside the workspace. Returns (returncode, stdout, stderr)."""
+    root = _workspace_root()
+
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",
+        )
+        return result.returncode, result.stdout, result.stderr
+    except subprocess.TimeoutExpired:
+        return -1, "", "Git command timed out"
+    except FileNotFoundError:
+        return -2, "", "Git is not installed or not in PATH"
+    except Exception as e:
+        return -3, "", str(e)
+
+
+def git_status() -> dict:
+    """Get git status of the workspace."""
+    root = _workspace_root()
+    is_repo = (root / ".git").exists()
+
+    if not is_repo:
+        return {
+            "is_repo": False,
+            "initialized": False,
+            "branch": None,
+            "files": [],
+        }
+
+    code, stdout, stderr = _run_git(["status", "--porcelain=v1", "--branch"])
+    if code != 0:
+        return {
+            "is_repo": True,
+            "error": stderr[:200],
+            "branch": None,
+            "files": [],
+        }
+
+    branch = None
+    files = []
+    for line in stdout.splitlines():
+        if line.startswith("##"):
+            branch = line.replace("##", "").strip()
+            continue
+        if len(line) >= 3:
+            status = line[:2].strip()
+            path = line[3:].strip()
+            files.append({"status": status, "path": path})
+
+    return {
+        "is_repo": True,
+        "initialized": True,
+        "branch": branch,
+        "files": files,
+        "clean": len(files) == 0,
+    }
+
+
+def git_init() -> dict:
+    """Initialize a git repo in the workspace if not already done."""
+    root = _workspace_root()
+    if (root / ".git").exists():
+        return {"initialized": False, "already": True}
+
+    code, _, stderr = _run_git(["init"])
+    if code != 0:
+        raise HTTPException(status_code=500, detail=f"git init failed: {stderr[:200]}")
+
+    # Set a default author for commits
+    _run_git(["config", "user.email", "xentra@local"])
+    _run_git(["config", "user.name", "Xentra AI"])
+
+    # Create a default .gitignore
+    gitignore = root / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text(
+            "__pycache__/\n*.pyc\n.venv/\nvenv/\nnode_modules/\n.next/\n.env\n",
+            encoding="utf-8",
+        )
+
+    return {"initialized": True, "already": False}
+
+
+def git_log(limit: int = 10) -> dict:
+    """Get recent commit history."""
+    root = _workspace_root()
+    if not (root / ".git").exists():
+        raise HTTPException(status_code=400, detail="Not a git repository")
+
+    code, stdout, stderr = _run_git([
+        "log",
+        f"-{limit}",
+        "--pretty=format:%H|%an|%ad|%s",
+        "--date=iso",
+    ])
+    if code != 0:
+        # No commits yet
+        return {"commits": [], "empty": True}
+
+    commits = []
+    for line in stdout.splitlines():
+        parts = line.split("|", 3)
+        if len(parts) == 4:
+            commits.append({
+                "hash": parts[0],
+                "hash_short": parts[0][:7],
+                "author": parts[1],
+                "date": parts[2],
+                "message": parts[3],
+            })
+    return {"commits": commits, "empty": len(commits) == 0}
+
+
+def git_commit(message: str) -> dict:
+    """Stage all changes and create a commit."""
+    if not message or not message.strip():
+        raise HTTPException(status_code=400, detail="Commit message required")
+
+    root = _workspace_root()
+    if not (root / ".git").exists():
+        raise HTTPException(status_code=400, detail="Not a git repository")
+
+    # Stage all
+    code, _, stderr = _run_git(["add", "-A"])
+    if code != 0:
+        raise HTTPException(status_code=500, detail=f"git add failed: {stderr[:200]}")
+
+    # Check if there's anything to commit
+    code, stdout, _ = _run_git(["status", "--porcelain"])
+    if not stdout.strip():
+        return {"committed": False, "reason": "Nothing to commit"}
+
+    # Commit
+    code, _, stderr = _run_git(["commit", "-m", message])
+    if code != 0:
+        raise HTTPException(status_code=500, detail=f"git commit failed: {stderr[:200]}")
+
+    # Get the commit hash
+    code, stdout, _ = _run_git(["rev-parse", "HEAD"])
+    commit_hash = stdout.strip() if code == 0 else None
+
+    return {
+        "committed": True,
+        "hash": commit_hash,
+        "hash_short": commit_hash[:7] if commit_hash else None,
+        "message": message,
+    }
