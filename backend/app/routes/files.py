@@ -9,6 +9,8 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from app.services.extraction import extract_text
+from app.services.files import save_upload, delete_file_on_disk, get_file_path
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -54,6 +56,30 @@ def upload_file(
     db.add(user_file)
     db.commit()
     db.refresh(user_file)
+        # Trigger extraction
+    try:
+        path = get_file_path(str(current_user.id), user_file.stored_name)
+        if path:
+            user_file.status = "extracting"
+            db.commit()
+
+            result = extract_text(path, user_file.extension or "")
+
+            if result["error"]:
+                user_file.status = "failed"
+                user_file.extracted_meta = {"error": result["error"]}
+            else:
+                user_file.status = "ready"
+                user_file.extracted_text = result["text"]
+                user_file.extracted_meta = result["meta"]
+
+            db.commit()
+            db.refresh(user_file)
+    except Exception as e:
+        user_file.status = "failed"
+        user_file.extracted_meta = {"error": str(e)[:200]}
+        db.commit()
+        db.refresh(user_file)
     return user_file
 
 
