@@ -5,6 +5,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.models.file import UserFile
+from app.models.chunk import FileChunk
+from app.services.chunking import find_relevant_chunks
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -172,7 +174,7 @@ def chat_stream(
         except Exception as e:
             print(f"[chat_stream] Image intent failed: {e}")
             image_result = None
-                # ---- Load attached files ----
+                    # ---- Load attached files + relevant chunks ----
     attached_files: list[dict] = []
     file_context: str | None = None
 
@@ -187,39 +189,85 @@ def chat_stream(
             )
             attached = db.execute(files_stmt).scalars().all()
 
+            user_query = payload.messages[-1].content
+
             for f in attached[:3]:  # cap at 3 files per conversation
-                if f.extracted_text:
-                    attached_files.append({
-                        "id": str(f.id),
-                        "name": f.original_name,
-                        "size": f.size_bytes,
-                        "extension": f.extension,
-                    })
+                attached_files.append({
+                    "id": str(f.id),
+                    "name": f.original_name,
+                    "size": f.size_bytes,
+                    "extension": f.extension,
+                })
 
             if attached_files:
-                # Build file context block for the LLM
                 ctx_lines = [
                     "The user has attached the following files to this conversation.",
-                    "Use the file contents to answer their questions accurately.",
-                    "If the answer isn't in the files, say so.",
+                    "Use the file content to answer accurately. Cite page numbers if present.",
+                    "If the answer isn't in the files, say so clearly.",
                     "",
                 ]
+
+                total_chars_used = 0
+                MAX_CONTEXT_CHARS = 30000  # ~7500 tokens
+
                 for f in attached[:3]:
-                    if not f.extracted_text:
+                    # Load chunks for this file
+                    chunks_stmt = (
+                        select(FileChunk)
+                        .where(FileChunk.file_id == f.id)
+                        .order_by(FileChunk.position.asc())
+                    )
+                    chunk_rows = db.execute(chunks_stmt).scalars().all()
+
+                    if not chunk_rows:
+                        # Fallback: use raw extracted_text (capped)
+                        if f.extracted_text:
+                            snippet = f.extracted_text[:8000]
+                            ctx_lines.append(f"=== FILE: {f.original_name} ===")
+                            ctx_lines.append(snippet)
+                            ctx_lines.append("=== END FILE ===")
+                            ctx_lines.append("")
+                            total_chars_used += len(snippet)
                         continue
-                    # Cap per-file content to keep tokens reasonable
-                    snippet = f.extracted_text[:12000]
+
+                    # Convert to dicts
+                    chunks = [{
+                        "text": c.text,
+                        "position": c.position,
+                        "page_number": c.page_number,
+                    } for c in chunk_rows]
+
+                    # Find relevant chunks for this query
+                    relevant = find_relevant_chunks(chunks, user_query, top_k=5)
+
                     ctx_lines.append(f"=== FILE: {f.original_name} ===")
-                    ctx_lines.append(snippet)
-                    if len(f.extracted_text) > 12000:
-                        ctx_lines.append(
-                            f"\n[...truncated — file is {len(f.extracted_text)} chars total]"
-                        )
+                    ctx_lines.append(
+                        f"(showing {len(relevant)} of {len(chunks)} chunks "
+                        f"most relevant to the question)"
+                    )
+                    ctx_lines.append("")
+
+                    for c in relevant:
+                        page_note = f" [page {c['page_number']}]" if c.get("page_number") else ""
+                        ctx_lines.append(f"--- Chunk {c['position'] + 1}{page_note} ---")
+                        ctx_lines.append(c["text"])
+                        ctx_lines.append("")
+
+                        total_chars_used += len(c["text"])
+                        if total_chars_used >= MAX_CONTEXT_CHARS:
+                            break
+
                     ctx_lines.append("=== END FILE ===")
                     ctx_lines.append("")
 
+                    if total_chars_used >= MAX_CONTEXT_CHARS:
+                        break
+
                 file_context = "\n".join(ctx_lines)
-                print(f"[chat_stream] Injected {len(attached_files)} file(s)")
+                print(
+                    f"[chat_stream] Injected {len(attached_files)} file(s), "
+                    f"{total_chars_used} chars"
+                )
         except Exception as e:
             print(f"[chat_stream] File context load failed: {e}")
             attached_files = []

@@ -9,26 +9,36 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-from app.services.extraction import extract_text
-from app.services.files import save_upload, delete_file_on_disk, get_file_path
-from app.schemas.file import FileRead, FileDetail, FileListResponse, FileAttachRequest
-from app.models.conversation import Conversation
 
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
 from app.models.file import UserFile
-from app.schemas.file import FileRead, FileDetail, FileListResponse
+from app.models.conversation import Conversation
+from app.models.chunk import FileChunk
+from app.schemas.file import (
+    FileRead,
+    FileDetail,
+    FileListResponse,
+    FileAttachRequest,
+)
 from app.services.files import save_upload, delete_file_on_disk, get_file_path
+from app.services.extraction import extract_text
+from app.services.chunking import split_into_chunks
 
 router = APIRouter(prefix="/files", tags=["files"])
 
+
+# ============================================================
+# List / Upload
+# ============================================================
 
 @router.get("", response_model=FileListResponse)
 def list_files(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """List the current user's files."""
     stmt = (
         select(UserFile)
         .where(UserFile.user_id == current_user.id)
@@ -44,6 +54,8 @@ def upload_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Upload a file, extract its text, and chunk it."""
+    # Save file to disk
     meta = save_upload(str(current_user.id), file)
 
     user_file = UserFile(
@@ -58,7 +70,8 @@ def upload_file(
     db.add(user_file)
     db.commit()
     db.refresh(user_file)
-        # Trigger extraction
+
+    # Extract text
     try:
         path = get_file_path(str(current_user.id), user_file.stored_name)
         if path:
@@ -77,13 +90,53 @@ def upload_file(
 
             db.commit()
             db.refresh(user_file)
+
+            # Chunk the extracted text
+            if user_file.status == "ready" and user_file.extracted_text:
+                try:
+                    # Delete existing chunks (in case of re-upload)
+                    db.query(FileChunk).filter(
+                        FileChunk.file_id == user_file.id
+                    ).delete()
+
+                    chunks = split_into_chunks(user_file.extracted_text)
+
+                    for idx, c in enumerate(chunks):
+                        db.add(FileChunk(
+                            file_id=user_file.id,
+                            position=c.get("position", idx),
+                            text=c.get("text", ""),
+                            text_lower=(c.get("text", "") or "").lower(),
+                            page_number=c.get("page_number"),
+                            char_start=c.get("char_start"),
+                            char_end=c.get("char_end"),
+                        ))
+
+                    db.commit()
+                    print(
+                        f"[files] Created {len(chunks)} chunks for "
+                        f"{user_file.original_name}"
+                    )
+
+                    meta = user_file.extracted_meta or {}
+                    meta["chunks"] = len(chunks)
+                    user_file.extracted_meta = meta
+                    db.commit()
+                    db.refresh(user_file)
+                except Exception as e:
+                    print(f"[files] Chunking failed: {e}")
     except Exception as e:
         user_file.status = "failed"
         user_file.extracted_meta = {"error": str(e)[:200]}
         db.commit()
         db.refresh(user_file)
+
     return user_file
 
+
+# ============================================================
+# Get / Download / Delete
+# ============================================================
 
 @router.get("/{file_id}", response_model=FileDetail)
 def get_file(
@@ -91,6 +144,7 @@ def get_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Get file details."""
     f = db.get(UserFile, file_id)
     if not f or f.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="File not found")
@@ -108,6 +162,7 @@ def download_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Download the original file."""
     f = db.get(UserFile, file_id)
     if not f or f.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="File not found")
@@ -129,14 +184,27 @@ def delete_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Delete a file and its chunks."""
     f = db.get(UserFile, file_id)
     if not f or f.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="File not found")
 
+    # Delete chunks first
+    db.query(FileChunk).filter(FileChunk.file_id == f.id).delete()
+
+    # Remove from disk
     delete_file_on_disk(str(current_user.id), f.stored_name)
+
+    # Remove DB record
     db.delete(f)
     db.commit()
     return None
+
+
+# ============================================================
+# Attach / Detach / Preview
+# ============================================================
+
 @router.post("/{file_id}/attach", response_model=FileRead)
 def attach_to_conversation(
     file_id: uuid.UUID,
@@ -145,17 +213,14 @@ def attach_to_conversation(
     current_user: User = Depends(get_current_user),
 ):
     """Attach a file to a conversation so the AI can read it in chat."""
-    # Verify file ownership
     f = db.get(UserFile, file_id)
     if not f or f.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Verify conversation ownership
     convo = db.get(Conversation, payload.conversation_id)
     if not convo or convo.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # Make sure text is ready
     if f.status != "ready" or not f.extracted_text:
         raise HTTPException(
             status_code=400,

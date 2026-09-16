@@ -5,6 +5,7 @@ from app.models.task import Task
 from app.models.integration import Integration
 from app.models.file import UserFile
 from app.models.image import GeneratedImage
+from app.models.chunk import FileChunk
 
 __all__ = [
     "User",
@@ -14,4 +15,5 @@ __all__ = [
     "Integration",
     "UserFile",
     "GeneratedImage",
+    "FileChunk",
 ]
