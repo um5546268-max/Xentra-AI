@@ -552,7 +552,8 @@ def run_python(
     else:
         cmd = ALLOWED_COMMANDS[command] + [str(target)] + safe_args
 
-    timeout = settings.CODE_COMMAND_TIMEOUT
+    # Get timeout BEFORE the try block
+    timeout_seconds: int = settings.CODE_COMMAND_TIMEOUT
 
     try:
         result = subprocess.run(
@@ -560,9 +561,10 @@ def run_python(
             cwd=str(root),
             capture_output=True,
             text=True,
-            timeout=timeout,
+            timeout=timeout_seconds,
             encoding="utf-8",
             errors="replace",
+            stdin=subprocess.DEVNULL,
         )
         return {
             "command": " ".join(cmd),
@@ -572,15 +574,37 @@ def run_python(
             "success": result.returncode == 0,
             "timed_out": False,
             "duration_ms": None,
+            "interactive_hint": None,
         }
     except subprocess.TimeoutExpired as e:
+        # Capture whatever the program printed before timing out
+        captured = ""
+        if e.stdout:
+            captured = (
+                e.stdout
+                if isinstance(e.stdout, str)
+                else e.stdout.decode("utf-8", errors="replace")
+            )[:5000]
+
+        # Detect interactive input
+        hint = None
+        if "input(" in captured.lower() or "enter" in captured.lower():
+            hint = (
+                "This script seems to wait for user input. "
+                "Interactive scripts (using input()) cannot run here. "
+                "Try a script that doesn't require keyboard input, "
+                "or add sample values directly in your code."
+            )
+
         return {
             "command": " ".join(cmd),
             "exit_code": -1,
-            "stdout": (e.stdout or b"").decode("utf-8", errors="replace")[:5000] if isinstance(e.stdout, bytes) else (e.stdout or "")[:5000],
-            "stderr": f"Timed out after {timeout} seconds",
+            "stdout": captured,
+            "stderr": f"Timed out after {timeout_seconds} seconds",
             "success": False,
             "timed_out": True,
+            "duration_ms": None,
+            "interactive_hint": hint,
         }
     except FileNotFoundError:
         raise HTTPException(

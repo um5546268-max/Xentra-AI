@@ -3,5 +3,15 @@ from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.task import Task
 from app.models.integration import Integration
+from app.models.file import UserFile
+from app.models.image import GeneratedImage
 
-__all__ = ["User", "Conversation", "Message", "Task", "Integration"]
+__all__ = [
+    "User",
+    "Conversation",
+    "Message",
+    "Task",
+    "Integration",
+    "UserFile",
+    "GeneratedImage",
+]

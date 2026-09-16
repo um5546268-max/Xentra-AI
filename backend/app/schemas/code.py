@@ -88,3 +88,4 @@ class RunCodeResponse(BaseModel):
     success: bool
     timed_out: bool
     duration_ms: int | None = None
+    interactive_hint: str | None = None

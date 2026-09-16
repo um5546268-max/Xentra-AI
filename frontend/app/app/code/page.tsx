@@ -17,8 +17,6 @@ import {
   GitBranch,
   GitCommit as GitCommitIcon,
   Wand2,
-  Trash2,
-  RotateCcw,
 } from "lucide-react";
 import {
   getTree,
@@ -51,6 +49,7 @@ export default function CodePage() {
   const [diffText, setDiffText] = useState<string | null>(null);
   const [runOutput, setRunOutput] = useState<any>(null);
   const [runLoading, setRunLoading] = useState(false);
+  const [runArgs, setRunArgs] = useState("");
 
   const reload = async () => {
     setLoading(true);
@@ -82,7 +81,9 @@ export default function CodePage() {
       setContent(f.content);
       setOriginalContent(f.content);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err.message || "Could not read file");
+      setError(
+        err?.response?.data?.detail || err.message || "Could not read file"
+      );
     }
   };
 
@@ -140,8 +141,16 @@ export default function CodePage() {
     if (!selectedPath) return;
     setRunLoading(true);
     setRunOutput(null);
+
+    // Parse args — respects quoted strings AND operators without spaces
+    const argList =
+      runArgs
+        .match(/"[^"]*"|'[^']*'|[^\s+\-*/=<>!&|]+|[+\-*/=<>!&|]+/g)
+        ?.map((a) => a.replace(/^["']|["']$/g, ""))
+        .filter(Boolean) || [];
+
     try {
-      const res = await runFile(selectedPath);
+      const res = await runFile(selectedPath, argList);
       setRunOutput(res);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err.message || "Run failed");
@@ -190,7 +199,6 @@ export default function CodePage() {
           </p>
         </div>
 
-        {/* Git status */}
         {git && (
           <div className="flex items-center gap-2">
             {git.is_repo ? (
@@ -272,7 +280,7 @@ export default function CodePage() {
             </div>
           ) : (
             <>
-              {/* File header */}
+              {/* File header with Run / Save + args input */}
               <div className="border-b border-slate-800 px-4 py-2 flex items-center gap-3 text-xs">
                 <FileText className="w-3.5 h-3.5 text-slate-500" />
                 <span className="font-mono text-slate-300">{selectedPath}</span>
@@ -281,7 +289,16 @@ export default function CodePage() {
                     ● unsaved
                   </span>
                 )}
+
                 <div className="ml-auto flex items-center gap-2">
+                  {selectedPath.endsWith(".py") && (
+                    <input
+                      value={runArgs}
+                      onChange={(e) => setRunArgs(e.target.value)}
+                      placeholder="args… e.g. 5 + 3"
+                      className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-mono text-slate-200 w-40 focus:border-violet-500 focus:outline-none"
+                    />
+                  )}
                   <button
                     onClick={handleRun}
                     disabled={runLoading || !selectedPath.endsWith(".py")}
@@ -309,7 +326,7 @@ export default function CodePage() {
                 </div>
               </div>
 
-              {/* Textarea editor */}
+              {/* Editor */}
               <textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
@@ -317,7 +334,7 @@ export default function CodePage() {
                 className="flex-1 bg-slate-950 text-slate-200 font-mono text-xs p-4 resize-none focus:outline-none overflow-auto"
               />
 
-              {/* AI Bar */}
+              {/* AI + Run output */}
               <div className="border-t border-slate-800 p-3 space-y-2">
                 <div className="flex gap-2">
                   <div className="relative flex-1">
@@ -347,7 +364,6 @@ export default function CodePage() {
                   </button>
                 </div>
 
-                {/* Proposal */}
                 {proposedContent !== null && (
                   <div className="rounded-lg border border-violet-500/40 bg-violet-500/5 p-3 space-y-2">
                     <div className="flex items-center justify-between">
@@ -378,7 +394,6 @@ export default function CodePage() {
                   </div>
                 )}
 
-                {/* Run output */}
                 {runOutput && (
                   <div className="rounded-lg border border-slate-700 bg-slate-950 p-3 space-y-1">
                     <div className="flex items-center justify-between text-[11px]">
@@ -387,7 +402,9 @@ export default function CodePage() {
                       </span>
                       <span
                         className={
-                          runOutput.success ? "text-emerald-400" : "text-red-400"
+                          runOutput.success
+                            ? "text-emerald-400"
+                            : "text-red-400"
                         }
                       >
                         exit {runOutput.exit_code}
@@ -403,6 +420,11 @@ export default function CodePage() {
                       <pre className="text-[11px] font-mono text-red-300 max-h-32 overflow-auto whitespace-pre-wrap">
                         {runOutput.stderr}
                       </pre>
+                    )}
+                    {runOutput.interactive_hint && (
+                      <div className="rounded border border-yellow-500/40 bg-yellow-500/10 px-2 py-1.5 text-[11px] text-yellow-300">
+                        ⚠️ {runOutput.interactive_hint}
+                      </div>
                     )}
                   </div>
                 )}

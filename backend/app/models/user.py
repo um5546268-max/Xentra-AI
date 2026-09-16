@@ -40,3 +40,13 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    images = relationship(
+        "GeneratedImage",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    files = relationship(
+        "UserFile",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )

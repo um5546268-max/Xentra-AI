@@ -50,6 +50,7 @@ export type RunResponse = {
   stderr: string;
   success: boolean;
   timed_out: boolean;
+  interactive_hint?: string | null;
 };
 
 export type GitStatus = {
