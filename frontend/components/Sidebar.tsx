@@ -22,6 +22,7 @@ import {
   ShoppingBag,
   Code,
   FolderOpen,
+  Brain,
   Image as ImageIcon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -175,6 +176,14 @@ export default function Sidebar() {
         >
           <FolderOpen className="w-4 h-4" />
           Files
+        </button>
+
+                <button
+          onClick={() => router.push("/app/memory")}
+          className="w-full flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
+        >
+          <Brain className="w-4 h-4" />
+          Memory
         </button>
 
         <div className="relative">
