@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.services.extraction import extract_text
 from app.services.files import save_upload, delete_file_on_disk, get_file_path
+from app.schemas.file import FileRead, FileDetail, FileListResponse, FileAttachRequest
+from app.models.conversation import Conversation
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -135,3 +137,77 @@ def delete_file(
     db.delete(f)
     db.commit()
     return None
+@router.post("/{file_id}/attach", response_model=FileRead)
+def attach_to_conversation(
+    file_id: uuid.UUID,
+    payload: FileAttachRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Attach a file to a conversation so the AI can read it in chat."""
+    # Verify file ownership
+    f = db.get(UserFile, file_id)
+    if not f or f.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Verify conversation ownership
+    convo = db.get(Conversation, payload.conversation_id)
+    if not convo or convo.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Make sure text is ready
+    if f.status != "ready" or not f.extracted_text:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File text not ready (status: {f.status})",
+        )
+
+    f.conversation_id = payload.conversation_id
+    db.commit()
+    db.refresh(f)
+    return f
+
+
+@router.delete("/{file_id}/attach", status_code=204)
+def detach_from_conversation(
+    file_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Detach a file from its conversation."""
+    f = db.get(UserFile, file_id)
+    if not f or f.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    f.conversation_id = None
+    db.commit()
+    return None
+
+
+@router.get("/{file_id}/preview")
+def preview_file_text(
+    file_id: uuid.UUID,
+    max_chars: int = 2000,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return a preview of the extracted text."""
+    f = db.get(UserFile, file_id)
+    if not f or f.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if not f.extracted_text:
+        return {
+            "has_text": False,
+            "status": f.status,
+            "text": "",
+            "length": 0,
+        }
+
+    return {
+        "has_text": True,
+        "status": f.status,
+        "text": f.extracted_text[:max_chars],
+        "length": len(f.extracted_text),
+        "meta": f.extracted_meta,
+    }

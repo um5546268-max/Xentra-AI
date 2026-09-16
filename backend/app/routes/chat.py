@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from app.models.file import UserFile
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -171,6 +172,58 @@ def chat_stream(
         except Exception as e:
             print(f"[chat_stream] Image intent failed: {e}")
             image_result = None
+                # ---- Load attached files ----
+    attached_files: list[dict] = []
+    file_context: str | None = None
+
+    if conversation_id is not None:
+        try:
+            files_stmt = (
+                select(UserFile)
+                .where(UserFile.conversation_id == conversation_id)
+                .where(UserFile.user_id == current_user.id)
+                .where(UserFile.status == "ready")
+                .order_by(UserFile.created_at.desc())
+            )
+            attached = db.execute(files_stmt).scalars().all()
+
+            for f in attached[:3]:  # cap at 3 files per conversation
+                if f.extracted_text:
+                    attached_files.append({
+                        "id": str(f.id),
+                        "name": f.original_name,
+                        "size": f.size_bytes,
+                        "extension": f.extension,
+                    })
+
+            if attached_files:
+                # Build file context block for the LLM
+                ctx_lines = [
+                    "The user has attached the following files to this conversation.",
+                    "Use the file contents to answer their questions accurately.",
+                    "If the answer isn't in the files, say so.",
+                    "",
+                ]
+                for f in attached[:3]:
+                    if not f.extracted_text:
+                        continue
+                    # Cap per-file content to keep tokens reasonable
+                    snippet = f.extracted_text[:12000]
+                    ctx_lines.append(f"=== FILE: {f.original_name} ===")
+                    ctx_lines.append(snippet)
+                    if len(f.extracted_text) > 12000:
+                        ctx_lines.append(
+                            f"\n[...truncated — file is {len(f.extracted_text)} chars total]"
+                        )
+                    ctx_lines.append("=== END FILE ===")
+                    ctx_lines.append("")
+
+                file_context = "\n".join(ctx_lines)
+                print(f"[chat_stream] Injected {len(attached_files)} file(s)")
+        except Exception as e:
+            print(f"[chat_stream] File context load failed: {e}")
+            attached_files = []
+            file_context = None
 
     # ---- Web search (only if no image was generated) ----
     sources: list[dict] = []
@@ -280,15 +333,27 @@ def chat_stream(
                 yield f"data: {json.dumps({'sources': sources})}\n\n"
 
             llm_messages = [m.model_dump() for m in payload.messages[:-1]]
+
+            # Combine file_context + search_context + user message
+            combined_parts = []
+            if file_context:
+                combined_parts.append(file_context)
             if search_context:
+                combined_parts.append(search_context)
+
+            if combined_parts:
                 combined = (
-                    search_context
+                    "\n\n".join(combined_parts)
                     + "\n\n=== USER QUESTION ===\n"
                     + payload.messages[-1].content
                 )
                 llm_messages.append({"role": "user", "content": combined})
             else:
                 llm_messages.append(payload.messages[-1].model_dump())
+
+            # Emit attached_files so frontend can show them
+            if attached_files:
+                yield f"data: {json.dumps({'files': attached_files})}\n\n"
 
             for delta in chat_completion_stream(messages=llm_messages):
                 full.append(delta)

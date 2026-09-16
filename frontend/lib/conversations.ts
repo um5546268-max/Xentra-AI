@@ -32,6 +32,13 @@ export type GeneratedImageEvent = {
   seed: number | null;
 };
 
+export type AttachedFile = {
+  id: string;
+  name: string;
+  size: number;
+  extension?: string;
+};
+
 export type Message = {
   id: string;
   role: string;
@@ -41,6 +48,7 @@ export type Message = {
   _streaming?: boolean;
   _sources?: Source[];
   _image?: GeneratedImageEvent;
+  _files?: AttachedFile[];
 };
 
 // ---------- Conversations ----------
@@ -90,6 +98,7 @@ export const streamChat = async (
     useWebSearch?: boolean;
     onSources?: (sources: Source[]) => void;
     onImage?: (image: GeneratedImageEvent) => void;
+    onFiles?: (files: AttachedFile[]) => void;
     signal?: AbortSignal;
   }
 ): Promise<void> => {
@@ -136,6 +145,7 @@ export const streamChat = async (
         if (parsed.sources && options?.onSources)
           options.onSources(parsed.sources);
         if (parsed.image && options?.onImage) options.onImage(parsed.image);
+        if (parsed.files && options?.onFiles) options.onFiles(parsed.files);
         if (parsed.error) throw new Error(parsed.error);
       } catch {}
     }

@@ -18,6 +18,7 @@ import {
   Message,
   Source,
   GeneratedImageEvent,
+  AttachedFile,
   getMessages,
   streamChat,
   streamResearch,
@@ -153,10 +154,17 @@ export default function ConversationPage({
           signal: controller.signal,
         });
       } else {
-        await streamChat(conversationId, history, onDelta, {
+                await streamChat(conversationId, history, onDelta, {
           useWebSearch: mode === "web",
           onSources,
           onImage,
+          onFiles: (files) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === tempAi.id ? { ...m, _files: files } : m
+              )
+            );
+          },
           signal: controller.signal,
         });
       }
@@ -433,6 +441,31 @@ export default function ConversationPage({
                                 content={m.content}
                                 sources={m._sources}
                               />
+                            )}
+                                                        {m._files && m._files.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-3">
+                                {m._files.map((f) => (
+                                  <span
+                                    key={f.id}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-blue-500/40 bg-blue-500/10 px-2.5 py-1.5 text-xs text-blue-300"
+                                  >
+                                    <svg
+                                      className="w-3.5 h-3.5"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                      />
+                                    </svg>
+                                    {f.name}
+                                  </span>
+                                ))}
+                              </div>
                             )}
                             {m._sources && m._sources.length > 0 && (
                               <Sources

@@ -25,3 +25,7 @@ class FileDetail(FileRead):
 class FileListResponse(BaseModel):
     count: int
     files: list[FileRead]
+
+
+class FileAttachRequest(BaseModel):
+    conversation_id: uuid.UUID
