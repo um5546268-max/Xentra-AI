@@ -39,6 +39,15 @@ export type AttachedFile = {
   extension?: string;
 };
 
+export type MemoryUsage = {
+  id: string;
+  kind: string;
+  key: string;
+  value: string;
+  importance: number;
+  pinned: boolean;
+};
+
 export type Message = {
   id: string;
   role: string;
@@ -49,6 +58,7 @@ export type Message = {
   _sources?: Source[];
   _image?: GeneratedImageEvent;
   _files?: AttachedFile[];
+  _memories?: MemoryUsage[];
 };
 
 // ---------- Conversations ----------
@@ -99,6 +109,7 @@ export const streamChat = async (
     onSources?: (sources: Source[]) => void;
     onImage?: (image: GeneratedImageEvent) => void;
     onFiles?: (files: AttachedFile[]) => void;
+    onMemories?: (memories: MemoryUsage[]) => void;
     signal?: AbortSignal;
   }
 ): Promise<void> => {
@@ -146,6 +157,8 @@ export const streamChat = async (
           options.onSources(parsed.sources);
         if (parsed.image && options?.onImage) options.onImage(parsed.image);
         if (parsed.files && options?.onFiles) options.onFiles(parsed.files);
+        if (parsed.memories && options?.onMemories)
+          options.onMemories(parsed.memories);
         if (parsed.error) throw new Error(parsed.error);
       } catch {}
     }
@@ -160,6 +173,7 @@ export const streamResearch = async (
   onDelta: (text: string) => void,
   options?: {
     onSources?: (sources: Source[]) => void;
+    onMemories?: (memories: MemoryUsage[]) => void;
     signal?: AbortSignal;
   }
 ): Promise<void> => {
@@ -204,6 +218,8 @@ export const streamResearch = async (
         if (parsed.delta) onDelta(parsed.delta);
         if (parsed.sources && options?.onSources)
           options.onSources(parsed.sources);
+        if (parsed.memories && options?.onMemories)
+          options.onMemories(parsed.memories);
         if (parsed.error) throw new Error(parsed.error);
       } catch {}
     }

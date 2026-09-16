@@ -13,12 +13,15 @@ import {
   BookOpen,
   MessageSquare,
   X,
+  Brain,
+  FileText,
 } from "lucide-react";
 import {
   Message,
   Source,
   GeneratedImageEvent,
   AttachedFile,
+  MemoryUsage,
   getMessages,
   streamChat,
   streamResearch,
@@ -57,20 +60,20 @@ export default function ConversationPage({
   const abortRef = useRef<AbortController | null>(null);
 
   // Load history
-    useEffect(() => {
+  useEffect(() => {
     setLoading(true);
     setError(null);
     getMessages(conversationId)
       .then((raw) => {
-        // Parse embedded image markers from message content
         const parsed = raw.map((m) => {
           if (m.role !== "assistant" || !m.content) return m;
           const match = m.content.match(/<!--IMAGE:(.*?)-->/);
           if (!match) return m;
           try {
             const img = JSON.parse(match[1]);
-            // Strip the marker from the content so it doesn't render as text
-            const cleanContent = m.content.replace(/<!--IMAGE:.*?-->/, "").trim();
+            const cleanContent = m.content
+              .replace(/<!--IMAGE:.*?-->/, "")
+              .trim();
             return { ...m, content: cleanContent, _image: img };
           } catch {
             return m;
@@ -141,8 +144,20 @@ export default function ConversationPage({
 
     const onImage = (image: GeneratedImageEvent) => {
       setMessages((prev) =>
+        prev.map((m) => (m.id === tempAi.id ? { ...m, _image: image } : m))
+      );
+    };
+
+    const onFiles = (files: AttachedFile[]) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempAi.id ? { ...m, _files: files } : m))
+      );
+    };
+
+    const onMemories = (memories: MemoryUsage[]) => {
+      setMessages((prev) =>
         prev.map((m) =>
-          m.id === tempAi.id ? { ...m, _image: image } : m
+          m.id === tempAi.id ? { ...m, _memories: memories } : m
         )
       );
     };
@@ -151,20 +166,16 @@ export default function ConversationPage({
       if (mode === "research") {
         await streamResearch(conversationId, history, onDelta, {
           onSources,
+          onMemories,
           signal: controller.signal,
         });
       } else {
-                await streamChat(conversationId, history, onDelta, {
+        await streamChat(conversationId, history, onDelta, {
           useWebSearch: mode === "web",
           onSources,
           onImage,
-          onFiles: (files) => {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === tempAi.id ? { ...m, _files: files } : m
-              )
-            );
-          },
+          onFiles,
+          onMemories,
           signal: controller.signal,
         });
       }
@@ -317,6 +328,20 @@ export default function ConversationPage({
               )
             );
           },
+          onFiles: (files) => {
+            setMessages((prev) =>
+              prev.map((x) =>
+                x.id === tempAi.id ? { ...x, _files: files } : x
+              )
+            );
+          },
+          onMemories: (memories) => {
+            setMessages((prev) =>
+              prev.map((x) =>
+                x.id === tempAi.id ? { ...x, _memories: memories } : x
+              )
+            );
+          },
           signal: controller.signal,
         }
       );
@@ -442,31 +467,50 @@ export default function ConversationPage({
                                 sources={m._sources}
                               />
                             )}
-                                                        {m._files && m._files.length > 0 && (
+
+                            {/* Memory chips */}
+                            {m._memories && m._memories.length > 0 && (
+                              <div className="mt-3 rounded-lg border border-purple-500/30 bg-purple-500/5 p-2 space-y-1">
+                                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-purple-400 font-medium">
+                                  <Brain className="w-3 h-3" />
+                                  Using {m._memories.length} memory
+                                  {m._memories.length !== 1 ? "ies" : ""}
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {m._memories.slice(0, 5).map((mem) => (
+                                    <span
+                                      key={mem.id}
+                                      title={`${mem.key}: ${mem.value}`}
+                                      className="inline-flex items-center gap-1 rounded border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[10px] text-purple-300 truncate max-w-xs"
+                                    >
+                                      {mem.key}
+                                    </span>
+                                  ))}
+                                  {m._memories.length > 5 && (
+                                    <span className="text-[10px] text-purple-400">
+                                      +{m._memories.length - 5} more
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* File chips */}
+                            {m._files && m._files.length > 0 && (
                               <div className="flex flex-wrap gap-2 mt-3">
                                 {m._files.map((f) => (
                                   <span
                                     key={f.id}
                                     className="inline-flex items-center gap-1.5 rounded-lg border border-blue-500/40 bg-blue-500/10 px-2.5 py-1.5 text-xs text-blue-300"
                                   >
-                                    <svg
-                                      className="w-3.5 h-3.5"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                                      />
-                                    </svg>
+                                    <FileText className="w-3.5 h-3.5" />
                                     {f.name}
                                   </span>
                                 ))}
                               </div>
                             )}
+
+                            {/* Sources */}
                             {m._sources && m._sources.length > 0 && (
                               <Sources
                                 sources={m._sources}

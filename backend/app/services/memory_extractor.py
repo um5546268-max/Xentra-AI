@@ -211,3 +211,112 @@ def save_extracted_memories(
         db.commit()
 
     return saved
+def _tokenize(text: str) -> list[str]:
+    """Extract meaningful words from a query."""
+    import re
+    words = re.findall(r"\b[a-z0-9]+\b", text.lower())
+    stop = {
+        "the", "and", "for", "with", "that", "this", "from", "have",
+        "has", "are", "was", "were", "been", "what", "when", "where",
+        "which", "who", "why", "how", "any", "all", "some", "each",
+        "you", "your", "can", "will", "would", "could", "should",
+    }
+    return [w for w in words if len(w) >= 3 and w not in stop]
+
+
+def load_relevant_memories(
+    db,
+    user_id,
+    query: str | None = None,
+    max_chars: int = 3000,
+) -> list[dict]:
+    """
+    Load memories relevant to a query.
+    Always includes: pinned + importance >= 8
+    Adds keyword-matched ones up to the char budget.
+
+    Returns a list of {kind, key, value, importance, pinned}.
+    """
+    from app.models.memory import Memory
+    from sqlalchemy import select
+
+    stmt = (
+        select(Memory)
+        .where(Memory.user_id == user_id)
+        .where(Memory.active == True)  # noqa: E712
+        .order_by(
+            Memory.pinned.desc(),
+            Memory.importance.desc(),
+            Memory.updated_at.desc(),
+        )
+    )
+    all_memories = db.execute(stmt).scalars().all()
+
+    if not all_memories:
+        return []
+
+    # Always include pinned and high-importance
+    must_include = [
+        m for m in all_memories
+        if m.pinned or m.importance >= 8
+    ]
+
+    # Optional: keyword-matched extras
+    optional = []
+    if query:
+        query_words = _tokenize(query)
+        if query_words:
+            for m in all_memories:
+                if m in must_include:
+                    continue
+                haystack = f"{m.key} {m.value}".lower()
+                if any(w in haystack for w in query_words):
+                    optional.append(m)
+
+    # Combine (dedup)
+    seen_ids = set()
+    combined = []
+    for m in must_include + optional:
+        if m.id in seen_ids:
+            continue
+        seen_ids.add(m.id)
+        combined.append(m)
+
+    # Trim to fit char budget
+    result = []
+    used = 0
+    for m in combined:
+        line = f"[{m.kind}] {m.key}: {m.value}"
+        if used + len(line) > max_chars:
+            break
+        result.append({
+            "id": str(m.id),
+            "kind": m.kind,
+            "key": m.key,
+            "value": m.value,
+            "importance": m.importance,
+            "pinned": m.pinned,
+        })
+        used += len(line) + 1
+
+    return result
+
+
+def format_memories_for_prompt(memories: list[dict]) -> str:
+    """
+    Format a list of memory dicts into a prompt block.
+    """
+    if not memories:
+        return ""
+
+    lines = [
+        "=== WHAT I KNOW ABOUT THE USER ===",
+        "These are long-term facts and preferences about the user.",
+        "Honor them in your response. Do NOT explicitly mention that you're using memories unless asked.",
+        "",
+    ]
+    for m in memories:
+        lines.append(f"- [{m['kind']}] {m['key']}: {m['value']}")
+    lines.append("=== END MEMORY ===")
+
+    return "\n".join(lines)

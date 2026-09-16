@@ -1,14 +1,9 @@
 import uuid
 import json
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-from app.models.file import UserFile
-from app.models.chunk import FileChunk
-from app.services.chunking import find_relevant_chunks
-from fastapi import BackgroundTasks
-from app.services.memory_extractor import extract_memories, save_extracted_memories
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -16,6 +11,8 @@ from app.models.user import User
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.image import GeneratedImage
+from app.models.file import UserFile
+from app.models.chunk import FileChunk
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.ai import chat_completion, chat_completion_stream
 from app.services.search import web_search, extract_pages, enrich_sources
@@ -23,6 +20,13 @@ from app.services.images import (
     extract_image_intent,
     generate_image_url,
     download_and_store_image,
+)
+from app.services.chunking import find_relevant_chunks
+from app.services.memory_extractor import (
+    extract_memories,
+    save_extracted_memories,
+    load_relevant_memories,
+    format_memories_for_prompt,
 )
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -90,7 +94,7 @@ def chat(
 
 
 # ============================================================
-# Streaming chat (web search + image intent)
+# Streaming chat (memory + files + web search + image intent)
 # ============================================================
 
 @router.post("/stream")
@@ -128,7 +132,9 @@ def chat_stream(
             ))
             db.commit()
 
-    # ---- Image intent detection ----
+    # ============================================================
+    # 1. Image intent detection
+    # ============================================================
     image_result: dict | None = None
     if payload.messages[-1].role == "user":
         try:
@@ -141,7 +147,6 @@ def chat_stream(
                     height=1024,
                     model="flux",
                 )
-
                 try:
                     local_url = download_and_store_image(
                         gen["image_url"], str(current_user.id)
@@ -177,11 +182,32 @@ def chat_stream(
         except Exception as e:
             print(f"[chat_stream] Image intent failed: {e}")
             image_result = None
-                    # ---- Load attached files + relevant chunks ----
+
+    # ============================================================
+    # 2. Memory context
+    # ============================================================
+    memories_used: list[dict] = []
+    memory_context: str | None = None
+
+    if not image_result:
+        try:
+            user_query = payload.messages[-1].content
+            memories_used = load_relevant_memories(db, current_user.id, user_query)
+            if memories_used:
+                memory_context = format_memories_for_prompt(memories_used)
+                print(f"[chat_stream] Loaded {len(memories_used)} memories")
+        except Exception as e:
+            print(f"[chat_stream] Memory load failed: {e}")
+            memories_used = []
+            memory_context = None
+
+    # ============================================================
+    # 3. Attached files + chunks
+    # ============================================================
     attached_files: list[dict] = []
     file_context: str | None = None
 
-    if conversation_id is not None:
+    if not image_result and conversation_id is not None:
         try:
             files_stmt = (
                 select(UserFile)
@@ -194,7 +220,7 @@ def chat_stream(
 
             user_query = payload.messages[-1].content
 
-            for f in attached[:3]:  # cap at 3 files per conversation
+            for f in attached[:3]:
                 attached_files.append({
                     "id": str(f.id),
                     "name": f.original_name,
@@ -211,10 +237,9 @@ def chat_stream(
                 ]
 
                 total_chars_used = 0
-                MAX_CONTEXT_CHARS = 30000  # ~7500 tokens
+                MAX_CONTEXT_CHARS = 30000
 
                 for f in attached[:3]:
-                    # Load chunks for this file
                     chunks_stmt = (
                         select(FileChunk)
                         .where(FileChunk.file_id == f.id)
@@ -223,7 +248,6 @@ def chat_stream(
                     chunk_rows = db.execute(chunks_stmt).scalars().all()
 
                     if not chunk_rows:
-                        # Fallback: use raw extracted_text (capped)
                         if f.extracted_text:
                             snippet = f.extracted_text[:8000]
                             ctx_lines.append(f"=== FILE: {f.original_name} ===")
@@ -233,14 +257,12 @@ def chat_stream(
                             total_chars_used += len(snippet)
                         continue
 
-                    # Convert to dicts
                     chunks = [{
                         "text": c.text,
                         "position": c.position,
                         "page_number": c.page_number,
                     } for c in chunk_rows]
 
-                    # Find relevant chunks for this query
                     relevant = find_relevant_chunks(chunks, user_query, top_k=5)
 
                     ctx_lines.append(f"=== FILE: {f.original_name} ===")
@@ -251,7 +273,11 @@ def chat_stream(
                     ctx_lines.append("")
 
                     for c in relevant:
-                        page_note = f" [page {c['page_number']}]" if c.get("page_number") else ""
+                        page_note = (
+                            f" [page {c['page_number']}]"
+                            if c.get("page_number")
+                            else ""
+                        )
                         ctx_lines.append(f"--- Chunk {c['position'] + 1}{page_note} ---")
                         ctx_lines.append(c["text"])
                         ctx_lines.append("")
@@ -276,7 +302,9 @@ def chat_stream(
             attached_files = []
             file_context = None
 
-    # ---- Web search (only if no image was generated) ----
+    # ============================================================
+    # 4. Web search
+    # ============================================================
     sources: list[dict] = []
     search_context: str | None = None
 
@@ -328,13 +356,15 @@ def chat_stream(
             print(f"[chat_stream] Search failed: {e}")
             sources = []
 
+    # ============================================================
+    # Event generator
+    # ============================================================
     def event_generator():
         full: list[str] = []
 
         # ==== IMAGE PATH ====
         if image_result:
             try:
-                # Save the assistant message with the marker embedded
                 if conversation_id is not None:
                     from app.database import SessionLocal
                     bg_db = SessionLocal()
@@ -359,15 +389,16 @@ def chat_stream(
                             if first_user:
                                 convo = bg_db.get(Conversation, conversation_id)
                                 if convo:
-                                    convo.title = first_user.content.strip()[:60] or "New conversation"
+                                    convo.title = (
+                                        first_user.content.strip()[:60]
+                                        or "New conversation"
+                                    )
                         bg_db.commit()
                     finally:
                         bg_db.close()
 
-                # Emit the image event
                 yield f"data: {json.dumps({'image': image_result})}\n\n"
 
-                # Emit text for streaming effect
                 text = f"Here's your image of: {image_result['prompt']}"
                 for chunk in text.split(" "):
                     yield f"data: {json.dumps({'delta': chunk + ' '})}\n\n"
@@ -376,17 +407,24 @@ def chat_stream(
                 return
             except Exception as e:
                 print(f"[chat_stream] Image response failed: {e}")
-                # Fall through to normal text response
+                # Fall through to normal path
 
         # ==== NORMAL PATH ====
         try:
             if sources:
                 yield f"data: {json.dumps({'sources': sources})}\n\n"
 
+            if memories_used:
+                yield f"data: {json.dumps({'memories': memories_used})}\n\n"
+
+            if attached_files:
+                yield f"data: {json.dumps({'files': attached_files})}\n\n"
+
             llm_messages = [m.model_dump() for m in payload.messages[:-1]]
 
-            # Combine file_context + search_context + user message
             combined_parts = []
+            if memory_context:
+                combined_parts.append(memory_context)
             if file_context:
                 combined_parts.append(file_context)
             if search_context:
@@ -402,10 +440,6 @@ def chat_stream(
             else:
                 llm_messages.append(payload.messages[-1].model_dump())
 
-            # Emit attached_files so frontend can show them
-            if attached_files:
-                yield f"data: {json.dumps({'files': attached_files})}\n\n"
-
             for delta in chat_completion_stream(messages=llm_messages):
                 full.append(delta)
                 yield f"data: {json.dumps({'delta': delta})}\n\n"
@@ -413,7 +447,7 @@ def chat_stream(
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
 
-                # Save assistant message
+        # Save assistant message
         final_text_for_extraction = "".join(full)
 
         if conversation_id is not None:
@@ -432,12 +466,15 @@ def chat_stream(
                     if first_user:
                         convo = bg_db.get(Conversation, conversation_id)
                         if convo:
-                            convo.title = first_user.content.strip()[:60] or "New conversation"
+                            convo.title = (
+                                first_user.content.strip()[:60]
+                                or "New conversation"
+                            )
                 bg_db.commit()
             finally:
                 bg_db.close()
 
-        # Trigger memory extraction in background
+        # Schedule memory extraction in background
         try:
             user_msg = payload.messages[-1].content if payload.messages else ""
             if user_msg and final_text_for_extraction:
@@ -493,6 +530,17 @@ def research(
         ))
         db.commit()
 
+    # Load memories
+    memories_used: list[dict] = []
+    memory_context: str | None = None
+    try:
+        user_query = payload.messages[-1].content
+        memories_used = load_relevant_memories(db, current_user.id, user_query)
+        if memories_used:
+            memory_context = format_memories_for_prompt(memories_used)
+    except Exception as e:
+        print(f"[research] Memory load failed: {e}")
+
     query = payload.messages[-1].content
     try:
         sr = web_search(query, max_results=8)
@@ -535,10 +583,20 @@ def research(
             if sources:
                 yield f"data: {json.dumps({'sources': sources})}\n\n"
 
+            if memories_used:
+                yield f"data: {json.dumps({'memories': memories_used})}\n\n"
+
             llm_messages = [m.model_dump() for m in payload.messages[:-1]]
+
+            combined_parts = []
+            if memory_context:
+                combined_parts.append(memory_context)
             if search_context:
+                combined_parts.append(search_context)
+
+            if combined_parts:
                 combined = (
-                    search_context
+                    "\n\n".join(combined_parts)
                     + "\n\n=== USER QUESTION ===\n"
                     + payload.messages[-1].content
                 )
@@ -553,15 +611,16 @@ def research(
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
 
+        final_text_for_extraction = "".join(full)
+
         if conversation_id is not None:
             from app.database import SessionLocal
             bg_db = SessionLocal()
             try:
-                final_text = "".join(full)
                 bg_db.add(Message(
                     conversation_id=conversation_id,
                     role="assistant",
-                    content=final_text,
+                    content=final_text_for_extraction,
                 ))
                 if should_autotitle:
                     first_user = next(
@@ -570,10 +629,27 @@ def research(
                     if first_user:
                         convo = bg_db.get(Conversation, conversation_id)
                         if convo:
-                            convo.title = first_user.content.strip()[:60] or "New conversation"
+                            convo.title = (
+                                first_user.content.strip()[:60]
+                                or "New conversation"
+                            )
                 bg_db.commit()
             finally:
                 bg_db.close()
+
+        # Memory extraction
+        try:
+            user_msg = payload.messages[-1].content if payload.messages else ""
+            if user_msg and final_text_for_extraction:
+                background_tasks.add_task(
+                    _extract_and_save_memories,
+                    str(current_user.id),
+                    str(conversation_id) if conversation_id else None,
+                    user_msg,
+                    final_text_for_extraction,
+                )
+        except Exception as e:
+            print(f"[research] Failed to schedule memory extraction: {e}")
 
         yield "data: [DONE]\n\n"
 
@@ -628,6 +704,12 @@ def regenerate(
     db.commit()
 
     return ChatResponse(**result)
+
+
+# ============================================================
+# Background: memory extraction
+# ============================================================
+
 def _extract_and_save_memories(
     user_id: str,
     conversation_id: str | None,
@@ -636,7 +718,6 @@ def _extract_and_save_memories(
 ):
     """
     Background task: extract memories from an exchange and save them.
-    Uses its own DB session so it can run after the request completes.
     """
     from app.database import SessionLocal
     import uuid as _uuid
@@ -654,7 +735,10 @@ def _extract_and_save_memories(
             memories,
         )
         if count > 0:
-            print(f"[memory] Auto-saved {count} memory(ies) for user {user_id[:8]}")
+            print(
+                f"[memory] Auto-saved {count} memory(ies) "
+                f"for user {user_id[:8]}"
+            )
     except Exception as e:
         print(f"[memory] Background extraction failed: {e}")
     finally:
