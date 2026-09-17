@@ -3,7 +3,7 @@ Permission registry + helpers.
 Central source of truth for all known permissions.
 """
 
-# Format: key → {scope, tier, label, description}
+# Format: key → {scope, tier, label, description, requires_confirmation?}
 PERMISSIONS = {
     # ===== Browser =====
     "browser.search": {
@@ -35,12 +35,14 @@ PERMISSIONS = {
         "tier": "high",
         "label": "Download files",
         "description": "Save files from the web",
+        "requires_confirmation": True,
     },
     "browser.upload": {
         "scope": "browser",
         "tier": "high",
         "label": "Upload files",
         "description": "Send files to websites",
+        "requires_confirmation": True,
     },
 
     # ===== Files =====
@@ -61,6 +63,7 @@ PERMISSIONS = {
         "tier": "high",
         "label": "Delete files",
         "description": "Permanently remove files",
+        "requires_confirmation": True,
     },
 
     # ===== Code =====
@@ -115,6 +118,7 @@ PERMISSIONS = {
         "tier": "high",
         "label": "Make purchases",
         "description": "Complete transactions (always requires confirmation)",
+        "requires_confirmation": True,
     },
 
     # ===== Maps =====
@@ -149,6 +153,7 @@ PERMISSIONS = {
         "tier": "high",
         "label": "Send emails",
         "description": "Send emails on your behalf",
+        "requires_confirmation": True,
     },
 
     # ===== Tasks & Automation =====
@@ -210,6 +215,34 @@ PERMISSIONS = {
         "label": "Disconnect services",
         "description": "Unlink connected services",
     },
+
+    # ===== Images =====
+    "images.generate": {
+        "scope": "images",
+        "tier": "low",
+        "label": "Generate images",
+        "description": "Create images from prompts",
+    },
+    "images.delete": {
+        "scope": "images",
+        "tier": "medium",
+        "label": "Delete images",
+        "description": "Remove generated images",
+    },
+
+    # ===== Voice =====
+    "voice.listen": {
+        "scope": "voice",
+        "tier": "medium",
+        "label": "Listen to voice",
+        "description": "Capture microphone input",
+    },
+    "voice.speak": {
+        "scope": "voice",
+        "tier": "low",
+        "label": "Speak responses",
+        "description": "Play text-to-speech audio",
+    },
 }
 
 
@@ -222,6 +255,7 @@ DEFAULT_STATE = {
 
 
 def get_permission(key: str) -> dict | None:
+    """Return metadata for a permission, or None if unknown."""
     return PERMISSIONS.get(key)
 
 
@@ -239,6 +273,14 @@ def get_default_for(key: str) -> bool:
     if not perm:
         return False
     return DEFAULT_STATE.get(perm["tier"], False)
+
+
+def requires_confirmation(key: str) -> bool:
+    """Check if a permission requires confirmation before executing."""
+    perm = PERMISSIONS.get(key)
+    if not perm:
+        return False
+    return perm.get("requires_confirmation", False)
 
 
 def tier_color(tier: str) -> str:

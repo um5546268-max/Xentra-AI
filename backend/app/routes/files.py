@@ -27,6 +27,8 @@ from app.services.extraction import extract_text
 from app.services.chunking import split_into_chunks
 from app.deps import get_current_user, require_permission
 from app.services.audit import log_quick
+from app.services.permissions import requires_confirmation
+from app.services import pending_actions as pa_service
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -192,25 +194,41 @@ def delete_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("files.delete")),
 ):
-    """Delete a file and its chunks."""
+    """Delete a file. If confirmation is required, creates a pending action instead."""
     f = db.get(UserFile, file_id)
     if not f or f.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Delete chunks first
+    # Check if confirmation required
+    if requires_confirmation("files.delete"):
+        # Check if there's already a pending action for this file
+        if not pa_service.user_has_pending_confirmation(db, current_user.id, "files.delete"):
+            pa = pa_service.create_pending_action(
+                db,
+                user_id=current_user.id,
+                action="files.delete",
+                summary=f"Delete file: {f.original_name}",
+                payload={"file_id": str(f.id), "name": f.original_name},
+            )
+            raise HTTPException(
+                status_code=202,  # Accepted, but not yet executed
+                detail={
+                    "message": "Confirmation required",
+                    "pending_action_id": str(pa.id),
+                    "note": "Approve in /app/pending or via /api/pending-actions/{id}/approve",
+                },
+            )
+
+    # If no confirmation required, execute immediately (existing behavior)
     db.query(FileChunk).filter(FileChunk.file_id == f.id).delete()
-
-    # Remove from disk
     delete_file_on_disk(str(current_user.id), f.stored_name)
-
-    # Remove DB record
     db.delete(f)
     db.commit()
+
     log_quick(
         db, current_user.id,
         action="files.delete",
         summary=f"Deleted {f.original_name}",
-        payload={"name": f.original_name},
     )
     return None
 

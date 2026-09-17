@@ -11,6 +11,7 @@ from app.models.automation import Automation
 from app.models.notification import Notification
 from app.models.permission import Permission
 from app.models.audit_log import AuditLog
+from app.models.pending_action import PendingAction
 
 __all__ = [
     "User",
@@ -25,5 +26,6 @@ __all__ = [
     "Automation",
     "Notification",
     "Permission",
-    "AuditLog"
+    "AuditLog",
+    "PendingAction"
 ]
