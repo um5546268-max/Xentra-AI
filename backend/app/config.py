@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "C:/Users/um554/Xentra/backend/uploads"
     MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024
 
+        # Automation
+    AUTOMATION_SECRET: str = ""
+    AUTOMATION_INTERVAL_MINUTES: int = 5
+
     # TAVILY API key
     TAVILY_API_KEY: str = ""
 

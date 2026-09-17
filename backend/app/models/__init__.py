@@ -7,6 +7,7 @@ from app.models.file import UserFile
 from app.models.image import GeneratedImage
 from app.models.chunk import FileChunk
 from app.models.memory import Memory
+from app.models.automation import Automation
 
 __all__ = [
     "User",
@@ -18,4 +19,5 @@ __all__ = [
     "GeneratedImage",
     "FileChunk",
     "Memory",
+    "Automation",
 ]

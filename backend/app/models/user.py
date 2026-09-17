@@ -55,6 +55,11 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    automations = relationship(
+        "Automation",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     last_decay_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
