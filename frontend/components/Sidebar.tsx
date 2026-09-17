@@ -28,6 +28,8 @@ import {
   ChevronDown,
   ChevronRight,
   Wrench,
+  Shield,
+  ScrollText,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -53,6 +55,12 @@ const TOOLS = [
   { path: "/app/automations", label: "Automations", icon: Clock },
 ];
 
+const SECURITY = [
+  { path: "/app/permissions", label: "Permissions", icon: Shield },
+  { path: "/app/pending", label: "Pending actions", icon: Clock },
+  { path: "/app/audit", label: "Audit log", icon: ScrollText },
+];
+
 export default function Sidebar() {
   const router = useRouter();
   const params = useParams<{ conversationId?: string }>();
@@ -65,6 +73,7 @@ export default function Sidebar() {
   const [loading, setLoading] = useState(true);
   const [showNewTask, setShowNewTask] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [showSecurity, setShowSecurity] = useState(false);
 
   useEffect(() => {
     load();
@@ -193,6 +202,39 @@ export default function Sidebar() {
         )}
       </div>
 
+      {/* Security */}
+      <div className="border-b border-slate-800 shrink-0">
+        <button
+          onClick={() => setShowSecurity(!showSecurity)}
+          className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wider hover:bg-slate-900 transition"
+        >
+          <Shield className="w-3.5 h-3.5" />
+          <span className="flex-1 text-left">Security</span>
+          {showSecurity ? (
+            <ChevronDown className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5" />
+          )}
+        </button>
+
+        {showSecurity && (
+          <div className="px-3 pb-3 space-y-1.5">
+            {SECURITY.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => router.push(item.path)}
+                  className="w-full flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
+                >
+                  <Icon className="w-4 h-4" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
       {/* Tasks */}
       {tasks.length > 0 && (
         <div className="border-b border-slate-800 p-3 space-y-1 shrink-0">
