@@ -29,10 +29,54 @@ def _check_paused_or_cancelled(db: Session, task_id) -> str | None:
     return None
 
 
+def _get_steps_for_type(task_type: str) -> list[tuple[int, str]]:
+    """Return progress steps appropriate for the task type."""
+    if task_type == "research":
+        return [
+            (20, "Searching the web…"),
+            (45, "Reading sources…"),
+            (70, "Analyzing content…"),
+            (90, "Compiling findings…"),
+        ]
+    if task_type == "shopping":
+        return [
+            (20, "Searching stores…"),
+            (45, "Comparing prices…"),
+            (70, "Checking reviews…"),
+            (90, "Preparing recommendations…"),
+        ]
+    if task_type == "browser":
+        return [
+            (30, "Opening page…"),
+            (60, "Reading content…"),
+            (90, "Capturing screenshot…"),
+        ]
+    if task_type == "media":
+        return [
+            (30, "Searching library…"),
+            (60, "Preparing playback…"),
+            (90, "Starting…"),
+        ]
+    if task_type == "code":
+        return [
+            (20, "Analyzing code…"),
+            (45, "Writing…"),
+            (70, "Testing…"),
+            (90, "Finalizing…"),
+        ]
+    # generic
+    return [
+        (20, "Analyzing request…"),
+        (45, "Gathering information…"),
+        (70, "Processing…"),
+        (90, "Finalizing…"),
+    ]
+
+
 def run_task(task_id):
     """
     Generic simulated task runner.
-    Real logic per task type lives in dedicated runners below.
+    Supports pause/resume/cancel between steps.
     """
     db = SessionLocal()
     try:
@@ -45,24 +89,21 @@ def run_task(task_id):
         _update_task(db, task_id, status="running", progress=5)
         time.sleep(0.5)
 
-        steps = [
-            (20, "Analyzing request…"),
-            (45, "Gathering information…"),
-            (70, "Processing…"),
-            (90, "Finalizing…"),
-        ]
+        steps = _get_steps_for_type(task.type or "generic")
 
         for progress, note in steps:
+            # Pause / cancel check before each step
             state = _check_paused_or_cancelled(db, task_id)
             if state == "cancelled":
                 return
             if state == "paused":
+                # Poll until resumed or cancelled
                 while True:
                     time.sleep(0.5)
                     state = _check_paused_or_cancelled(db, task_id)
                     if state == "cancelled":
                         return
-                    if state is None:
+                    if state is None:  # resumed
                         break
 
             _update_task(db, task_id, progress=progress)
@@ -74,7 +115,8 @@ def run_task(task_id):
             status="done",
             progress=100,
             result={
-                "message": "Task completed (simulated).",
+                "message": f"{task.type or 'generic'} task completed.",
+                "note": "Simulated — real logic per type coming in later phases.",
                 "finished_at": datetime.utcnow().isoformat(),
             },
         )
@@ -91,7 +133,7 @@ def run_task(task_id):
 
 def run_browser_task(task_id, url: str):
     """
-    Background browser task: open a URL and store title + text + screenshot in result.
+    Background browser task: open a URL and store title + text + screenshot.
     """
     db = SessionLocal()
     try:

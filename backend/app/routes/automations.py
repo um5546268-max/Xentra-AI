@@ -1,8 +1,12 @@
 import uuid
 from datetime import datetime, timezone
+
+from httpx import request
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from app.models.automation import Automation  # (already imported)
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Header
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -208,15 +212,19 @@ def run_now(
     db.refresh(a)
     return a
 
+from fastapi import Header
+
+
 @router.post("/tick")
 def tick(
     db: Session = Depends(get_db),
+    secret: str = Query(default="", description="Shared secret (query param)"),
+    x_automation_secret: str = Header(default="", alias="X-Automation-Secret"),
 ):
     """
     Called externally by cron (every 5 min).
-    Finds all due automations and returns them.
-    Actual execution handled by Day 67 worker.
-    NOTE: This endpoint is NOT authenticated — it uses a shared secret.
+    Finds due automations and executes them.
+    Auth via ?secret=XXX OR X-Automation-Secret header.
     """
     from app.config import settings
 
@@ -226,7 +234,134 @@ def tick(
             detail="AUTOMATION_SECRET not configured",
         )
 
+    # Accept either query param or header
+    provided = secret or x_automation_secret
+    if provided != settings.AUTOMATION_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid automation secret")
+
     now = datetime.now(timezone.utc)
+
+    # Find due automations
+    stmt = (
+        select(Automation)
+        .where(Automation.enabled == True)  # noqa: E712
+        .where(Automation.next_run_at <= now)
+        .limit(50)
+    )
+    due = db.execute(stmt).scalars().all()
+
+    print(f"[tick] {len(due)} automations due at {now.isoformat()}")
+
+    executed = []
+    failed = []
+
+    for auto in due:
+        try:
+            task_id = _run_automation_task(db, auto)
+            auto.last_run_at = now
+            auto.run_count = (auto.run_count or 0) + 1
+            auto.consecutive_failures = 0
+            auto.last_error = None
+
+            auto.next_run_at = compute_next_run(
+                schedule_type=auto.schedule_type,
+                interval_minutes=auto.interval_minutes,
+                time_of_day=auto.time_of_day,
+                day_of_week=auto.day_of_week,
+                from_time=now,
+            )
+            db.commit()
+
+            executed.append({
+                "id": str(auto.id),
+                "name": auto.name,
+                "task_id": str(task_id),
+                "next_run_at": auto.next_run_at.isoformat() if auto.next_run_at else None,
+            })
+            print(f"[tick] ✓ Ran '{auto.name}' → task {str(task_id)[:8]}")
+
+        except Exception as e:
+            error_msg = str(e)[:300]
+            print(f"[tick] ✗ Failed '{auto.name}': {error_msg}")
+
+            auto.last_error = error_msg
+            auto.consecutive_failures = (auto.consecutive_failures or 0) + 1
+            auto.last_run_at = now
+
+            if auto.consecutive_failures >= 5:
+                auto.enabled = False
+                print(f"[tick] Auto-disabled '{auto.name}' after 5 failures")
+
+            auto.next_run_at = compute_next_run(
+                schedule_type=auto.schedule_type,
+                interval_minutes=auto.interval_minutes,
+                time_of_day=auto.time_of_day,
+                day_of_week=auto.day_of_week,
+                from_time=now,
+            )
+            db.commit()
+
+            failed.append({
+                "id": str(auto.id),
+                "name": auto.name,
+                "error": error_msg,
+                "consecutive_failures": auto.consecutive_failures,
+                "auto_disabled": not auto.enabled,
+            })
+
+    return {
+        "now": now.isoformat(),
+        "checked": len(due),
+        "executed": len(executed),
+        "failed": len(failed),
+        "results": executed,
+        "failures": failed,
+    }
+
+
+def _run_automation_task(db: Session, auto: Automation) -> uuid.UUID:
+    """
+    Create a Task and immediately run it (fire-and-forget).
+    Reuses the existing Task infrastructure.
+    Returns the task id.
+    """
+    from app.models.task import Task
+    from app.services.task_runner import run_task, run_browser_task
+
+    task = Task(
+        user_id=auto.user_id,
+        type=auto.task_type,
+        status="queued",
+        progress=0,
+        payload=auto.task_payload or {},
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    # Kick off in background thread (fire-and-forget style)
+    import threading
+
+    def _run():
+        from app.database import SessionLocal
+        bg_db = SessionLocal()
+        try:
+            if task.type == "browser":
+                url = (task.payload or {}).get("url", "")
+                if url:
+                    run_browser_task(task.id, url)
+                else:
+                    run_task(task.id)
+            else:
+                run_task(task.id)
+        except Exception as e:
+            print(f"[automation-task] Task {task.id} failed: {e}")
+        finally:
+            bg_db.close()
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    return task.id
 
     # Find due automations
     stmt = (
