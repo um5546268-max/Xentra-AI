@@ -25,6 +25,8 @@ from app.schemas.file import (
 from app.services.files import save_upload, delete_file_on_disk, get_file_path
 from app.services.extraction import extract_text
 from app.services.chunking import split_into_chunks
+from app.deps import get_current_user, require_permission
+from app.services.audit import log_quick
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -52,7 +54,7 @@ def list_files(
 def upload_file(
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("files.write")),
 ):
     """Upload a file, extract its text, and chunk it."""
     # Save file to disk
@@ -130,6 +132,12 @@ def upload_file(
         user_file.extracted_meta = {"error": str(e)[:200]}
         db.commit()
         db.refresh(user_file)
+        log_quick(
+        db, current_user.id,
+        action="files.upload",
+        summary=f"Uploaded {user_file.original_name}",
+        payload={"name": user_file.original_name, "size": user_file.size_bytes},
+    )
 
     return user_file
 
@@ -182,7 +190,7 @@ def download_file(
 def delete_file(
     file_id: uuid.UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("files.delete")),
 ):
     """Delete a file and its chunks."""
     f = db.get(UserFile, file_id)
@@ -198,6 +206,12 @@ def delete_file(
     # Remove DB record
     db.delete(f)
     db.commit()
+    log_quick(
+        db, current_user.id,
+        action="files.delete",
+        summary=f"Deleted {f.original_name}",
+        payload={"name": f.original_name},
+    )
     return None
 
 

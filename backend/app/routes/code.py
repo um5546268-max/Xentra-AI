@@ -1,5 +1,8 @@
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
+from app.database import get_db
+from app.deps import get_current_user, require_permission
 from app.schemas.code import (
     ReadFileResponse,
     WriteFileRequest,
@@ -12,7 +15,24 @@ from app.schemas.code import (
     SyntaxCheckResponse,
     GitCommitRequest,
     CodeAssistantRequest,
+    RunCodeRequest,
+    RunCodeResponse,
 )
+from app.services.code_agent import (
+    list_tree,
+    read_file,
+    write_file,
+    delete_file,
+    diff_preview,
+    syntax_check,
+    git_status,
+    git_init,
+    git_log,
+    git_commit,
+    run_python,
+)
+from app.services.code_assistant import apply_instruction
+from app.services.audit import log_quick
 from app.services.code_agent import (
     list_tree,
     read_file,
@@ -148,7 +168,21 @@ def post_assist(
 @router.post("/run", response_model=RunCodeResponse)
 def post_run(
     payload: RunCodeRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("code.run")),
+    db: Session = Depends(get_db),
 ):
     """Run a Python file inside the workspace (sandboxed, timeout-limited)."""
-    return run_python(payload.path, payload.args, payload.command)
+    result = run_python(payload.path, payload.args, payload.command)
+
+    log_quick(
+        db, current_user.id,
+        action="code.run",
+        summary=f"Ran {payload.path}",
+        payload={"path": payload.path, "command": payload.command},
+        result={
+            "exit_code": result.get("exit_code"),
+            "success": result.get("success"),
+        },
+        status="success" if result.get("success") else "failed",
+    )
+    return result

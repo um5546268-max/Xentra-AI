@@ -2,10 +2,34 @@ import uuid
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-
 from app.database import get_db
 from app.models.user import User
 from app.core.security import decode_access_token
+from fastapi import HTTPException, status, Depends
+from sqlalchemy.orm import Session
+
+
+def require_permission(key: str):
+    """
+    Returns a FastAPI dependency that checks if the current user has `key` enabled.
+    Usage:
+        @router.post("/x")
+        def x(current_user: User = Depends(require_permission("browser.read"))):
+            ...
+    """
+    def dependency(
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        from app.services.permission_service import is_allowed
+        if not is_allowed(db, current_user, key):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission denied: {key}. Enable it in Settings → Permissions.",
+            )
+        return current_user
+
+    return dependency
 
 bearer_scheme = HTTPBearer(auto_error=False)
 

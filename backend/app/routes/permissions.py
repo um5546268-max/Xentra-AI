@@ -113,3 +113,26 @@ def reset_permissions(
 
     db.commit()
     return {"reset": len(rows)}
+@router.get("/check")
+def check_permission(
+    key: str = Query(..., description="Permission key to check"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Quick check: does the current user have this permission?"""
+    from app.services.permission_service import is_allowed
+    from app.services.permissions import get_permission
+
+    if key not in PERMISSIONS:
+        raise HTTPException(status_code=404, detail=f"Unknown permission: {key}")
+
+    allowed = is_allowed(db, current_user, key)
+    meta = get_permission(key)
+
+    return {
+        "key": key,
+        "allowed": allowed,
+        "scope": meta["scope"],
+        "tier": meta["tier"],
+        "label": meta["label"],
+    }
