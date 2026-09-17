@@ -4,6 +4,7 @@ from sqlalchemy import String, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
+from sqlalchemy import String, Boolean, Text, DateTime, func
 
 
 class User(Base):
@@ -80,6 +81,11 @@ class User(Base):
         foreign_keys="PendingAction.user_id",
         back_populates="user",
         cascade="all, delete-orphan",
+    )
+    emergency_stop: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    emergency_stop_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    emergency_stop_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     last_decay_at: Mapped[datetime | None] = mapped_column(

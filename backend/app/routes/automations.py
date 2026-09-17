@@ -58,6 +58,12 @@ def _run_automation_task(db: Session, auto: Automation) -> uuid.UUID:
     Create a Task and run it in a background thread.
     Returns the task id.
     """
+    # Check user's emergency stop
+    from app.services.emergency import is_stopped
+    user = db.get(User, auto.user_id)
+    if user and is_stopped(user):
+        raise Exception("Emergency stop active for user")
+
     task = Task(
         user_id=auto.user_id,
         type=auto.task_type,
@@ -281,6 +287,13 @@ def tick(
     """
     from app.config import settings
 
+    # Global emergency stop?
+    if settings.GLOBAL_EMERGENCY_STOP:
+        raise HTTPException(
+            status_code=423,
+            detail="Global emergency stop is active",
+        )
+
     if not settings.AUTOMATION_SECRET:
         raise HTTPException(
             status_code=500,
@@ -310,16 +323,13 @@ def tick(
         try:
             task_id = _run_automation_task(db, auto)
 
-            # Wait for the task to finish so we can evaluate its result
             finished_task = _wait_for_task(db, task_id, max_seconds=15)
             task_result = (finished_task.result if finished_task else {}) or {}
 
-            # Evaluate condition
             condition = auto.condition or {"type": "always"}
             cond_result = evaluate_condition(condition, task_result)
             should_notify = cond_result.get("should_notify", True)
 
-            # Create notification if condition matched
             if should_notify:
                 level = "success"
                 if finished_task and finished_task.status == "failed":
@@ -355,7 +365,6 @@ def tick(
                 except Exception as ne:
                     print(f"[tick]   ✗ Notification FAILED: {ne}")
 
-            # Update automation state
             auto.last_run_at = now
             auto.run_count = (auto.run_count or 0) + 1
             auto.consecutive_failures = 0

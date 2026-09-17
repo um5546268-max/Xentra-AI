@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     AUTOMATION_SECRET: str = ""
     AUTOMATION_INTERVAL_MINUTES: int = 5
 
+        # Emergency & rate limits
+    GLOBAL_EMERGENCY_STOP: bool = False
+    RATE_LIMIT_PER_MINUTE: int = 120
+    RATE_LIMIT_PER_HOUR: int = 3000
+    LOGIN_MAX_FAILURES: int = 5
+    LOGIN_LOCKOUT_MINUTES: int = 15
+
     # TAVILY API key
     TAVILY_API_KEY: str = ""
 

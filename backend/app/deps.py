@@ -10,18 +10,19 @@ from sqlalchemy.orm import Session
 
 
 def require_permission(key: str):
-    """
-    Returns a FastAPI dependency that checks if the current user has `key` enabled.
-    Usage:
-        @router.post("/x")
-        def x(current_user: User = Depends(require_permission("browser.read"))):
-            ...
-    """
     def dependency(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> User:
         from app.services.permission_service import is_allowed
+        from app.services.emergency import is_stopped
+
+        if is_stopped(current_user):
+            raise HTTPException(
+                status_code=423,
+                detail="Emergency stop is active. Clear it in Settings → Security.",
+            )
+
         if not is_allowed(db, current_user, key):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
