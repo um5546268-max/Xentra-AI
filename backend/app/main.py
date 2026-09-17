@@ -27,6 +27,8 @@ from app.routes import code as code_routes
 from app.routes import files as files_routes
 from app.routes import images as image_routes
 from app.routes import memory as memory_routes
+from app.routes import permissions as permission_routes
+from app.routes import audit as audit_routes
 
 
 # ==== Create the app ====
@@ -74,6 +76,8 @@ app.include_router(image_routes.router, prefix=settings.API_V1_STR)
 app.include_router(memory_routes.router, prefix=settings.API_V1_STR)
 app.include_router(automation_routes.router, prefix=settings.API_V1_STR)
 app.include_router(notification_routes.router, prefix=settings.API_V1_STR)
+app.include_router(permission_routes.router, prefix=settings.API_V1_STR)
+app.include_router(audit_routes.router, prefix=settings.API_V1_STR)
 # ==== Health & root ====
 @app.get("/api/health")
 def health_check():

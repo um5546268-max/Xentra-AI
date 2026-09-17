@@ -9,6 +9,8 @@ from app.models.chunk import FileChunk
 from app.models.memory import Memory
 from app.models.automation import Automation
 from app.models.notification import Notification
+from app.models.permission import Permission
+from app.models.audit_log import AuditLog
 
 __all__ = [
     "User",
@@ -21,5 +23,7 @@ __all__ = [
     "FileChunk",
     "Memory",
     "Automation",
-    "Notification"
+    "Notification",
+    "Permission",
+    "AuditLog"
 ]
