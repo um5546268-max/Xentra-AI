@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from app.routes import automations as automation_routes
+from app.routes import notifications as notification_routes
 
 from app.config import settings
 
@@ -72,6 +73,7 @@ app.include_router(files_routes.router, prefix=settings.API_V1_STR)
 app.include_router(image_routes.router, prefix=settings.API_V1_STR)
 app.include_router(memory_routes.router, prefix=settings.API_V1_STR)
 app.include_router(automation_routes.router, prefix=settings.API_V1_STR)
+app.include_router(notification_routes.router, prefix=settings.API_V1_STR)
 # ==== Health & root ====
 @app.get("/api/health")
 def health_check():

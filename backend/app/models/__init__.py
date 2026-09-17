@@ -8,6 +8,7 @@ from app.models.image import GeneratedImage
 from app.models.chunk import FileChunk
 from app.models.memory import Memory
 from app.models.automation import Automation
+from app.models.notification import Notification
 
 __all__ = [
     "User",
@@ -20,4 +21,5 @@ __all__ = [
     "FileChunk",
     "Memory",
     "Automation",
+    "Notification"
 ]
