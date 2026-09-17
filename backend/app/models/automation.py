@@ -51,6 +51,9 @@ class Automation(Base):
     task_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # payload for the task, e.g. {"query": "laptop prices"}
 
+    condition: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # condition for when to run the task
+
     # ----- State -----
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     last_run_at: Mapped[datetime | None] = mapped_column(

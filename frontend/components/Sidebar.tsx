@@ -23,6 +23,7 @@ import {
   Code,
   FolderOpen,
   Brain,
+  Clock,
   Image as ImageIcon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -35,6 +36,7 @@ import {
 } from "@/lib/conversations";
 import { useTasks } from "@/lib/tasks-store";
 import NewTaskModal from "./NewTaskModal";
+import NotificationsBell from "./NotificationsBell";
 
 export default function Sidebar() {
   const router = useRouter();
@@ -94,14 +96,17 @@ export default function Sidebar() {
 
   return (
     <aside className="w-72 shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col h-screen">
-      {/* Brand */}
-      <div className="p-4 border-b border-slate-800">
-        <h1 className="text-xl font-bold bg-gradient-to-r from-violet-400 via-cyan-300 to-violet-400 bg-clip-text text-transparent">
-          Xentra AI
-        </h1>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Your AI Operating Assistant
-        </p>
+            {/* Brand + Notifications */}
+      <div className="p-4 border-b border-slate-800 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold bg-gradient-to-r from-violet-400 via-cyan-300 to-violet-400 bg-clip-text text-transparent">
+            Xentra AI
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Your AI Operating Assistant
+          </p>
+        </div>
+        <NotificationsBell />
       </div>
 
       {/* New + Search */}
@@ -184,6 +189,14 @@ export default function Sidebar() {
         >
           <Brain className="w-4 h-4" />
           Memory
+        </button>
+
+                <button
+          onClick={() => router.push("/app/automations")}
+          className="w-full flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
+        >
+          <Clock className="w-4 h-4" />
+          Automations
         </button>
 
         <div className="relative">
