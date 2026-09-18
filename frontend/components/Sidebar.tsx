@@ -29,6 +29,7 @@ import {
   ChevronRight,
   Wrench,
   Shield,
+  Settings,
   ScrollText,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -53,6 +54,7 @@ const TOOLS = [
   { path: "/app/files", label: "Files", icon: FolderOpen },
   { path: "/app/memory", label: "Memory", icon: Brain },
   { path: "/app/automations", label: "Automations", icon: Clock },
+  { path: "/app/settings", label: "Settings", icon: Settings },
 ];
 
 const SECURITY = [

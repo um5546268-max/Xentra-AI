@@ -189,7 +189,7 @@ export default function MicButton({ onTranscript, disabled, language }: Props) {
   // ============================================================
   // Unified handlers
   // ============================================================
-  const handleToggle = async () => {
+    const handleToggle = async () => {
     if (disabled || processing) return;
 
     if (listening || recording) {
@@ -197,6 +197,10 @@ export default function MicButton({ onTranscript, disabled, language }: Props) {
       if (useWebSpeech) stopWebSpeech();
       else stopMediaRecorder();
     } else {
+      // Stop any ongoing TTS first
+      const { stop: stopVoice } = (await import("@/lib/voice-store")).useVoice.getState();
+      stopVoice();
+
       // Start
       setError(null);
       if (useWebSpeech) {

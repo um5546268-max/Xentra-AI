@@ -15,6 +15,8 @@ import {
   X,
   Brain,
   FileText,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import {
   Message,
@@ -28,6 +30,7 @@ import {
   regenerateChat,
 } from "@/lib/conversations";
 import { resolveImageUrl } from "@/lib/images";
+import { useVoice } from "@/lib/voice-store";
 import MarkdownMessage from "@/components/MarkdownMessage";
 import MicButton from "@/components/MicButton";
 
@@ -60,6 +63,21 @@ export default function ConversationPage({
   const [compareSources, setCompareSources] = useState<Source[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const lastSpokenRef = useRef<string | null>(null);
+
+  // Voice
+  const {
+    settings: voiceSettings,
+    speaking,
+    speakingMessageId,
+    speakText,
+    stop: stopVoice,
+    load: loadVoice,
+  } = useVoice();
+
+  useEffect(() => {
+    loadVoice();
+  }, [loadVoice]);
 
   // Load history
   useEffect(() => {
@@ -91,6 +109,23 @@ export default function ConversationPage({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Auto-speak when a message finishes streaming
+  useEffect(() => {
+    if (!voiceSettings?.auto_speak) return;
+
+    const lastMsg = messages[messages.length - 1];
+    if (
+      lastMsg &&
+      lastMsg.role === "assistant" &&
+      !lastMsg._streaming &&
+      lastMsg.id !== lastSpokenRef.current &&
+      lastMsg.content
+    ) {
+      lastSpokenRef.current = lastMsg.id;
+      speakText(lastMsg.content, lastMsg.id);
+    }
+  }, [messages, voiceSettings?.auto_speak, speakText]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -366,24 +401,51 @@ export default function ConversationPage({
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="border-b border-slate-800 px-6 py-3 flex items-center justify-between">
+      <div className="border-b border-slate-800 px-6 py-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm text-slate-500">Conversation</div>
           <div className="font-mono text-xs text-slate-400 truncate">
             {conversationId}
           </div>
         </div>
-        <select
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 focus:border-violet-500 focus:outline-none"
-        >
-          {MODELS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (!voiceSettings) return;
+              useVoice.getState().save({
+                auto_speak: !voiceSettings.auto_speak,
+              });
+            }}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+              voiceSettings?.auto_speak
+                ? "border-violet-500 bg-violet-500/20 text-violet-300"
+                : "border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
+            }`}
+            title={
+              voiceSettings?.auto_speak ? "Auto-speak ON" : "Auto-speak OFF"
+            }
+          >
+            {voiceSettings?.auto_speak ? (
+              <Volume2 className="w-3.5 h-3.5" />
+            ) : (
+              <VolumeX className="w-3.5 h-3.5" />
+            )}
+            Auto-speak
+          </button>
+
+          <select
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 focus:border-violet-500 focus:outline-none"
+          >
+            {MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Messages */}
@@ -406,6 +468,8 @@ export default function ConversationPage({
             const isLastAssistant =
               m.role === "assistant" && idx === messages.length - 1;
             const isEditing = editingId === m.id;
+            const isThisMessageSpeaking =
+              speaking && speakingMessageId === m.id;
 
             return (
               <div
@@ -535,6 +599,32 @@ export default function ConversationPage({
                           m.role === "user" ? "justify-end" : ""
                         }`}
                       >
+                        {m.role === "assistant" && m.content && (
+                          <button
+                            onClick={() => {
+                              if (isThisMessageSpeaking) {
+                                stopVoice();
+                              } else {
+                                speakText(m.content, m.id);
+                              }
+                            }}
+                            className="hover:text-violet-400 transition flex items-center gap-1"
+                            title={
+                              isThisMessageSpeaking ? "Stop speaking" : "Speak"
+                            }
+                          >
+                            {isThisMessageSpeaking ? (
+                              <>
+                                <Square className="w-3.5 h-3.5" /> Stop
+                              </>
+                            ) : (
+                              <>
+                                <Volume2 className="w-3.5 h-3.5" /> Speak
+                              </>
+                            )}
+                          </button>
+                        )}
+
                         <button
                           onClick={() => handleCopy(m)}
                           className="hover:text-violet-400 transition flex items-center gap-1"
@@ -613,7 +703,10 @@ export default function ConversationPage({
 
         <div className="flex gap-2 items-end">
           <textarea
-            value={committedText + (interimText ? (committedText ? " " : "") + interimText : "")}
+            value={
+              committedText +
+              (interimText ? (committedText ? " " : "") + interimText : "")
+            }
             onChange={(e) => {
               setCommittedText(e.target.value);
               setInterimText("");
