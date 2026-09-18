@@ -29,6 +29,7 @@ import {
 } from "@/lib/conversations";
 import { resolveImageUrl } from "@/lib/images";
 import MarkdownMessage from "@/components/MarkdownMessage";
+import MicButton from "@/components/MicButton";
 
 const MODELS = [
   { id: "openai/gpt-oss-20b", label: "GPT-OSS 20B (fast)" },
@@ -45,7 +46,8 @@ export default function ConversationPage({
   const { conversationId } = use(params);
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+  const [committedText, setCommittedText] = useState("");
+  const [interimText, setInterimText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,10 +94,11 @@ export default function ConversationPage({
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || sending) return;
+    if (!committedText.trim() || sending) return;
 
-    const userText = input.trim();
-    setInput("");
+    const userText = committedText.trim();
+    setCommittedText("");
+    setInterimText("");
     setError(null);
 
     const tempUser: Message = {
@@ -468,13 +471,12 @@ export default function ConversationPage({
                               />
                             )}
 
-                            {/* Memory chips */}
                             {m._memories && m._memories.length > 0 && (
                               <div className="mt-3 rounded-lg border border-purple-500/30 bg-purple-500/5 p-2 space-y-1">
                                 <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-purple-400 font-medium">
                                   <Brain className="w-3 h-3" />
-                                  Using {m._memories.length} memory
-                                  {m._memories.length !== 1 ? "ies" : ""}
+                                  Using {m._memories.length} memor
+                                  {m._memories.length !== 1 ? "ies" : "y"}
                                 </div>
                                 <div className="flex flex-wrap gap-1.5">
                                   {m._memories.slice(0, 5).map((mem) => (
@@ -495,7 +497,6 @@ export default function ConversationPage({
                               </div>
                             )}
 
-                            {/* File chips */}
                             {m._files && m._files.length > 0 && (
                               <div className="flex flex-wrap gap-2 mt-3">
                                 {m._files.map((f) => (
@@ -510,7 +511,6 @@ export default function ConversationPage({
                               </div>
                             )}
 
-                            {/* Sources */}
                             {m._sources && m._sources.length > 0 && (
                               <Sources
                                 sources={m._sources}
@@ -613,8 +613,11 @@ export default function ConversationPage({
 
         <div className="flex gap-2 items-end">
           <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            value={committedText + (interimText ? (committedText ? " " : "") + interimText : "")}
+            onChange={(e) => {
+              setCommittedText(e.target.value);
+              setInterimText("");
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -626,6 +629,22 @@ export default function ConversationPage({
             className="flex-1 resize-none rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-white placeholder-slate-600 focus:border-violet-500 focus:outline-none"
             disabled={sending}
           />
+
+          <MicButton
+            onTranscript={(text, isFinal) => {
+              if (isFinal) {
+                setCommittedText((prev) => {
+                  const base = prev.trim();
+                  return base ? `${base} ${text}` : text;
+                });
+                setInterimText("");
+              } else {
+                setInterimText(text);
+              }
+            }}
+            disabled={sending}
+          />
+
           {sending ? (
             <button
               type="button"
@@ -638,7 +657,7 @@ export default function ConversationPage({
           ) : (
             <button
               type="submit"
-              disabled={!input.trim()}
+              disabled={!committedText.trim()}
               className="rounded-xl bg-violet-600 p-3 hover:bg-violet-500 disabled:opacity-40 transition"
             >
               <Send className="w-5 h-5" />
