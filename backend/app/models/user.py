@@ -98,6 +98,9 @@ class User(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     pending_actions = relationship(
         "PendingAction",
         foreign_keys="PendingAction.user_id",

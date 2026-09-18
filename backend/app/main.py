@@ -34,6 +34,7 @@ from app.routes import pending_actions as pending_routes
 from app.routes import system as system_routes
 from app.routes import voice as voice_routes
 from app.routes import billing as billing_routes
+from app.routes import admin as admin_routes
 
 
 # ==== Create the app ====
@@ -135,6 +136,7 @@ app.include_router(pending_routes.router, prefix=settings.API_V1_STR)
 app.include_router(system_routes.router, prefix=settings.API_V1_STR)
 app.include_router(voice_routes.router, prefix=settings.API_V1_STR)
 app.include_router(billing_routes.router, prefix=settings.API_V1_STR)
+app.include_router(admin_routes.router, prefix=settings.API_V1_STR)
 # ==== Health & root ====
 @app.get("/api/health")
 def health_check():

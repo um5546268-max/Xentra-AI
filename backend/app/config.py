@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     LOGIN_MAX_FAILURES: int = 5
     LOGIN_LOCKOUT_MINUTES: int = 15
 
+    ADMIN_EMAIL: str = ""
+
     # TAVILY API key
     TAVILY_API_KEY: str = ""
 

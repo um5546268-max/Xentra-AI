@@ -69,3 +69,13 @@ def get_current_user(
             detail="User no longer exists",
         )
     return user
+def require_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Only allow admin users to access this route."""
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
