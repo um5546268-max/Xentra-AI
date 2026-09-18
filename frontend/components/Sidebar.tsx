@@ -31,6 +31,7 @@ import {
   Shield,
   Settings,
   ScrollText,
+  CreditCard,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -55,6 +56,7 @@ const TOOLS = [
   { path: "/app/memory", label: "Memory", icon: Brain },
   { path: "/app/automations", label: "Automations", icon: Clock },
   { path: "/app/settings", label: "Settings", icon: Settings },
+  { path: "/app/billing", label: "Billing", icon: CreditCard },
 ];
 
 const SECURITY = [

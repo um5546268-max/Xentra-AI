@@ -1,5 +1,7 @@
 "use client";
 
+import { getBillingStatus, BillingStatus, metricLabel } from "@/lib/billing";
+import { Gauge } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   Activity,
@@ -201,6 +203,9 @@ export default function CommandCenter() {
 
       {/* Now Playing */}
       <NowPlayingCard />
+
+      {/* Usage Widget */}
+      <UsageWidget />
 
       {/* Connected Apps */}
       <div className="p-3 border-b border-slate-800 space-y-2">
@@ -513,6 +518,59 @@ function PermRow({ label, allowed }: { label: string; allowed: boolean }) {
         <span className="w-1.5 h-1.5 rounded-full bg-current" />
         {allowed ? "Allowed" : "Off"}
       </span>
+    </div>
+  );
+}
+function UsageWidget() {
+  const [status, setStatus] = useState<BillingStatus | null>(null);
+
+  useEffect(() => {
+    getBillingStatus()
+      .then(setStatus)
+      .catch(() => {});
+  }, []);
+
+  if (!status) return null;
+
+  const metrics = Object.entries(status.usage).slice(0, 3);
+  if (metrics.length === 0) return null;
+
+  return (
+    <div className="p-3 border-b border-slate-800 space-y-2">
+      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 uppercase tracking-wider px-1">
+        <Gauge className="w-3.5 h-3.5" />
+        Usage · {status.plan.name}
+      </div>
+      <div className="space-y-2">
+        {metrics.map(([key, metric]) => {
+          const unlimited = metric.limit === -1;
+          const pct = unlimited
+            ? 0
+            : Math.min(100, (metric.used / metric.limit) * 100);
+          return (
+            <div key={key} className="space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">{metricLabel(key)}</span>
+                <span className="font-mono text-slate-500">
+                  {unlimited ? "∞" : `${metric.used}/${metric.limit}`}
+                </span>
+              </div>
+              <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
+                <div
+                  className={`h-full ${
+                    pct >= 90
+                      ? "bg-red-500"
+                      : pct >= 70
+                      ? "bg-yellow-500"
+                      : "bg-emerald-500"
+                  }`}
+                  style={{ width: unlimited ? "0%" : `${pct}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
