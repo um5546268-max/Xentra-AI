@@ -13,7 +13,9 @@ from app.schemas.image import (
     ImageRead,
     ImageListResponse,
 )
-from app.services.images import generate_image_url
+from app.services.images import generate_image_url, download_and_store_image
+from app.services.billing import check_and_record
+from app.services.audit import log_quick
 
 router = APIRouter(prefix="/images", tags=["images"])
 
@@ -25,6 +27,9 @@ def generate(
     current_user: User = Depends(get_current_user),
 ):
     """Generate an image from a text prompt."""
+    # Usage limit
+    check_and_record(db, current_user.id, "images", 1)
+
     if payload.conversation_id:
         convo = db.get(Conversation, payload.conversation_id)
         if not convo or convo.user_id != current_user.id:
@@ -40,14 +45,14 @@ def generate(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-        # Download the image locally so it persists
-    from app.services.images import download_and_store_image
+
+    # Download locally so it persists
     try:
         local_url = download_and_store_image(
             result["image_url"], str(current_user.id)
         )
-    except HTTPException:
-        # If download fails, fall back to the remote URL
+    except Exception as e:
+        print(f"[images] Download failed, using remote: {e}")
         local_url = result["image_url"]
 
     image = GeneratedImage(
@@ -65,6 +70,14 @@ def generate(
     db.add(image)
     db.commit()
     db.refresh(image)
+
+    log_quick(
+        db, current_user.id,
+        action="images.generate",
+        summary=f"Generated image: {payload.prompt[:80]}",
+        payload={"prompt": payload.prompt, "model": payload.model},
+    )
+
     return image
 
 
@@ -74,7 +87,6 @@ def list_images(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List the current user's generated images."""
     stmt = (
         select(GeneratedImage)
         .where(GeneratedImage.user_id == current_user.id)
@@ -91,7 +103,6 @@ def get_image(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get a specific image."""
     image = db.get(GeneratedImage, image_id)
     if not image or image.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -104,10 +115,17 @@ def delete_image(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete an image from the gallery."""
     image = db.get(GeneratedImage, image_id)
     if not image or image.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Image not found")
+
+    prompt_preview = image.prompt[:80] if image.prompt else "image"
     db.delete(image)
     db.commit()
+
+    log_quick(
+        db, current_user.id,
+        action="images.delete",
+        summary=f"Deleted image: {prompt_preview}",
+    )
     return None

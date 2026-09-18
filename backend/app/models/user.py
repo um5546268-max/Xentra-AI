@@ -92,6 +92,12 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    subscription = relationship(
+        "Subscription",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     pending_actions = relationship(
         "PendingAction",
         foreign_keys="PendingAction.user_id",

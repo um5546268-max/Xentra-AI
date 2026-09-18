@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Volume2,
   Play,
@@ -8,6 +8,7 @@ import {
   Settings as SettingsIcon,
   User as UserIcon,
   Shield,
+  Mic,
 } from "lucide-react";
 import { useVoice } from "@/lib/voice-store";
 import { useAuth } from "@/lib/auth";
@@ -33,7 +34,7 @@ export default function SettingsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-3xl mx-auto p-8 space-y-6">
+      <div className="max-w-3xl mx-auto p-8 space-y-8">
         {/* Header */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-slate-500/20 border border-slate-500/40 flex items-center justify-center">
@@ -73,10 +74,7 @@ export default function SettingsPage() {
           ) : (
             <div className="space-y-3">
               {/* Voice selection */}
-              <SettingRow
-                label="Voice"
-                hint="Which voice Xentra uses"
-              >
+              <SettingRow label="Voice" hint="Which voice Xentra uses">
                 <select
                   value={settings.voice_name || ""}
                   onChange={(e) =>
@@ -181,11 +179,47 @@ export default function SettingsPage() {
                 </button>
               </SettingRow>
 
-              {/* Test */}
-              <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 space-y-3">
-                <div className="text-sm text-slate-200">
-                  Test your voice
+              {/* Wake word */}
+              <SettingRow
+                label="Wake word: Hey Xentra"
+                hint="Say 'Hey Xentra or Hey Zen' to activate the mic (Chrome/Edge only)"
+              >
+                <div className="space-y-3">
+                  <button
+                    onClick={() =>
+                      save({
+                        wake_word_enabled: !settings.wake_word_enabled,
+                        wake_word: settings.wake_word || "hey xentra",
+                      })
+                    }
+                    className={`relative w-11 h-6 rounded-full transition ${
+                      settings.wake_word_enabled
+                        ? "bg-emerald-500"
+                        : "bg-slate-700"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                        settings.wake_word_enabled ? "translate-x-5" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {settings.wake_word_enabled && (
+                    <div className="rounded border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-300">
+                      ⚠️ Wake word keeps your microphone active. Only enable
+                      if you're okay with this.
+                    </div>
+                  )}
+
+                  {/* Test wake word helper */}
+                  <TestWakeWordHelper />
                 </div>
+              </SettingRow>
+
+              {/* Test voice */}
+              <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 space-y-3">
+                <div className="text-sm text-slate-200">Test your voice</div>
                 <div className="text-xs text-slate-500">
                   Click to hear Xentra with your current settings.
                 </div>
@@ -256,6 +290,134 @@ export default function SettingsPage() {
     </div>
   );
 }
+
+// ============================================================
+// Test Wake Word Helper
+// ============================================================
+
+function TestWakeWordHelper() {
+  const [listening, setListening] = useState(false);
+  const [heard, setHeard] = useState<string[]>([]);
+  const recRef = useRef<any>(null);
+
+  const start = () => {
+    const SR =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+
+    if (!SR) {
+      alert("Web Speech API not supported in this browser. Try Chrome or Edge.");
+      return;
+    }
+
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+
+    rec.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      const trimmed = transcript.trim();
+      if (trimmed) {
+        setHeard((prev) => {
+          const next = [...prev, trimmed];
+          return next.slice(-8);
+        });
+      }
+    };
+
+    rec.onerror = (e: any) => {
+      console.warn("[test-mic] error:", e.error);
+    };
+
+    rec.onend = () => setListening(false);
+
+    recRef.current = rec;
+    rec.start();
+    setListening(true);
+    setHeard([]);
+  };
+
+  const stop = () => {
+    if (recRef.current) {
+      try {
+        recRef.current.stop();
+      } catch {}
+      recRef.current = null;
+    }
+    setListening(false);
+  };
+
+  const copyText = async () => {
+    if (heard.length === 0) return;
+    await navigator.clipboard.writeText(heard.join("\n"));
+  };
+
+  return (
+    <div className="rounded border border-slate-800 bg-slate-900/60 p-3 space-y-2">
+      <div className="text-xs text-slate-400 flex items-center gap-1.5">
+        <Mic className="w-3.5 h-3.5" />
+        Test the mic — say "Hey Xentra or Hey Zen" and see what the browser hears.
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={listening ? stop : start}
+          className={`rounded px-3 py-1.5 text-xs font-medium transition ${
+            listening
+              ? "bg-red-600 text-white hover:bg-red-500"
+              : "bg-slate-700 text-slate-200 hover:bg-slate-600"
+          }`}
+        >
+          {listening ? "Stop test" : "Test mic"}
+        </button>
+
+        {heard.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={copyText}
+              className="rounded border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
+            >
+              Copy
+            </button>
+            <button
+              type="button"
+              onClick={() => setHeard([])}
+              className="rounded border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
+            >
+              Clear
+            </button>
+          </>
+        )}
+      </div>
+
+      {heard.length > 0 && (
+        <div className="rounded bg-slate-950 border border-slate-800 p-2 space-y-0.5 max-h-32 overflow-y-auto">
+          {heard.map((h, i) => (
+            <div key={i} className="text-[11px] font-mono text-slate-400">
+              "{h}"
+            </div>
+          ))}
+        </div>
+      )}
+
+      {heard.length === 0 && listening && (
+        <div className="text-[11px] text-slate-500 italic">
+          Listening… speak now.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Reusable layout components
+// ============================================================
 
 function Section({
   title,

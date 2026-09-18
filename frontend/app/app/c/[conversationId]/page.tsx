@@ -73,6 +73,10 @@ export default function ConversationPage({
     speakText,
     stop: stopVoice,
     load: loadVoice,
+    startWakeWordListener,
+    stopWakeWordListener,
+    wakeWordActive,
+    wakeWordArmed,
   } = useVoice();
 
   useEffect(() => {
@@ -126,6 +130,69 @@ export default function ConversationPage({
       speakText(lastMsg.content, lastMsg.id);
     }
   }, [messages, voiceSettings?.auto_speak, speakText]);
+
+  // Wake word listener
+  useEffect(() => {
+    if (!voiceSettings?.wake_word_enabled) {
+      stopWakeWordListener();
+      return;
+    }
+
+    startWakeWordListener((text) => {
+      const handled = handleVoiceCommand(text);
+      if (handled) return;
+
+      setCommittedText((prev) => {
+        const base = prev.trim();
+        return base ? `${base} ${text}` : text;
+      });
+    });
+
+    return () => {
+      stopWakeWordListener();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    voiceSettings?.wake_word_enabled,
+    startWakeWordListener,
+    stopWakeWordListener,
+  ]);
+
+  // Voice command handler
+  const handleVoiceCommand = (text: string): boolean => {
+    const lower = text.toLowerCase().trim();
+
+    if (lower === "stop" || lower === "stop talking") {
+      stopVoice();
+      return true;
+    }
+
+    if (lower === "clear" || lower === "clear input") {
+      setCommittedText("");
+      setInterimText("");
+      return true;
+    }
+
+    if (lower === "send" || lower === "send it") {
+      const syntheticEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSend(syntheticEvent);
+      return true;
+    }
+
+    if (
+      lower === "read that again" ||
+      lower === "say that again" ||
+      lower === "repeat"
+    ) {
+      const lastAssistant = [...messages]
+        .reverse()
+        .find((m) => m.role === "assistant" && m.content);
+      if (lastAssistant) speakText(lastAssistant.content, lastAssistant.id);
+      return true;
+    }
+
+    return false;
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -410,6 +477,30 @@ export default function ConversationPage({
         </div>
 
         <div className="flex items-center gap-2">
+          {wakeWordActive && (
+            <div
+              className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${
+                wakeWordArmed
+                  ? "border-emerald-500 bg-emerald-500/20 text-emerald-300"
+                  : "border-slate-700 text-slate-500"
+              }`}
+              title={
+                wakeWordArmed
+                  ? "Listening — say your command"
+                  : "Wake word active — say 'Hey Xentra or Hey Zen'"
+              }
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  wakeWordArmed
+                    ? "bg-emerald-400 animate-pulse"
+                    : "bg-slate-600"
+                }`}
+              />
+              {wakeWordArmed ? "Listening" : "Wake word"}
+            </div>
+          )}
+
           <button
             onClick={() => {
               if (!voiceSettings) return;
@@ -726,6 +817,12 @@ export default function ConversationPage({
           <MicButton
             onTranscript={(text, isFinal) => {
               if (isFinal) {
+                const handled = handleVoiceCommand(text);
+                if (handled) {
+                  setInterimText("");
+                  return;
+                }
+
                 setCommittedText((prev) => {
                   const base = prev.trim();
                   return base ? `${base} ${text}` : text;

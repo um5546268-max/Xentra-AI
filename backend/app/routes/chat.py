@@ -28,6 +28,7 @@ from app.services.memory_extractor import (
     load_relevant_memories,
     format_memories_for_prompt,
 )
+from app.services.billing import check_and_record
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -47,6 +48,14 @@ def chat(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one message is required",
         )
+
+    # Usage limit check
+    try:
+        check_and_record(db, current_user.id, "messages", 1)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[chat] Usage check failed (non-fatal): {e}")
 
     conversation: Conversation | None = None
     if payload.conversation_id:
@@ -94,7 +103,7 @@ def chat(
 
 
 # ============================================================
-# Streaming chat (memory + files + web search + image intent)
+# Streaming chat
 # ============================================================
 
 @router.post("/stream")
@@ -106,6 +115,14 @@ def chat_stream(
 ):
     if not payload.messages:
         raise HTTPException(status_code=400, detail="At least one message is required")
+
+    # Usage limit check
+    try:
+        check_and_record(db, current_user.id, "messages", 1)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[chat_stream] Usage check failed (non-fatal): {e}")
 
     conversation_id: uuid.UUID | None = None
     should_autotitle = False
@@ -132,9 +149,7 @@ def chat_stream(
             ))
             db.commit()
 
-    # ============================================================
-    # 1. Image intent detection
-    # ============================================================
+    # ===== 1. Image intent =====
     image_result: dict | None = None
     if payload.messages[-1].role == "user":
         try:
@@ -171,6 +186,12 @@ def chat_stream(
                 db.commit()
                 db.refresh(image_row)
 
+                # Count image usage
+                try:
+                    check_and_record(db, current_user.id, "images", 1)
+                except Exception as e:
+                    print(f"[chat_stream] Image usage check failed: {e}")
+
                 image_result = {
                     "id": str(image_row.id),
                     "url": local_url,
@@ -183,9 +204,7 @@ def chat_stream(
             print(f"[chat_stream] Image intent failed: {e}")
             image_result = None
 
-    # ============================================================
-    # 2. Memory context
-    # ============================================================
+    # ===== 2. Memory context =====
     memories_used: list[dict] = []
     memory_context: str | None = None
 
@@ -196,32 +215,12 @@ def chat_stream(
             if memories_used:
                 memory_context = format_memories_for_prompt(memories_used)
                 print(f"[chat_stream] Loaded {len(memories_used)} memories")
-
-                # Record usage
-                try:
-                    from datetime import datetime, timezone
-                    from app.models.memory import Memory as MemoryModel
-                    memory_ids = [uuid.UUID(m["id"]) for m in memories_used]
-                    db.query(MemoryModel).filter(
-                        MemoryModel.id.in_(memory_ids)
-                    ).update(
-                        {
-                            MemoryModel.use_count: MemoryModel.use_count + 1,
-                            MemoryModel.last_used_at: datetime.now(timezone.utc),
-                        },
-                        synchronize_session=False,
-                    )
-                    db.commit()
-                except Exception as e:
-                    print(f"[chat_stream] Failed to record memory usage: {e}")
         except Exception as e:
             print(f"[chat_stream] Memory load failed: {e}")
             memories_used = []
             memory_context = None
 
-    # ============================================================
-    # 3. Attached files + chunks
-    # ============================================================
+    # ===== 3. Attached files + chunks =====
     attached_files: list[dict] = []
     file_context: str | None = None
 
@@ -320,9 +319,7 @@ def chat_stream(
             attached_files = []
             file_context = None
 
-    # ============================================================
-    # 4. Web search
-    # ============================================================
+    # ===== 4. Web search =====
     sources: list[dict] = []
     search_context: str | None = None
 
@@ -374,13 +371,11 @@ def chat_stream(
             print(f"[chat_stream] Search failed: {e}")
             sources = []
 
-    # ============================================================
-    # Event generator
-    # ============================================================
+    # ===== Event generator =====
     def event_generator():
         full: list[str] = []
 
-        # ==== IMAGE PATH ====
+        # IMAGE PATH
         if image_result:
             try:
                 if conversation_id is not None:
@@ -425,9 +420,8 @@ def chat_stream(
                 return
             except Exception as e:
                 print(f"[chat_stream] Image response failed: {e}")
-                # Fall through to normal path
 
-        # ==== NORMAL PATH ====
+        # NORMAL PATH
         try:
             if sources:
                 yield f"data: {json.dumps({'sources': sources})}\n\n"
@@ -465,7 +459,6 @@ def chat_stream(
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
 
-        # Save assistant message
         final_text_for_extraction = "".join(full)
 
         if conversation_id is not None:
@@ -492,7 +485,7 @@ def chat_stream(
             finally:
                 bg_db.close()
 
-        # Schedule memory extraction in background
+        # Schedule memory extraction
         try:
             user_msg = payload.messages[-1].content if payload.messages else ""
             if user_msg and final_text_for_extraction:
@@ -525,6 +518,14 @@ def research(
     if not payload.messages or payload.messages[-1].role != "user":
         raise HTTPException(status_code=400, detail="Last message must be from user")
 
+    # Usage limit check
+    try:
+        check_and_record(db, current_user.id, "messages", 1)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[research] Usage check failed (non-fatal): {e}")
+
     conversation_id: uuid.UUID | None = None
     should_autotitle = False
 
@@ -548,32 +549,13 @@ def research(
         ))
         db.commit()
 
-    # Load memories
-        memories_used: list[dict] = []
+    memories_used: list[dict] = []
     memory_context: str | None = None
     try:
         user_query = payload.messages[-1].content
         memories_used = load_relevant_memories(db, current_user.id, user_query)
         if memories_used:
             memory_context = format_memories_for_prompt(memories_used)
-
-            # Record usage
-            try:
-                from datetime import datetime, timezone
-                from app.models.memory import Memory as MemoryModel
-                memory_ids = [uuid.UUID(m["id"]) for m in memories_used]
-                db.query(MemoryModel).filter(
-                    MemoryModel.id.in_(memory_ids)
-                ).update(
-                    {
-                        MemoryModel.use_count: MemoryModel.use_count + 1,
-                        MemoryModel.last_used_at: datetime.now(timezone.utc),
-                    },
-                    synchronize_session=False,
-                )
-                db.commit()
-            except Exception as e:
-                print(f"[research] Failed to record memory usage: {e}")
     except Exception as e:
         print(f"[research] Memory load failed: {e}")
 
@@ -673,7 +655,6 @@ def research(
             finally:
                 bg_db.close()
 
-        # Memory extraction
         try:
             user_msg = payload.messages[-1].content if payload.messages else ""
             if user_msg and final_text_for_extraction:
@@ -693,7 +674,7 @@ def research(
 
 
 # ============================================================
-# Regenerate last assistant message
+# Regenerate
 # ============================================================
 
 @router.post("/regenerate")
@@ -752,9 +733,6 @@ def _extract_and_save_memories(
     user_message: str,
     assistant_message: str,
 ):
-    """
-    Background task: extract memories from an exchange and save them.
-    """
     from app.database import SessionLocal
     import uuid as _uuid
 

@@ -12,6 +12,9 @@ from app.models.notification import Notification
 from app.models.permission import Permission
 from app.models.audit_log import AuditLog
 from app.models.pending_action import PendingAction
+from app.models.plan import Plan
+from app.models.subscription import Subscription
+from app.models.usage import UsageRecord
 
 __all__ = [
     "User",
@@ -27,5 +30,8 @@ __all__ = [
     "Notification",
     "Permission",
     "AuditLog",
-    "PendingAction"
+    "PendingAction",
+    "Plan",
+    "Subscription",
+    "UsageRecord"
 ]
