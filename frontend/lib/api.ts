@@ -6,10 +6,12 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
-    const token = localStorage.getItem("xentra_token");   // ← your actual key!
+    const token = localStorage.getItem("xentra_token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Bypass ngrok's free-tier browser warning page
+    config.headers["ngrok-skip-browser-warning"] = "true";
   }
   return config;
 });
