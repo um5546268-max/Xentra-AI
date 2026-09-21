@@ -1,4 +1,5 @@
 import api from "./api";
+import { toast } from "sonner";
 
 export type GamificationStats = {
   points: number;
@@ -18,4 +19,10 @@ export const getGamificationStats = async (): Promise<GamificationStats> => {
 export const dailyCheckin = async () => {
   const res = await api.post("/api/gamification/daily-checkin");
   return res.data;
+};
+
+export const showPointsToast = (points: number) => {
+  if (points > 0) {
+    toast.success(`+${points} points`, { duration: 2000 });
+  }
 };

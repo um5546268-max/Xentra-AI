@@ -9,6 +9,7 @@ import { useMediaStore } from "@/lib/media-store";
 import { useShoppingStore } from "@/lib/shopping-store";
 import { GlobalYouTubePlayer } from "@/components/hive/GlobalYouTubePlayer";
 import { MiniPlayer } from "@/components/hive/MiniPlayer";
+import { dailyCheckin } from "@/lib/gamification";
 
 export default function AppLayout({
   children,
@@ -22,6 +23,7 @@ export default function AppLayout({
     useShoppingStore.persist.rehydrate();
     document.documentElement.classList.add("dark");
     document.documentElement.classList.remove("light");
+    dailyCheckin().catch(() => {});
   }, []);
 
   const showCommandCenter =

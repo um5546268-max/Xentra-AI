@@ -52,6 +52,7 @@ import { BeeIcon } from "@/components/hive/BeeIcon";
 import { BEE_STYLE, BeeType } from "@/lib/bees";
 import NewTaskModal from "./NewTaskModal";
 import NotificationsBell from "./NotificationsBell";
+import { UserStats } from "@/components/learn/UserStats";
 
 const TOOLS = [
   { path: "/app/learn", label: "Learn", icon: GraduationCap },
@@ -276,6 +277,17 @@ export default function Sidebar() {
             Your AI Operating Assistant
           </p>
         </div>
+              {/* Brand + Notifications + Collapse toggle */}
+      <div className="p-4 border-b border-slate-800 flex items-start justify-between gap-2">
+        {/* ...existing content... */}
+      </div>
+
+      <UserStats />   {/* ← add this line */}
+
+      {/* Primary actions */}
+      <div className="p-3 space-y-2 border-b border-slate-800 shrink-0">
+        {/* ...existing content... */}
+      </div>
         <div className="flex items-center gap-1 shrink-0">
           <NotificationsBell />
           <button
