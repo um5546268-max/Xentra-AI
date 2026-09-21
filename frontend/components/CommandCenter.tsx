@@ -162,6 +162,9 @@ export default function CommandCenter() {
         <BeeHivePanel />
       </div>
 
+      {/* Now Playing — local + YouTube + Spotify via player store */}
+      <MiniPlayer />
+
       {/* Active Bee Tasks */}
       <div className="p-3 border-b border-slate-800">
         <ActiveTasksPanel />
@@ -322,8 +325,6 @@ export default function CommandCenter() {
         <QuickToolsPanel />
       </div>
 
-      {/* Now Playing — local + YouTube + Spotify via player store */}
-      <MiniPlayer />
 
       {/* Usage */}
       <UsageWidget />
