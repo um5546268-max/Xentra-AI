@@ -49,6 +49,7 @@ from app.core.sentry import init_sentry
 from app.core.logging import setup_logging
 from app.core.rate_limit import register_rate_limiter
 from app.middleware.request_id import RequestIDMiddleware
+from app.routes import gamification as gamification_routes
 
 setup_logging()
 init_sentry()
@@ -125,6 +126,7 @@ app.include_router(bee_routes.router, prefix=settings.API_V1_STR)
 app.include_router(lang_routes.router, prefix=settings.API_V1_STR)
 app.include_router(video_routes.router, prefix=settings.API_V1_STR)
 app.include_router(learn_routes.router, prefix=settings.API_V1_STR)
+app.include_router(gamification_routes.router, prefix=settings.API_V1_STR)
 
 # ==== Health & root ====
 @app.get("/api/health")

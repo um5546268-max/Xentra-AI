@@ -5,7 +5,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from sqlalchemy.ext.hybrid import hybrid_property
-
+from sqlalchemy import String, Boolean, Text, DateTime, Integer, func
 
 class User(Base):
     __tablename__ = "users"
@@ -101,6 +101,16 @@ class User(Base):
     )
     is_admin: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
+    )
+        # ===== Gamification =====
+    points: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    streak_days: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    last_active_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     pending_actions = relationship(
         "PendingAction",
