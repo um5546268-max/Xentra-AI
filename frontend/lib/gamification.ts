@@ -26,3 +26,19 @@ export const showPointsToast = (points: number) => {
     toast.success(`+${points} points`, { duration: 2000 });
   }
 };
+
+export type Briefing = {
+  message: string;
+  generated_at: string;
+  due_flashcards: number;
+  total_sessions: number;
+  recent_session: { id: string; title: string } | null;
+  points: number;
+  streak_days: number;
+  level: number;
+};
+
+export const getBriefing = async (): Promise<Briefing> => {
+  const res = await api.get("/api/briefing/today");
+  return res.data;
+};

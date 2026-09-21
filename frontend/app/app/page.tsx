@@ -14,6 +14,7 @@ import {
   LearnSession,
   StudyStats,
 } from "@/lib/learn";
+import { BriefingCard } from "@/components/learn/BriefingCard";
 
 export default function AppHome() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function AppHome() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto p-8 space-y-8">
-        {/* Greeting */}
+                {/* Greeting */}
         <div className="space-y-1">
           <h1 className="text-3xl font-semibold">
             {greeting}, {firstName} 👋
@@ -47,6 +48,9 @@ export default function AppHome() {
             Small steps every day lead to big success.
           </p>
         </div>
+
+        {/* Daily Briefing */}
+        <BriefingCard />
 
         {/* Stats row */}
         <div className="grid grid-cols-4 gap-3">
