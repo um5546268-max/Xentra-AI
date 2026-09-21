@@ -13,6 +13,16 @@ import {
 } from "@/lib/learn";
 
 type Mode = "topic" | "text" | "upload";
+type SubjectFilter = "all" | "languages" | "school" | "programming" | "science" | "personal";
+
+const SUBJECTS: { id: SubjectFilter; label: string; emoji: string }[] = [
+  { id: "all", label: "All", emoji: "📚" },
+  { id: "languages", label: "Languages", emoji: "💬" },
+  { id: "school", label: "School", emoji: "🎓" },
+  { id: "programming", label: "Programming", emoji: "⌨️" },
+  { id: "science", label: "Science", emoji: "🔬" },
+  { id: "personal", label: "Personal", emoji: "🎯" },
+];
 
 export default function LearnPage() {
   const router = useRouter();
@@ -22,6 +32,8 @@ export default function LearnPage() {
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [numConcepts, setNumConcepts] = useState(8);
+  const [subject, setSubject] = useState<SubjectFilter>("all");
+  const [filter, setFilter] = useState<SubjectFilter>("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<LearnSession[]>([]);
@@ -30,13 +42,16 @@ export default function LearnPage() {
 
   const loadAll = async () => {
     try {
-      const [s, st] = await Promise.all([listLearnSessions(), getLearnStats()]);
+      const [s, st] = await Promise.all([
+        listLearnSessions(filter === "all" ? undefined : filter),
+        getLearnStats(),
+      ]);
       setSessions(s);
       setStats(st);
     } catch {}
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [filter]);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,15 +59,16 @@ export default function LearnPage() {
     setLoading(true);
     try {
       let session;
+      const subj = subject === "all" ? undefined : subject;
       if (mode === "topic") {
         if (!topic.trim()) throw new Error("Enter a topic first");
-        session = await learnFromTopic(topic.trim(), numConcepts);
+        session = await learnFromTopic(topic.trim(), numConcepts, subj);
       } else if (mode === "text") {
         if (!text.trim() || text.trim().length < 20) throw new Error("Paste at least 20 characters");
-        session = await learnFromText(title.trim() || "Untitled", text.trim());
+        session = await learnFromText(title.trim() || "Untitled", text.trim(), subj);
       } else {
         if (!file) throw new Error("Choose a file first");
-        session = await learnFromFile(file, title.trim() || undefined);
+        session = await learnFromFile(file, title.trim() || undefined, subj);
       }
       router.push(`/app/learn/${session.id}`);
     } catch (e: any) {
@@ -102,27 +118,31 @@ export default function LearnPage() {
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
           <div className="flex items-center gap-2 flex-wrap">
-            <TabBtn
-              active={mode === "topic"}
-              onClick={() => setMode("topic")}
-              icon={<Sparkles className="w-3.5 h-3.5" />}
-              label="Explore a topic"
-            />
-            <TabBtn
-              active={mode === "text"}
-              onClick={() => setMode("text")}
-              icon={<FileText className="w-3.5 h-3.5" />}
-              label="Paste text"
-            />
-            <TabBtn
-              active={mode === "upload"}
-              onClick={() => setMode("upload")}
-              icon={<Upload className="w-3.5 h-3.5" />}
-              label="Upload a file"
-            />
+            <TabBtn active={mode === "topic"} onClick={() => setMode("topic")} icon={<Sparkles className="w-3.5 h-3.5" />} label="Explore a topic" />
+            <TabBtn active={mode === "text"} onClick={() => setMode("text")} icon={<FileText className="w-3.5 h-3.5" />} label="Paste text" />
+            <TabBtn active={mode === "upload"} onClick={() => setMode("upload")} icon={<Upload className="w-3.5 h-3.5" />} label="Upload a file" />
           </div>
 
           <form onSubmit={handleGenerate} className="space-y-3">
+            {/* Subject picker */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-slate-500">Subject:</span>
+              {SUBJECTS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setSubject(s.id)}
+                  className={`text-xs rounded-md px-2 py-1 border transition ${
+                    subject === s.id
+                      ? "border-violet-500 bg-violet-500/20 text-violet-300"
+                      : "border-slate-800 text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  {s.emoji} {s.label}
+                </button>
+              ))}
+            </div>
+
             {mode === "topic" && (
               <>
                 <input
@@ -134,8 +154,7 @@ export default function LearnPage() {
                 />
                 <div className="flex items-center gap-3 text-xs text-slate-500">
                   <span>Concepts:</span>
-                  <input
-                    type="range" min={4} max={12} value={numConcepts}
+                  <input type="range" min={4} max={12} value={numConcepts}
                     onChange={(e) => setNumConcepts(Number(e.target.value))}
                     className="accent-violet-500"
                   />
@@ -252,11 +271,26 @@ export default function LearnPage() {
           )}
         </div>
 
+        {/* Subject filter tabs */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-slate-500 mr-1">Filter:</span>
+          {SUBJECTS.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setFilter(s.id)}
+              className={`text-xs rounded-md px-2.5 py-1.5 border transition ${
+                filter === s.id
+                  ? "border-violet-500 bg-violet-500/20 text-violet-300"
+                  : "border-slate-800 text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              {s.emoji} {s.label}
+            </button>
+          ))}
+        </div>
+
         {sessions.length > 0 && (
           <div className="space-y-2">
-            <div className="text-xs font-medium text-slate-500 uppercase tracking-wider px-1">
-              Your sessions
-            </div>
             {sessions.map((s) => (
               <div
                 key={s.id}
@@ -269,6 +303,7 @@ export default function LearnPage() {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium truncate">{s.title}</div>
                   <div className="text-xs text-slate-500 truncate">
+                    {s.subject ? `${s.subject} · ` : ""}
                     {s.source_type === "topic" ? "Topic"
                       : s.source_type === "text" ? "Text"
                       : "File"} ·{" "}
@@ -290,8 +325,9 @@ export default function LearnPage() {
 
         {sessions.length === 0 && !loading && (
           <div className="text-center py-12 text-slate-600 text-sm">
-            Nothing here yet. Enter a topic, paste text, or upload a file —
-            Xentra will build your flashcards and quiz.
+            {filter === "all"
+              ? "Nothing here yet. Enter a topic, paste text, or upload a file."
+              : `No sessions tagged as "${filter}".`}
           </div>
         )}
       </div>

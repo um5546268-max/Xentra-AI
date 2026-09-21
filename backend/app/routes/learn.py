@@ -22,6 +22,7 @@ from app.services import learn_service
 from app.services.gamification import record_activity
 from app.services.extract import extract_text
 from fastapi import UploadFile, File, Form
+from fastapi import Query
 
 
 router = APIRouter(prefix="/learn", tags=["learn"])
@@ -44,6 +45,7 @@ def learn_from_topic(
         topic=payload.topic,
         source_type="topic",
         source_preview=payload.topic,
+        subject=payload.subject,                       # ← NEW
         summary=data.get("summary"),
         concepts=data.get("concepts", []),
     )
@@ -96,6 +98,7 @@ def learn_from_text(
         title=payload.title,
         source_type="text",
         source_preview=payload.text[:500],
+        subject=payload.subject,                       # ← NEW
         summary=data.get("summary"),
         concepts=data.get("concepts", []),
     )
@@ -139,6 +142,7 @@ def learn_from_text(
 async def learn_from_file(
     file: UploadFile = File(...),
     title: str | None = Form(None),
+    subject: str | None = Form(None),                  # ← NEW
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -159,6 +163,7 @@ async def learn_from_file(
         title=(title or (file.filename or "Uploaded material"))[:200],
         source_type="file",
         source_preview=text[:500],
+        subject=subject,                               # ← NEW
         summary=data.get("summary"),
         concepts=data.get("concepts", []),
     )
@@ -203,17 +208,15 @@ async def learn_from_file(
 # ─────────────────────────────────────────────────────────────
 @router.get("/sessions", response_model=list[SessionOut])
 def list_sessions(
+    subject: str | None = Query(None),                 # ← NEW
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    stmt = (
-        select(LearnSession)
-        .where(LearnSession.user_id == current_user.id)
-        .order_by(LearnSession.created_at.desc())
-        .limit(50)
-    )
+    stmt = select(LearnSession).where(LearnSession.user_id == current_user.id)
+    if subject:
+        stmt = stmt.where(LearnSession.subject == subject)
+    stmt = stmt.order_by(LearnSession.created_at.desc()).limit(50)
     return [SessionOut.model_validate(s) for s in db.execute(stmt).scalars().all()]
-
 
 # ─────────────────────────────────────────────────────────────
 # GET /api/learn/session/{id}

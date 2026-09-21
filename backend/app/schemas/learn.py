@@ -9,11 +9,13 @@ from pydantic import BaseModel, Field
 class LearnFromTopicRequest(BaseModel):
     topic: str = Field(min_length=2, max_length=200)
     num_concepts: int = Field(default=8, ge=4, le=12)
+    subject: str | None = None        # ← NEW
 
 
 class LearnFromTextRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     text: str = Field(min_length=20)
+    subject: str | None = None        # ← NEW
 
 
 class ReviewFlashcardRequest(BaseModel):
@@ -56,6 +58,7 @@ class SessionOut(BaseModel):
     title: str
     topic: str | None
     source_type: str
+    subject: str | None = None        # ← NEW
     summary: str | None
     concepts: list[dict[str, Any]] | None
     created_at: datetime

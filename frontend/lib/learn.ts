@@ -29,6 +29,7 @@ export type LearnSession = {
   title: string;
   topic: string | null;
   source_type: "topic" | "text" | "file";
+  subject: string | null;         // ← NEW
   summary: string | null;
   concepts: Concept[] | null;
   created_at: string;
@@ -66,10 +67,12 @@ export type QuizResult = {
 export const learnFromTopic = async (
   topic: string,
   numConcepts: number = 8,
+  subject?: string,               // ← NEW
 ): Promise<LearnSessionDetail> => {
   const res = await api.post("/api/learn/from-topic", {
     topic,
     num_concepts: numConcepts,
+    subject: subject ?? null,     // ← NEW
   });
   return res.data;
 };
@@ -77,13 +80,21 @@ export const learnFromTopic = async (
 export const learnFromText = async (
   title: string,
   text: string,
+  subject?: string,               // ← NEW
 ): Promise<LearnSessionDetail> => {
-  const res = await api.post("/api/learn/from-text", { title, text });
+  const res = await api.post("/api/learn/from-text", {
+    title, text,
+    subject: subject ?? null,     // ← NEW
+  });
   return res.data;
 };
 
-export const listLearnSessions = async (): Promise<LearnSession[]> => {
-  const res = await api.get("/api/learn/sessions");
+export const listLearnSessions = async (
+  subject?: string,               // ← NEW
+): Promise<LearnSession[]> => {
+  const res = await api.get("/api/learn/sessions", {
+    params: subject ? { subject } : {},
+  });
   return res.data;
 };
 
@@ -126,14 +137,15 @@ export const getLearnStats = async (): Promise<StudyStats> => {
 export const learnFromFile = async (
   file: File,
   title?: string,
+  subject?: string,               // ← NEW
 ): Promise<LearnSessionDetail> => {
   const formData = new FormData();
   formData.append("file", file);
   if (title) formData.append("title", title);
-
+  if (subject) formData.append("subject", subject);    // ← NEW
   const res = await api.post("/api/learn/from-file", formData, {
     headers: { "Content-Type": "multipart/form-data" },
-    timeout: 120000, // 2 min — transcription + 3 Groq calls can be slow
+    timeout: 120000,
   });
   return res.data;
 };

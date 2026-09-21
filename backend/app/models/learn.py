@@ -30,6 +30,7 @@ class LearnSession(Base):
     topic = Column(String(300), nullable=True)
     source_type = Column(String(20), nullable=False)
     source_preview = Column(Text, nullable=True)
+    subject = Column(String(40), nullable=True, index=True)
 
     summary = Column(Text, nullable=True)
     concepts = Column(JSONB, nullable=True)
@@ -89,3 +90,24 @@ class QuizAttempt(Base):
     created_at = Column(DateTime(timezone=True), default=_now, nullable=False)
 
     session = relationship("LearnSession", back_populates="quizzes")
+
+class LearnSession(Base):
+    __tablename__ = "learn_sessions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    title = Column(String(300), nullable=False)
+    topic = Column(String(300), nullable=True)
+    source_type = Column(String(20), nullable=False)
+    source_preview = Column(Text, nullable=True)
+    subject = Column(String(40), nullable=True, index=True)   # ← NEW
+
+    summary = Column(Text, nullable=True)
+    concepts = Column(JSONB, nullable=True)
+    # ...rest unchanged
