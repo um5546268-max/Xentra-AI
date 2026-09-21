@@ -1,5 +1,6 @@
 "use client";
 
+import { showPointsToast } from "@/lib/gamification";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {

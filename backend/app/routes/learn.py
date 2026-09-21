@@ -19,6 +19,7 @@ from app.schemas.learn import (
     StudyStatsOut,
 )
 from app.services import learn_service
+from app.services.gamification import record_activity
 
 
 router = APIRouter(prefix="/learn", tags=["learn"])
@@ -67,6 +68,9 @@ def learn_from_topic(
     quiz_questions = learn_service.generate_quiz(data["concepts"], cards_data)
     attempt = QuizAttempt(session_id=session.id, questions=quiz_questions)
     db.add(attempt)
+
+    # 5. Award points + streak
+    record_activity(db, current_user, "learn_session")
 
     db.commit()
     db.refresh(session)
@@ -117,6 +121,9 @@ def learn_from_text(
     quiz_questions = learn_service.generate_quiz(data["concepts"], cards_data)
     attempt = QuizAttempt(session_id=session.id, questions=quiz_questions)
     db.add(attempt)
+
+    # Award points + streak
+    record_activity(db, current_user, "learn_session")
 
     db.commit()
     db.refresh(session)
@@ -212,6 +219,9 @@ def review_flashcard(
     else:
         card.times_wrong += 1
 
+    # Award points + streak
+    record_activity(db, current_user, "flashcard_review")
+
     db.commit()
     db.refresh(card)
     return FlashcardOut.model_validate(card)
@@ -245,6 +255,10 @@ def submit_quiz(
     attempt.answers = payload.answers
     attempt.score = score
     attempt.completed_at = datetime.now(timezone.utc)
+
+    # Award points + streak
+    record_activity(db, current_user, "quiz_complete")
+
     db.commit()
 
     return {
