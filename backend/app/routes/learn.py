@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 
@@ -20,6 +20,8 @@ from app.schemas.learn import (
 )
 from app.services import learn_service
 from app.services.gamification import record_activity
+from app.services.extract import extract_text
+from fastapi import UploadFile, File, Form
 
 
 router = APIRouter(prefix="/learn", tags=["learn"])
@@ -34,10 +36,8 @@ def learn_from_topic(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # 1. Extract concepts
     data = learn_service.extract_concepts(topic=payload.topic, text=None, num=payload.num_concepts)
 
-    # 2. Create session
     session = LearnSession(
         user_id=current_user.id,
         title=payload.topic,
@@ -50,7 +50,6 @@ def learn_from_topic(
     db.add(session)
     db.flush()
 
-    # 3. Generate flashcards
     cards_data = learn_service.generate_flashcards(data["concepts"])
     cards = [
         Flashcard(
@@ -64,12 +63,10 @@ def learn_from_topic(
     ]
     db.add_all(cards)
 
-    # 4. Generate quiz
     quiz_questions = learn_service.generate_quiz(data["concepts"], cards_data)
     attempt = QuizAttempt(session_id=session.id, questions=quiz_questions)
     db.add(attempt)
 
-    # 5. Award points + streak
     record_activity(db, current_user, "learn_session")
 
     db.commit()
@@ -122,7 +119,72 @@ def learn_from_text(
     attempt = QuizAttempt(session_id=session.id, questions=quiz_questions)
     db.add(attempt)
 
-    # Award points + streak
+    record_activity(db, current_user, "learn_session")
+
+    db.commit()
+    db.refresh(session)
+    db.refresh(attempt)
+
+    return {
+        **SessionOut.model_validate(session).model_dump(),
+        "flashcards": [FlashcardOut.model_validate(c) for c in cards],
+        "latest_quiz": {"id": attempt.id, "questions": quiz_questions, "created_at": attempt.created_at},
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# POST /api/learn/from-file  (PDF / DOCX / TXT / audio)
+# ─────────────────────────────────────────────────────────────
+@router.post("/from-file", response_model=SessionDetailOut, status_code=201)
+async def learn_from_file(
+    file: UploadFile = File(...),
+    title: str | None = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload a PDF, DOCX, TXT, or audio file → generate flashcards + quiz."""
+    content = await file.read()
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(400, "File too large (25 MB max)")
+
+    # 1. Extract text from the file
+    text = extract_text(content, file.filename or "upload")
+
+    # 2. Extract concepts
+    data = learn_service.extract_concepts(topic=None, text=text, num=10)
+
+    # 3. Create session
+    session = LearnSession(
+        user_id=current_user.id,
+        title=(title or (file.filename or "Uploaded material"))[:200],
+        source_type="file",
+        source_preview=text[:500],
+        summary=data.get("summary"),
+        concepts=data.get("concepts", []),
+    )
+    db.add(session)
+    db.flush()
+
+    # 4. Flashcards
+    cards_data = learn_service.generate_flashcards(data["concepts"])
+    cards = [
+        Flashcard(
+            session_id=session.id,
+            concept=c.get("concept"),
+            question=c["question"],
+            answer=c["answer"],
+            difficulty=c.get("difficulty", "medium"),
+        )
+        for c in cards_data
+    ]
+    db.add_all(cards)
+
+    # 5. Quiz
+    quiz_questions = learn_service.generate_quiz(data["concepts"], cards_data)
+    attempt = QuizAttempt(session_id=session.id, questions=quiz_questions)
+    db.add(attempt)
+
+    # 6. Award points
     record_activity(db, current_user, "learn_session")
 
     db.commit()
@@ -219,7 +281,6 @@ def review_flashcard(
     else:
         card.times_wrong += 1
 
-    # Award points + streak
     record_activity(db, current_user, "flashcard_review")
 
     db.commit()
@@ -256,7 +317,6 @@ def submit_quiz(
     attempt.score = score
     attempt.completed_at = datetime.now(timezone.utc)
 
-    # Award points + streak
     record_activity(db, current_user, "quiz_complete")
 
     db.commit()

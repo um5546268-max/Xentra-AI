@@ -1,19 +1,18 @@
 "use client";
 
-import { showPointsToast } from "@/lib/gamification";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BookOpen, Sparkles, Loader2, AlertCircle, Trash2, ChevronRight,
-  GraduationCap, FileText,
+  GraduationCap, FileText, Upload, Music,
 } from "lucide-react";
 import {
   LearnSession, StudyStats,
-  learnFromTopic, learnFromText,
+  learnFromTopic, learnFromText, learnFromFile,
   listLearnSessions, deleteLearnSession, getLearnStats,
 } from "@/lib/learn";
 
-type Mode = "topic" | "text";
+type Mode = "topic" | "text" | "upload";
 
 export default function LearnPage() {
   const router = useRouter();
@@ -21,20 +20,20 @@ export default function LearnPage() {
   const [topic, setTopic] = useState("");
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [numConcepts, setNumConcepts] = useState(8);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<LearnSession[]>([]);
   const [stats, setStats] = useState<StudyStats | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadAll = async () => {
     try {
       const [s, st] = await Promise.all([listLearnSessions(), getLearnStats()]);
       setSessions(s);
       setStats(st);
-    } catch (e: any) {
-      // silent — not critical
-    }
+    } catch {}
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -48,9 +47,12 @@ export default function LearnPage() {
       if (mode === "topic") {
         if (!topic.trim()) throw new Error("Enter a topic first");
         session = await learnFromTopic(topic.trim(), numConcepts);
-      } else {
+      } else if (mode === "text") {
         if (!text.trim() || text.trim().length < 20) throw new Error("Paste at least 20 characters");
         session = await learnFromText(title.trim() || "Untitled", text.trim());
+      } else {
+        if (!file) throw new Error("Choose a file first");
+        session = await learnFromFile(file, title.trim() || undefined);
       }
       router.push(`/app/learn/${session.id}`);
     } catch (e: any) {
@@ -68,10 +70,15 @@ export default function LearnPage() {
     } catch {}
   };
 
+  const formatSize = (bytes: number) => {
+    if (bytes >= 1_000_000) return `${(bytes / 1e6).toFixed(1)} MB`;
+    if (bytes >= 1_000) return `${(bytes / 1e3).toFixed(0)} KB`;
+    return `${bytes} B`;
+  };
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto p-8 space-y-8">
-        {/* Header */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-violet-500/20 border border-violet-500/40 flex items-center justify-center">
             <GraduationCap className="w-5 h-5 text-violet-300" />
@@ -79,12 +86,11 @@ export default function LearnPage() {
           <div>
             <h1 className="text-2xl font-semibold">Learn</h1>
             <p className="text-sm text-slate-500">
-              Turn any topic into flashcards and quizzes in seconds.
+              Turn any topic, text, or file into flashcards and quizzes.
             </p>
           </div>
         </div>
 
-        {/* Stats */}
         {stats && (
           <div className="grid grid-cols-4 gap-3">
             <StatCard label="Sessions" value={stats.total_sessions} />
@@ -94,15 +100,30 @@ export default function LearnPage() {
           </div>
         )}
 
-        {/* Creation panel */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <TabBtn active={mode === "topic"} onClick={() => setMode("topic")} icon={<Sparkles className="w-3.5 h-3.5" />} label="Explore a topic" />
-            <TabBtn active={mode === "text"} onClick={() => setMode("text")} icon={<FileText className="w-3.5 h-3.5" />} label="Paste text" />
+          <div className="flex items-center gap-2 flex-wrap">
+            <TabBtn
+              active={mode === "topic"}
+              onClick={() => setMode("topic")}
+              icon={<Sparkles className="w-3.5 h-3.5" />}
+              label="Explore a topic"
+            />
+            <TabBtn
+              active={mode === "text"}
+              onClick={() => setMode("text")}
+              icon={<FileText className="w-3.5 h-3.5" />}
+              label="Paste text"
+            />
+            <TabBtn
+              active={mode === "upload"}
+              onClick={() => setMode("upload")}
+              icon={<Upload className="w-3.5 h-3.5" />}
+              label="Upload a file"
+            />
           </div>
 
           <form onSubmit={handleGenerate} className="space-y-3">
-            {mode === "topic" ? (
+            {mode === "topic" && (
               <>
                 <input
                   value={topic}
@@ -121,7 +142,9 @@ export default function LearnPage() {
                   <span className="font-mono">{numConcepts}</span>
                 </div>
               </>
-            ) : (
+            )}
+
+            {mode === "text" && (
               <>
                 <input
                   value={title}
@@ -141,6 +164,67 @@ export default function LearnPage() {
               </>
             )}
 
+            {mode === "upload" && (
+              <>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Optional title"
+                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm focus:border-violet-500 focus:outline-none"
+                  disabled={loading}
+                />
+
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) setFile(f);
+                  }}
+                  className="rounded-xl border-2 border-dashed border-slate-700 hover:border-violet-500 transition p-8 text-center cursor-pointer space-y-3"
+                >
+                  {file ? (
+                    <>
+                      <div className="w-12 h-12 rounded-lg bg-violet-500/20 flex items-center justify-center mx-auto">
+                        {file.type.startsWith("audio/") ? (
+                          <Music className="w-5 h-5 text-violet-300" />
+                        ) : (
+                          <FileText className="w-5 h-5 text-violet-300" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">{file.name}</div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          {formatSize(file.size)} · click to change
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-8 h-8 text-slate-600 mx-auto" />
+                      <div>
+                        <div className="text-sm text-slate-400">
+                          Drop a file here or <span className="text-violet-400">click to browse</span>
+                        </div>
+                        <div className="text-xs text-slate-600 mt-1">
+                          PDF · DOCX · TXT · MP3 · WAV · M4A (max 25 MB)
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx,.doc,.txt,.md,.mp3,.wav,.m4a,.webm,.ogg,.flac"
+                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                  className="hidden"
+                />
+              </>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -149,7 +233,7 @@ export default function LearnPage() {
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating… (takes ~20s)
+                  Generating… ({mode === "upload" ? "up to 60s" : "~20s"})
                 </>
               ) : (
                 <>
@@ -168,7 +252,6 @@ export default function LearnPage() {
           )}
         </div>
 
-        {/* Sessions list */}
         {sessions.length > 0 && (
           <div className="space-y-2">
             <div className="text-xs font-medium text-slate-500 uppercase tracking-wider px-1">
@@ -186,7 +269,9 @@ export default function LearnPage() {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium truncate">{s.title}</div>
                   <div className="text-xs text-slate-500 truncate">
-                    {s.source_type === "topic" ? "Topic" : "Text"} ·{" "}
+                    {s.source_type === "topic" ? "Topic"
+                      : s.source_type === "text" ? "Text"
+                      : "File"} ·{" "}
                     {new Date(s.created_at).toLocaleDateString()}
                   </div>
                 </div>
@@ -205,8 +290,8 @@ export default function LearnPage() {
 
         {sessions.length === 0 && !loading && (
           <div className="text-center py-12 text-slate-600 text-sm">
-            Nothing here yet. Enter a topic above and Xentra will build your
-            flashcards and quiz.
+            Nothing here yet. Enter a topic, paste text, or upload a file —
+            Xentra will build your flashcards and quiz.
           </div>
         )}
       </div>

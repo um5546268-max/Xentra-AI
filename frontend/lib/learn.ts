@@ -122,3 +122,18 @@ export const getLearnStats = async (): Promise<StudyStats> => {
   const res = await api.get("/api/learn/stats");
   return res.data;
 };
+
+export const learnFromFile = async (
+  file: File,
+  title?: string,
+): Promise<LearnSessionDetail> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (title) formData.append("title", title);
+
+  const res = await api.post("/api/learn/from-file", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000, // 2 min — transcription + 3 Groq calls can be slow
+  });
+  return res.data;
+};
