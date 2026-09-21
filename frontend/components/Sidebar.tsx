@@ -36,6 +36,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Video,
+  GraduationCap
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
@@ -65,6 +66,7 @@ const TOOLS = [
   { path: "/app/settings", label: "Settings", icon: Settings },
   { path: "/app/billing", label: "Billing", icon: CreditCard },
   { path: "/app/videos", label: "Video generator", icon: Video },
+  { href: "/app/learn", icon: GraduationCap, label: "Learn" },
 ];
 
 const SECURITY = [

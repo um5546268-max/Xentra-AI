@@ -19,6 +19,8 @@ from app.models.feature_flag import FeatureFlag
 from app.models.announcement import Announcement
 from app.models.bee import BeeTask, BeeCheckpoint, BeePermission  # noqa: F401
 from app.models.generated_video import GeneratedVideo  # noqa: F401
+from app.models.learn import LearnSession, Flashcard, QuizAttempt  # noqa: F401
+
 __all__ = [
     "User",
     "Conversation",

@@ -2,7 +2,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.deps import get_current_user
@@ -52,7 +52,8 @@ def _clear_failures(email: str):
 )
 @limiter.limit("3/hour")
 def signup(
-    request: Request,                       # ← REQUIRED by slowapi
+    request: Request,                       # required by slowapi
+    response: Response,                     # required by slowapi
     payload: UserCreate,
     db: Session = Depends(get_db),
 ):
@@ -89,7 +90,8 @@ def signup(
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("10/15minutes")
 def login(
-    request: Request,                       # ← REQUIRED by slowapi
+    request: Request,                       # required by slowapi
+    response: Response,                     # required by slowapi
     payload: UserLogin,
     db: Session = Depends(get_db),
 ):

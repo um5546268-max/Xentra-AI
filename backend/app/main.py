@@ -43,7 +43,7 @@ from app.routes import integrations_lang as lang_routes
 import os
 from pathlib import Path
 from app.routes import videos as video_routes
-
+from app.routes import learn as learn_routes
 # Core
 from app.core.sentry import init_sentry
 from app.core.logging import setup_logging
@@ -124,6 +124,7 @@ app.include_router(admin_routes.router, prefix=settings.API_V1_STR)
 app.include_router(bee_routes.router, prefix=settings.API_V1_STR)
 app.include_router(lang_routes.router, prefix=settings.API_V1_STR)
 app.include_router(video_routes.router, prefix=settings.API_V1_STR)
+app.include_router(learn_routes.router, prefix=settings.API_V1_STR)
 
 # ==== Health & root ====
 @app.get("/api/health")
