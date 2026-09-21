@@ -121,125 +121,98 @@ def generate_flashcards(concepts: list[dict]) -> list[dict]:
 
 
 # ─────────────────────────────────────────────────────────────
-# Prompt 3 — Quiz
+# Prompt 3 — Quiz (10 questions, shuffled answers)
 # ─────────────────────────────────────────────────────────────
-QUIZ_SYSTEM = """You are an expert teacher creating a comprehensive multiple-choice quiz.
+QUIZ_SYSTEM = """You are a JSON generator. You ONLY output raw JSON. Never explain. Never narrate.
 
-Create EXACTLY 10 questions based on the given concepts and flashcards.
+Create 10 multiple-choice questions from the given concepts and flashcards.
 
-Return ONLY valid JSON. Schema:
+Output schema (strict — no extra fields, no markdown, no explanation outside the JSON):
 {
   "questions": [
     {
-      "question": "clear question",
-      "options": ["A", "B", "C", "D"],
+      "question": "string",
+      "options": ["string", "string", "string", "string"],
       "correct_index": 0,
-      "explanation": "why this answer is correct (1-2 sentences)",
-      "difficulty": "easy" | "medium" | "hard",
-      "type": "recall" | "application" | "comparison" | "analysis"
+      "explanation": "string"
     }
   ]
 }
 
-STRICT RULES:
-- EXACTLY 10 questions — no fewer, no more
-- 4 options per question
-- Only ONE correct answer per question
-- Wrong answers must be plausible (not obviously silly)
-- Vary difficulty: 3 easy, 5 medium, 2 hard
-- Vary types across questions:
-  - recall: definitions, facts, terms
-  - application: use in a scenario
-  - comparison: differences, similarities
-  - analysis: cause/effect, reasoning
-- correct_index is 0-based (0, 1, 2, or 3)
-- Every question must include a short explanation
-- CRITICAL: Distribute correct answers evenly across positions A, B, C, D.
-  Do NOT make A the correct answer more than 3 times out of 10.
+Rules:
+- Exactly 10 items in the "questions" array
+- Each question has exactly 4 options
+- correct_index is 0, 1, 2, or 3
+- Vary correct_index across the 10 questions — do NOT always use 0
+- Wrong options must be plausible
+- Keep each question under 20 words
+- Keep each explanation under 25 words
 
-Do NOT return fewer than 10 questions. Do NOT include markdown code fences."""
+Start your response with { and end with }. Nothing else."""
+
+
+import random
 
 
 def _shuffle_question(q: dict) -> dict:
-    """
-    Take a quiz question and shuffle its options while keeping correct_index accurate.
-    This eliminates LLM positional bias (Groq tends to put the answer first).
-    """
+    """Shuffle a question's options and update correct_index accordingly."""
     options = q.get("options", [])
-    correct_index = q.get("correct_index", 0)
-    if not options or correct_index is None or correct_index >= len(options):
+    ci = q.get("correct_index", 0)
+    if not options or not isinstance(ci, int) or ci < 0 or ci >= len(options):
         return q
-
-    # Pair each option with whether it's correct
-    correct_text = options[correct_index]
+    correct_text = options[ci]
     shuffled = list(options)
     random.shuffle(shuffled)
-
-    # Find the new position of the correct answer
-    new_index = shuffled.index(correct_text)
-
     q["options"] = shuffled
-    q["correct_index"] = new_index
+    q["correct_index"] = shuffled.index(correct_text)
     return q
 
 
 def generate_quiz(concepts: list[dict], flashcards: list[dict]) -> list[dict]:
-    """Generate a 10-question quiz and randomize answer positions."""
+    """Generate a quiz — 10 questions, options shuffled, position bias removed."""
+    # Keep the payload SHORT so the model has room to output
+    small_concepts = [
+        {"concept": c.get("concept", ""), "definition": c.get("definition", "")[:120]}
+        for c in concepts[:8]
+    ]
+    small_cards = [
+        {"question": f.get("question", "")[:80], "answer": f.get("answer", "")[:120]}
+        for f in flashcards[:8]
+    ]
     payload = json.dumps(
-        {
-            "concepts": concepts,
-            "flashcards": flashcards,
-            "required_question_count": 10,
-        },
+        {"concepts": small_concepts, "flashcards": small_cards},
         indent=2,
     )
 
-    def _attempt(strict: bool) -> list[dict]:
-        system = QUIZ_SYSTEM
-        if strict:
-            system += (
-                "\n\nIMPORTANT: Return exactly 10 questions. "
-                "Vary the position of the correct answer — do NOT put it always as A. "
-                "Distribute correct answers roughly evenly across A, B, C, D."
-            )
-        result = chat_completion(
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": payload},
-            ],
-            max_tokens=4500,
-            temperature=0.8,
-        )
-        content = result.get("content", "") if isinstance(result, dict) else str(result)
-        data = _safe_json(content)
-        return data.get("questions", [])
-
-    questions = _attempt(strict=False)
-    if len(questions) < 8:
-        questions = _attempt(strict=True)
+    result = chat_completion(
+        messages=[
+            {"role": "system", "content": QUIZ_SYSTEM},
+            {"role": "user", "content": payload},
+        ],
+        max_tokens=4000,
+        temperature=0.6,
+    )
+    content = result.get("content", "") if isinstance(result, dict) else str(result)
+    data = _safe_json(content)
+    questions = data.get("questions", [])
 
     if not questions:
         raise HTTPException(500, "No quiz questions returned")
 
-    # Clean + validate
     cleaned = []
     for q in questions[:10]:
+        if not isinstance(q, dict):
+            continue
         if not all(k in q for k in ("question", "options", "correct_index", "explanation")):
             continue
-        if len(q.get("options", [])) != 4:
+        opts = q.get("options", [])
+        if not isinstance(opts, list) or len(opts) != 4:
             continue
-        ci = q.get("correct_index", 0)
+        ci = q.get("correct_index")
         if not isinstance(ci, int) or ci < 0 or ci > 3:
             continue
-        # ⭐ Shuffle the options so the correct answer isn't always A
         q = _shuffle_question(q)
         cleaned.append(q)
-
-    if len(cleaned) < 5:
-        raise HTTPException(500, f"Quiz too short after validation: {len(cleaned)} valid questions")
-
-    return cleaned
-
 
 # ─────────────────────────────────────────────────────────────
 # SM-2 spaced repetition
