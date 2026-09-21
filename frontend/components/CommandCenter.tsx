@@ -26,6 +26,7 @@ import { StopAllButton } from "@/components/hive/StopAllButton";
 import { getBillingStatus, BillingStatus, metricLabel } from "@/lib/billing";
 import { useTasks } from "@/lib/tasks-store";
 import { useShellStore } from "@/lib/shell-store";
+import { MiniPlayer } from "@/components/hive/MiniPlayer";
 import {
   spotifyNowPlaying,
   spotifyPlay,
@@ -316,13 +317,13 @@ export default function CommandCenter() {
         <SystemHealthPanel score={87} />
       </div>
 
-      {/* Quick Tools */}
+            {/* Quick Tools */}
       <div className="p-3 border-b border-slate-800">
         <QuickToolsPanel />
       </div>
 
-      {/* Now Playing */}
-      <NowPlayingCard />
+      {/* Now Playing — local + YouTube + Spotify via player store */}
+      <MiniPlayer />
 
       {/* Usage */}
       <UsageWidget />

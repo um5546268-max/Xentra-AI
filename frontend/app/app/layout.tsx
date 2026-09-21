@@ -8,6 +8,7 @@ import { GlobalAudioHost } from "@/components/hive/GlobalAudioHost";
 import { useMediaStore } from "@/lib/media-store";
 import { useShoppingStore } from "@/lib/shopping-store";
 import { GlobalYouTubePlayer } from "@/components/hive/GlobalYouTubePlayer";
+import { MiniPlayer } from "@/components/hive/MiniPlayer";
 
 export default function AppLayout({
   children,
@@ -31,7 +32,6 @@ export default function AppLayout({
       <Sidebar />
       <main className="flex-1 overflow-hidden">{children}</main>
       {showCommandCenter && <CommandCenter />}
-      <GlobalAudioHost />
       <GlobalAudioHost />
       <GlobalYouTubePlayer />
     </div>

@@ -18,8 +18,12 @@ export function GlobalAudioHost() {
     const unsub = usePlayerStore.subscribe((state) => {
       const { current, playing, positionMs, volume, muted } = state;
 
+      // Only the <audio> element handles local files.
+      // YouTube/Spotify have their own players (iframe / Web API).
+      const isLocal = current?.source === "local";
+      const newUrl = isLocal && current?.url ? current.url : null;
+
       // Load new source
-      const newUrl = current?.url ?? null;
       if (newUrl !== currentUrlRef.current) {
         currentUrlRef.current = newUrl;
         if (newUrl) {
@@ -33,7 +37,7 @@ export function GlobalAudioHost() {
       }
 
       // Play / pause
-      if (playing && audio.src) {
+      if (isLocal && playing && audio.src) {
         audio.play().catch((err) =>
           console.warn("[audio] play failed:", err?.message)
         );
@@ -42,7 +46,7 @@ export function GlobalAudioHost() {
       }
 
       // Seek
-      if (audio.src && audio.readyState >= 1) {
+      if (isLocal && audio.src && audio.readyState >= 1) {
         const audioMs = audio.currentTime * 1000;
         if (Math.abs(audioMs - positionMs) > 1500) {
           try {
@@ -51,7 +55,7 @@ export function GlobalAudioHost() {
         }
       }
 
-      // Volume + mute
+      // Volume + mute (always apply)
       audio.volume = muted ? 0 : volume;
       audio.muted = muted;
     });
@@ -63,10 +67,18 @@ export function GlobalAudioHost() {
     };
     const onDur = () => {
       if (Number.isFinite(audio.duration)) {
-        usePlayerStore.getState().setDuration(Math.floor(audio.duration * 1000));
+        usePlayerStore
+          .getState()
+          .setDuration(Math.floor(audio.duration * 1000));
       }
     };
-    const onEnd = () => usePlayerStore.getState().next();
+    const onEnd = () => {
+      // Only auto-advance for local files
+      const current = usePlayerStore.getState().current;
+      if (current?.source === "local") {
+        usePlayerStore.getState().next();
+      }
+    };
 
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("loadedmetadata", onDur);
