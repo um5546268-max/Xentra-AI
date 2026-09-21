@@ -65,9 +65,14 @@ def learn_from_topic(
     ]
     db.add_all(cards)
 
-    quiz_questions = learn_service.generate_quiz(data["concepts"], cards_data)
-    attempt = QuizAttempt(session_id=session.id, questions=quiz_questions)
-    db.add(attempt)
+        # Quiz generation can fail (Groq rate limits / bad JSON) — don't break the session
+    try:
+        quiz_questions = learn_service.generate_quiz(data["concepts"], cards_data)
+        attempt = QuizAttempt(session_id=session.id, questions=quiz_questions)
+        db.add(attempt)
+    except Exception as e:
+        print(f"[learn] Quiz generation failed, session saved without quiz: {e}")
+        attempt = None
 
     record_activity(db, current_user, "learn_session")
 
@@ -78,7 +83,10 @@ def learn_from_topic(
     return {
         **SessionOut.model_validate(session).model_dump(),
         "flashcards": [FlashcardOut.model_validate(c) for c in cards],
-        "latest_quiz": {"id": attempt.id, "questions": quiz_questions, "created_at": attempt.created_at},
+        "latest_quiz": (
+            {"id": attempt.id, "questions": quiz_questions, "created_at": attempt.created_at}
+            if attempt else None
+        ),
     }
 
 

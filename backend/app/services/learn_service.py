@@ -2,9 +2,9 @@
 Xentra Learn — generates flashcards, quizzes, and concept maps via Groq.
 """
 import json
+import random
 import re
 from typing import Any
-import random
 
 from fastapi import HTTPException
 
@@ -45,6 +45,7 @@ def _call_llm(system: str, user: str, max_tokens: int, temperature: float) -> An
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
+        model="llama-3.1-8b-instant",
         max_tokens=max_tokens,
         temperature=temperature,
     )
@@ -151,9 +152,6 @@ Rules:
 Start your response with { and end with }. Nothing else."""
 
 
-import random
-
-
 def _shuffle_question(q: dict) -> dict:
     """Shuffle a question's options and update correct_index accordingly."""
     options = q.get("options", [])
@@ -189,6 +187,7 @@ def generate_quiz(concepts: list[dict], flashcards: list[dict]) -> list[dict]:
             {"role": "system", "content": QUIZ_SYSTEM},
             {"role": "user", "content": payload},
         ],
+        model="llama-3.1-8b-instant",
         max_tokens=4000,
         temperature=0.6,
     )
@@ -214,10 +213,24 @@ def generate_quiz(concepts: list[dict], flashcards: list[dict]) -> list[dict]:
         q = _shuffle_question(q)
         cleaned.append(q)
 
+    if len(cleaned) < 5:
+        raise HTTPException(
+            500,
+            f"Only {len(cleaned)} valid quiz questions generated (need at least 5)",
+        )
+
+    return cleaned
+
+
 # ─────────────────────────────────────────────────────────────
 # SM-2 spaced repetition
 # ─────────────────────────────────────────────────────────────
-def apply_sm2(repetitions: int, ease_factor: float, interval_days: int, quality: int) -> tuple[int, float, int]:
+def apply_sm2(
+    repetitions: int,
+    ease_factor: float,
+    interval_days: int,
+    quality: int,
+) -> tuple[int, float, int]:
     if quality < 3:
         return 0, ease_factor, 1
     if repetitions == 0:
