@@ -36,7 +36,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Video,
-  GraduationCap
+  GraduationCap,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
@@ -96,7 +96,6 @@ export default function Sidebar() {
   const [showSecurity, setShowSecurity] = useState(false);
   const [showTasks, setShowTasks] = useState(true);
 
-  // ── Keyboard shortcut: Ctrl+B / Cmd+B ──
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
@@ -161,7 +160,6 @@ export default function Sidebar() {
   if (sidebarCollapsed) {
     return (
       <aside className="w-14 shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col h-screen items-center py-3 gap-1">
-        {/* Expand button */}
         <button
           onClick={toggleSidebar}
           className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-800 hover:text-slate-200 transition"
@@ -172,7 +170,6 @@ export default function Sidebar() {
 
         <div className="w-8 border-t border-slate-800 my-1" />
 
-        {/* New conversation */}
         <button
           onClick={handleNew}
           className="w-9 h-9 rounded-lg flex items-center justify-center bg-violet-600 hover:bg-violet-500 text-white transition"
@@ -181,7 +178,6 @@ export default function Sidebar() {
           <Plus className="w-4 h-4" />
         </button>
 
-        {/* New task */}
         <button
           onClick={() => setShowNewTask(true)}
           className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition"
@@ -192,7 +188,6 @@ export default function Sidebar() {
 
         <div className="w-8 border-t border-slate-800 my-1" />
 
-        {/* Bees */}
         <button
           onClick={() => router.push("/app/bees")}
           className={`w-9 h-9 rounded-lg flex items-center justify-center transition ${
@@ -205,7 +200,6 @@ export default function Sidebar() {
           <span className="text-base">🐝</span>
         </button>
 
-        {/* Tools — show each tool icon */}
         {TOOLS.slice(0, 6).map((tool) => {
           const Icon = tool.icon;
           const active = pathname === tool.path;
@@ -225,7 +219,6 @@ export default function Sidebar() {
           );
         })}
 
-        {/* Settings */}
         <button
           onClick={() => router.push("/app/settings")}
           className={`w-9 h-9 rounded-lg flex items-center justify-center transition ${
@@ -240,14 +233,12 @@ export default function Sidebar() {
 
         <div className="mt-auto flex flex-col items-center gap-1">
           <div className="w-8 border-t border-slate-800 my-1" />
-          {/* Avatar */}
           <div
             className="w-8 h-8 rounded-full bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-xs font-bold text-violet-300"
             title={user?.email}
           >
             {(user?.full_name?.[0] || user?.email?.[0] || "U").toUpperCase()}
           </div>
-          {/* Logout */}
           <button
             onClick={handleLogout}
             className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-800 hover:text-red-400 transition"
@@ -277,17 +268,6 @@ export default function Sidebar() {
             Your AI Operating Assistant
           </p>
         </div>
-              {/* Brand + Notifications + Collapse toggle */}
-      <div className="p-4 border-b border-slate-800 flex items-start justify-between gap-2">
-        {/* ...existing content... */}
-      </div>
-
-      <UserStats />   {/* ← add this line */}
-
-      {/* Primary actions */}
-      <div className="p-3 space-y-2 border-b border-slate-800 shrink-0">
-        {/* ...existing content... */}
-      </div>
         <div className="flex items-center gap-1 shrink-0">
           <NotificationsBell />
           <button
@@ -299,6 +279,8 @@ export default function Sidebar() {
           </button>
         </div>
       </div>
+
+      <UserStats />
 
       {/* Primary actions */}
       <div className="p-3 space-y-2 border-b border-slate-800 shrink-0">
