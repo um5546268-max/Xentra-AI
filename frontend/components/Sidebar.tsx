@@ -54,6 +54,7 @@ import NewTaskModal from "./NewTaskModal";
 import NotificationsBell from "./NotificationsBell";
 
 const TOOLS = [
+  { path: "/app/learn", label: "Learn", icon: GraduationCap },
   { path: "/app/browser", label: "Browser agent", icon: Globe },
   { path: "/app/integrations", label: "Integrations", icon: Link2 },
   { path: "/app/media", label: "Media", icon: Music },
@@ -66,7 +67,6 @@ const TOOLS = [
   { path: "/app/settings", label: "Settings", icon: Settings },
   { path: "/app/billing", label: "Billing", icon: CreditCard },
   { path: "/app/videos", label: "Video generator", icon: Video },
-  { href: "/app/learn", icon: GraduationCap, label: "Learn" },
 ];
 
 const SECURITY = [
