@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ShoppingBag,
   Search,
@@ -19,54 +19,81 @@ import {
   ShoppingCompareResponse,
   EnrichedProduct,
 } from "@/lib/shopping";
+import { useShoppingStore } from "@/lib/shopping-store";
 
 export default function ShoppingPage() {
-  const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ShoppingCompareResponse | null>(null);
+  const {
+    query, setQuery,
+    result, setResult,
+    elapsed, setElapsed,
+    loading, setLoading,
+    clear,
+  } = useShoppingStore();
+
   const [error, setError] = useState<string | null>(null);
-  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!loading) return;
+    const start = Date.now() - elapsed * 1000;
+    const id = setInterval(() => {
+      useShoppingStore
+        .getState()
+        .setElapsed(Math.floor((Date.now() - start) / 1000));
+    }, 500);
+    return () => clearInterval(id);
+  }, [loading, elapsed]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim() || loading) return;
 
-    setLoading(true);
-    setError(null);
     setResult(null);
     setElapsed(0);
-
-    // Count elapsed seconds
-    const start = Date.now();
-    const timer = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - start) / 1000));
-    }, 500);
+    setLoading(true);
+    setError(null);
 
     try {
-      const res = await shoppingCompare(query.trim(), 3);
-      setResult(res);
+      const res = await shoppingCompare(query.trim(), 5);
+      useShoppingStore.getState().setResult(res);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err.message || "Search failed");
-    } finally {
-      clearInterval(timer);
-      setLoading(false);
-    }
+  const detail = err?.response?.data?.detail;
+
+  // detail can be: string | array of {msg, loc, ...} | undefined
+  const message =
+    typeof detail === "string"
+      ? detail
+      : Array.isArray(detail)
+      ? detail.map((d: any) => d?.msg || JSON.stringify(d)).join(" · ")
+      : detail
+      ? JSON.stringify(detail)
+      : err?.message || "Search failed";
+
+  setError(message);
+}
   };
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-6xl mx-auto p-8 space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
-            <ShoppingBag className="w-5 h-5 text-emerald-300" />
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+              <ShoppingBag className="w-5 h-5 text-emerald-300" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold">Shopping Agent</h1>
+              <p className="text-sm text-slate-500">
+                Tell Xentra what you need. It searches, compares, and recommends.
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-semibold">Shopping Agent</h1>
-            <p className="text-sm text-slate-500">
-              Tell Xentra what you need. It searches, compares, and recommends.
-            </p>
-          </div>
+          <button
+            onClick={clear}
+            className="text-xs text-slate-500 hover:text-slate-300 transition"
+          >
+            Clear results
+          </button>
         </div>
 
         {/* Search */}
@@ -103,7 +130,6 @@ export default function ShoppingPage() {
               )}
             </button>
           </div>
-
           <div className="text-xs text-slate-600">
             Try:{" "}
             {[
@@ -123,13 +149,11 @@ export default function ShoppingPage() {
           </div>
         </form>
 
-        {/* Loading state */}
+        {/* Loading */}
         {loading && (
           <div className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-6 text-center space-y-3">
             <Loader2 className="w-8 h-8 mx-auto text-violet-400 animate-spin" />
-            <div className="text-sm text-slate-300">
-              Xentra is working…
-            </div>
+            <div className="text-sm text-slate-300">Xentra is working…</div>
             <div className="text-xs text-slate-500 space-y-1">
               <div>🔍 Searching Daraz Pakistan</div>
               <div>📄 Fetching top product pages</div>
@@ -151,9 +175,8 @@ export default function ShoppingPage() {
         )}
 
         {/* Results */}
-        {result && (
+        {result && !loading && (
           <div className="space-y-4">
-            {/* Intent summary */}
             <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
               <div className="flex flex-wrap gap-3 text-xs">
                 <IntentChip label="Product" value={result.intent.product_type} />
@@ -173,7 +196,6 @@ export default function ShoppingPage() {
               </div>
             </div>
 
-            {/* Products */}
             {result.products.length === 0 ? (
               <div className="text-center py-12 text-slate-500 text-sm">
                 No products found. Try a different query.
@@ -187,15 +209,18 @@ export default function ShoppingPage() {
             )}
           </div>
         )}
+
+        {!result && !loading && (
+          <div className="text-center py-16 text-slate-600 text-sm">
+            Give Xentra a shopping task to get started.
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// ============================================================
-// Intent Chip
-// ============================================================
-
+// ─── Intent Chip ───
 function IntentChip({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5">
@@ -205,10 +230,7 @@ function IntentChip({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ============================================================
-// Product Card
-// ============================================================
-
+// ─── Product Card ───
 function ProductCard({
   product,
   rank,
@@ -233,14 +255,12 @@ function ProductCard({
   return (
     <div className={`rounded-2xl border ${trustColor} p-4 space-y-4`}>
       <div className="flex gap-4">
-        {/* Rank badge */}
         <div className="shrink-0">
           <div className="w-10 h-10 rounded-full bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-violet-300 font-bold">
             #{rank}
           </div>
         </div>
 
-        {/* Image */}
         {product.image && (
           <div className="shrink-0">
             <img
@@ -251,7 +271,6 @@ function ProductCard({
           </div>
         )}
 
-        {/* Info */}
         <div className="flex-1 min-w-0 space-y-2">
           <div className="flex items-start justify-between gap-3">
             <h3 className="font-medium text-slate-100 leading-snug">
@@ -267,7 +286,6 @@ function ProductCard({
             </div>
           </div>
 
-          {/* Brand + rating row */}
           <div className="flex flex-wrap items-center gap-3 text-xs">
             {product.brand && (
               <span className="text-slate-400">{product.brand}</span>
@@ -303,7 +321,6 @@ function ProductCard({
             )}
           </div>
 
-          {/* Price + CTA */}
           <div className="flex items-center justify-between gap-3 pt-1">
             <div>
               {product.price ? (
@@ -331,7 +348,6 @@ function ProductCard({
         </div>
       </div>
 
-      {/* Specs grid */}
       {product.specs && Object.values(product.specs).some((v) => v) && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-3 border-t border-slate-800">
           {Object.entries(product.specs)
@@ -353,7 +369,6 @@ function ProductCard({
         </div>
       )}
 
-      {/* Score reasons */}
       {product.score_reasons.length > 0 && (
         <div className="flex items-start gap-2 pt-3 border-t border-slate-800">
           <TrendingUp className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
@@ -370,7 +385,6 @@ function ProductCard({
         </div>
       )}
 
-      {/* Reviews */}
       {product.reviews?.summary && (
         <div className="pt-3 border-t border-slate-800 space-y-2">
           <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-slate-500">

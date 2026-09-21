@@ -19,6 +19,9 @@ class UserLogin(BaseModel):
 
 class UserRead(UserBase):
     id: uuid.UUID
+    is_admin: bool = False
+    plan: str = "free"
+    emergency_stop: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}

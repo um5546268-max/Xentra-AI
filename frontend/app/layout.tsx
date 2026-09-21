@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
-
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Xentra AI",
@@ -16,7 +14,20 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className={inter.className}>{children}</body>
+      <body className="bg-slate-950 text-slate-100 antialiased">
+        {children}
+        <Toaster
+          position="top-right"
+          theme="dark"
+          toastOptions={{
+            style: {
+              background: "#0f172a",
+              border: "1px solid #1e293b",
+              color: "#e2e8f0",
+            },
+          }}
+        />
+      </body>
     </html>
   );
 }

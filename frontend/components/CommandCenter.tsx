@@ -1,9 +1,9 @@
 "use client";
 
-import { getBillingStatus, BillingStatus, metricLabel } from "@/lib/billing";
-import { Gauge } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
+  PanelRightClose,
+  PanelRightOpen,
   Activity,
   Pause,
   X,
@@ -16,8 +16,16 @@ import {
   Music,
   SkipForward,
   SkipBack,
+  Gauge,
 } from "lucide-react";
+import { BeeHivePanel } from "@/components/hive/BeeHivePanel";
+import { ActiveTasksPanel } from "@/components/hive/ActiveTasksPanel";
+import { SystemHealthPanel } from "@/components/hive/SystemHealthPanel";
+import { QuickToolsPanel } from "@/components/hive/QuickToolsPanel";
+import { StopAllButton } from "@/components/hive/StopAllButton";
+import { getBillingStatus, BillingStatus, metricLabel } from "@/lib/billing";
 import { useTasks } from "@/lib/tasks-store";
+import { useShellStore } from "@/lib/shell-store";
 import {
   spotifyNowPlaying,
   spotifyPlay,
@@ -29,12 +37,23 @@ import {
 
 export default function CommandCenter() {
   const { tasks, run, pause, resume, cancel, retry, remove } = useTasks();
+  const { commandCenterCollapsed, toggleCommandCenter } = useShellStore();
+
+  // ── Keyboard shortcut Ctrl+J ──
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        toggleCommandCenter();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleCommandCenter]);
 
   const activeTasks = tasks.filter(
     (t) =>
-      t.status === "running" ||
-      t.status === "queued" ||
-      t.status === "paused"
+      t.status === "running" || t.status === "queued" || t.status === "paused"
   );
 
   const recentFinished = tasks
@@ -46,17 +65,108 @@ export default function CommandCenter() {
     )
     .slice(0, 3);
 
+  // ═══════════════════════════════════════════════════════════
+  // COLLAPSED MODE — narrow icon rail
+  // ═══════════════════════════════════════════════════════════
+  if (commandCenterCollapsed) {
+    return (
+      <aside className="w-14 shrink-0 border-l border-slate-800 bg-slate-950 flex flex-col h-screen items-center py-3 gap-1">
+        <button
+          onClick={toggleCommandCenter}
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-800 hover:text-slate-200 transition"
+          title="Expand Command Center (Ctrl+J)"
+        >
+          <PanelRightOpen className="w-4 h-4" />
+        </button>
+
+        <div className="w-8 border-t border-slate-800 my-1" />
+
+        {/* Bee Hive shortcut */}
+        <button
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition"
+          title="Bee Hive"
+        >
+          <span className="text-base">🐝</span>
+        </button>
+
+        {/* Active tasks count */}
+        <button
+          className={`w-9 h-9 rounded-lg flex items-center justify-center transition ${
+            activeTasks.length > 0
+              ? "text-violet-300 bg-violet-500/10"
+              : "text-slate-400 hover:bg-slate-800"
+          }`}
+          title={`Active tasks (${activeTasks.length})`}
+        >
+          <Activity className="w-4 h-4" />
+        </button>
+
+        {/* Now Playing shortcut */}
+        <button
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition"
+          title="Now Playing"
+        >
+          <Music className="w-4 h-4" />
+        </button>
+
+        {/* System Health shortcut */}
+        <button
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition"
+          title="System Health"
+        >
+          <Gauge className="w-4 h-4" />
+        </button>
+
+        <div className="mt-auto">
+          {/* Notification dot if there are active tasks */}
+          {activeTasks.length > 0 && (
+            <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse mx-auto" />
+          )}
+        </div>
+      </aside>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // EXPANDED MODE — full Command Center
+  // ═══════════════════════════════════════════════════════════
   return (
     <aside className="w-80 shrink-0 border-l border-slate-800 bg-slate-950 flex flex-col h-screen overflow-y-auto">
-      {/* Header */}
+      {/* Header — with collapse toggle */}
       <div className="p-4 border-b border-slate-800">
-        <h2 className="text-base font-semibold text-white">Command Center</h2>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Your AI is working. Here's what's happening.
-        </p>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-white">
+              Command Center
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Your AI is working. Here's what's happening.
+            </p>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <StopAllButton />
+            <button
+              onClick={toggleCommandCenter}
+              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-800 hover:text-slate-200 transition"
+              title="Collapse Command Center (Ctrl+J)"
+            >
+              <PanelRightClose className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Active Tasks */}
+      {/* Bee Hive */}
+      <div className="p-3 border-b border-slate-800">
+        <BeeHivePanel />
+      </div>
+
+      {/* Active Bee Tasks */}
+      <div className="p-3 border-b border-slate-800">
+        <ActiveTasksPanel />
+      </div>
+
+      {/* Active Tasks (legacy task system) */}
       <div className="p-3 border-b border-slate-800 space-y-2">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2 text-xs font-medium text-slate-500 uppercase tracking-wider">
@@ -201,10 +311,20 @@ export default function CommandCenter() {
         </div>
       )}
 
+      {/* System Health */}
+      <div className="p-3 border-b border-slate-800">
+        <SystemHealthPanel score={87} />
+      </div>
+
+      {/* Quick Tools */}
+      <div className="p-3 border-b border-slate-800">
+        <QuickToolsPanel />
+      </div>
+
       {/* Now Playing */}
       <NowPlayingCard />
 
-      {/* Usage Widget */}
+      {/* Usage */}
       <UsageWidget />
 
       {/* Connected Apps */}
@@ -246,10 +366,9 @@ export default function CommandCenter() {
   );
 }
 
-// ============================================================
-// Now Playing Card
-// ============================================================
-
+// ═══════════════════════════════════════════════════════════════
+// NOW PLAYING CARD
+// ═══════════════════════════════════════════════════════════════
 function NowPlayingCard() {
   const [now, setNow] = useState<NowPlaying | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -404,10 +523,66 @@ function NowPlayingCard() {
   );
 }
 
-// ============================================================
-// Helpers
-// ============================================================
+// ═══════════════════════════════════════════════════════════════
+// USAGE WIDGET
+// ═══════════════════════════════════════════════════════════════
+function UsageWidget() {
+  const [status, setStatus] = useState<BillingStatus | null>(null);
 
+  useEffect(() => {
+    getBillingStatus()
+      .then(setStatus)
+      .catch(() => {});
+  }, []);
+
+  if (!status) return null;
+
+  const metrics = Object.entries(status.usage).slice(0, 3);
+  if (metrics.length === 0) return null;
+
+  return (
+    <div className="p-3 border-b border-slate-800 space-y-2">
+      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 uppercase tracking-wider px-1">
+        <Gauge className="w-3.5 h-3.5" />
+        Usage · {status.plan.name}
+      </div>
+      <div className="space-y-2">
+        {metrics.map(([key, metric]) => {
+          const unlimited = metric.limit === -1;
+          const pct = unlimited
+            ? 0
+            : Math.min(100, (metric.used / metric.limit) * 100);
+          return (
+            <div key={key} className="space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">{metricLabel(key)}</span>
+                <span className="font-mono text-slate-500">
+                  {unlimited ? "∞" : `${metric.used}/${metric.limit}`}
+                </span>
+              </div>
+              <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
+                <div
+                  className={`h-full ${
+                    pct >= 90
+                      ? "bg-red-500"
+                      : pct >= 70
+                      ? "bg-yellow-500"
+                      : "bg-emerald-500"
+                  }`}
+                  style={{ width: unlimited ? "0%" : `${pct}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
 function TaskIcon({ type, status }: { type: string; status: string }) {
   const wrapper = "w-7 h-7 rounded-md flex items-center justify-center shrink-0";
   const colors: Record<string, string> = {
@@ -518,59 +693,6 @@ function PermRow({ label, allowed }: { label: string; allowed: boolean }) {
         <span className="w-1.5 h-1.5 rounded-full bg-current" />
         {allowed ? "Allowed" : "Off"}
       </span>
-    </div>
-  );
-}
-function UsageWidget() {
-  const [status, setStatus] = useState<BillingStatus | null>(null);
-
-  useEffect(() => {
-    getBillingStatus()
-      .then(setStatus)
-      .catch(() => {});
-  }, []);
-
-  if (!status) return null;
-
-  const metrics = Object.entries(status.usage).slice(0, 3);
-  if (metrics.length === 0) return null;
-
-  return (
-    <div className="p-3 border-b border-slate-800 space-y-2">
-      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 uppercase tracking-wider px-1">
-        <Gauge className="w-3.5 h-3.5" />
-        Usage · {status.plan.name}
-      </div>
-      <div className="space-y-2">
-        {metrics.map(([key, metric]) => {
-          const unlimited = metric.limit === -1;
-          const pct = unlimited
-            ? 0
-            : Math.min(100, (metric.used / metric.limit) * 100);
-          return (
-            <div key={key} className="space-y-1">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-400">{metricLabel(key)}</span>
-                <span className="font-mono text-slate-500">
-                  {unlimited ? "∞" : `${metric.used}/${metric.limit}`}
-                </span>
-              </div>
-              <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className={`h-full ${
-                    pct >= 90
-                      ? "bg-red-500"
-                      : pct >= 70
-                      ? "bg-yellow-500"
-                      : "bg-emerald-500"
-                  }`}
-                  style={{ width: unlimited ? "0%" : `${pct}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }

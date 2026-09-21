@@ -74,7 +74,7 @@ def _google_shopping_fallback(
     }
 
     try:
-        r = requests.get(SCRAPERAPI_URL, params=params, timeout=60)
+        r = requests.get(SCRAPERAPI_URL, params=params, timeout=25)
     except Exception as e:
         print(f"[product_search] Google fallback error: {e}")
         return []

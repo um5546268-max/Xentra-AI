@@ -1,5 +1,8 @@
 import api from "./api";
 
+// ═══════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════
 export type ShoppingIntent = {
   product_type: string;
   budget_max: number | null;
@@ -7,84 +10,88 @@ export type ShoppingIntent = {
   currency: string;
   use_case: string;
   priority_features: string[];
-  country: string;
+  location?: string | null;
 };
 
-export type ProductCandidate = {
+export type ProductSpecs = {
+  [key: string]: string | number | boolean | null;
+};
+
+export type ProductReviews = {
+  summary?: string;
+  positives?: string[];
+  negatives?: string[];
+  average?: number;
+  count?: number;
+};
+
+export type EnrichedProduct = {
   title: string;
+  product_name?: string;
   url: string;
-  snippet: string;
-  source: string;
+  image?: string;
   price: number | null;
   currency: string;
-  image: string | null;
-  rating: number | null;
-  reviews_count: number | null;
-  is_shopping_site: boolean;
-  specs: Record<string, any>;
-};
-
-export type ShoppingSearchResponse = {
-  query: string;
-  intent: ShoppingIntent;
-  budget: number | null;
-  currency: string;
-  count: number;
-  products: ProductCandidate[];
-};
-
-export type EnrichedProduct = ProductCandidate & {
-  product_name?: string;
   brand?: string;
-  model?: string;
-  highlights?: string[];
-  release_year?: number | null;
+  rating?: number;
+  reviews_count?: number;
+  source?: string;
+  specs?: ProductSpecs;
+  reviews?: ProductReviews;
   score: number;
   score_reasons: string[];
-  trust_score?: number;
-  trust_level?: string;
-  trust_reasons?: string[];
-  reviews?: {
-    summary?: string;
-    positives?: string[];
-    negatives?: string[];
-    sentiment?: string;
-    sample_count?: number;
-  };
-  trust_signals?: Record<string, any>;
-  enrich_error?: string;
+  trust_level?: "high" | "medium" | "low";
 };
 
 export type ShoppingCompareResponse = {
-  query: string;
   intent: ShoppingIntent;
-  budget: number | null;
-  currency: string;
-  count: number;
-  enriched_count: number;
   products: EnrichedProduct[];
 };
 
+export type ShoppingSearchProduct = {
+  title: string;
+  url: string;
+  image?: string;
+  price?: number | null;
+  currency?: string;
+  source?: string;
+};
+
+export type ShoppingSearchResponse = {
+  products: ShoppingSearchProduct[];
+  total?: number;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// SEARCH — fast, cheap, no enrichment
+// ═══════════════════════════════════════════════════════════════
 export const shoppingSearch = async (
-  q: string,
-  budget?: number
+  query: string,
+  maxResults: number = 5
 ): Promise<ShoppingSearchResponse> => {
-  const params: any = { q };
-  if (budget) params.budget = budget;
   const res = await api.get("/api/shopping/search", {
-    params,
-    timeout: 120_000,
+    params: { q: query, max_results: maxResults },
   });
   return res.data;
 };
 
+// ═══════════════════════════════════════════════════════════════
+// COMPARE — deep, slower (fetches + enriches + ranks)
+// Uses POST so we can send a larger structured request body
+// ═══════════════════════════════════════════════════════════════
 export const shoppingCompare = async (
-  q: string,
-  topN: number = 3
+  query: string,
+  topN: number = 3,
+  options?: {
+    budget?: number | null;
+    currency?: string | null;
+  }
 ): Promise<ShoppingCompareResponse> => {
-  const res = await api.get("/api/shopping/compare", {
-    params: { q, top_n: topN },
-    timeout: 300_000,  // 5 minutes for deep enrichment
+  const res = await api.post("/api/shopping/compare", {   // ← confirm endpoint in openapi
+    query,
+    top_n: topN,
+    budget: options?.budget ?? null,
+    currency: options?.currency ?? null,
   });
   return res.data;
 };

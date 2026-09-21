@@ -4,6 +4,7 @@ from sqlalchemy import String, Boolean, Text, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
+from sqlalchemy.ext.hybrid import hybrid_property
 
 
 class User(Base):
@@ -107,3 +108,16 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+        # ===== Plan (derived from subscription) =====
+    @hybrid_property
+    def plan(self) -> str:
+        """Return the current plan name (lowercase). Defaults to 'free'."""
+        sub = getattr(self, "subscription", None)
+        if sub is not None:
+            for attr in ("plan", "plan_name", "tier", "plan_id"):
+                val = getattr(sub, attr, None)
+                if val:
+                    return str(val).lower()
+        return "free"
+
+

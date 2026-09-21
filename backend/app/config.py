@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Xentra AI"
     API_V1_STR: str = "/api"
+    ENV: str = "development"
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
@@ -66,6 +67,13 @@ class Settings(BaseSettings):
     LOGIN_LOCKOUT_MINUTES: int = 15
 
     ADMIN_EMAIL: str = ""
+
+    JWT_SECRET: str = "dev-only-change-me-in-production-32chars-minimum"
+
+    DASHSCOPE_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+
+    UNSPLASH_ACCESS_KEY: str = ""    # optional, get free at unsplash.com/developers
 
     # TAVILY API key
     TAVILY_API_KEY: str = ""

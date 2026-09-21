@@ -6,6 +6,9 @@ export type User = {
   id: string;
   email: string;
   full_name: string | null;
+  is_admin: boolean;
+  plan: "free" | "pro" | "ultimate" | string;   // 👈 ADD
+  emergency_stop?: boolean;                     // 👈 ADD (optional)
   created_at: string;
 };
 

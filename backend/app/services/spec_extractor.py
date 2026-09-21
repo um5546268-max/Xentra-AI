@@ -120,7 +120,7 @@ def extract_specs(url: str) -> dict:
     if not pages or not pages[0].get("content"):
         return {"specs": {}, "error": "No content extracted"}
 
-    content = pages[0]["content"][:8000]
+    content = pages[0]["content"][:3000]
 
     # Ask the LLM to parse specs + reviews
     try:

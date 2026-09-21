@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import {
   Volume2,
   Play,
@@ -77,9 +77,7 @@ export default function SettingsPage() {
               <SettingRow label="Voice" hint="Which voice Xentra uses">
                 <select
                   value={settings.voice_name || ""}
-                  onChange={(e) =>
-                    save({ voice_name: e.target.value || null })
-                  }
+                  onChange={(e) => save({ voice_name: e.target.value || null })}
                   className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none"
                 >
                   <option value="">Default (browser picks)</option>
@@ -212,7 +210,6 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  {/* Test wake word helper */}
                   <TestWakeWordHelper />
                 </div>
               </SettingRow>
@@ -291,9 +288,10 @@ export default function SettingsPage() {
   );
 }
 
-// ============================================================
-// Test Wake Word Helper
-// ============================================================
+// ═══════════════════════════════════════════════════════════════
+// TEST WAKE WORD HELPER
+// ═══════════════════════════════════════════════════════════════
+import { useRef, useState } from "react";
 
 function TestWakeWordHelper() {
   const [listening, setListening] = useState(false);
@@ -322,10 +320,7 @@ function TestWakeWordHelper() {
       }
       const trimmed = transcript.trim();
       if (trimmed) {
-        setHeard((prev) => {
-          const next = [...prev, trimmed];
-          return next.slice(-8);
-        });
+        setHeard((prev) => [...prev, trimmed].slice(-8));
       }
     };
 
@@ -415,10 +410,9 @@ function TestWakeWordHelper() {
   );
 }
 
-// ============================================================
-// Reusable layout components
-// ============================================================
-
+// ═══════════════════════════════════════════════════════════════
+// REUSABLE LAYOUT COMPONENTS
+// ═══════════════════════════════════════════════════════════════
 function Section({
   title,
   subtitle,

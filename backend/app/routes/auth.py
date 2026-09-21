@@ -2,7 +2,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.deps import get_current_user
@@ -12,17 +12,17 @@ from app.models.user import User
 from app.schemas.user import UserCreate, UserLogin, UserRead
 from app.schemas.auth import TokenResponse
 from app.core.security import hash_password, verify_password, create_access_token
+from app.core.rate_limit import limiter
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-# In-memory failure tracking for login throttling
+# ── In-memory failure tracking for login throttling ──
 _login_failures: dict[str, list[datetime]] = defaultdict(list)
 
 
 def _record_failure(email: str):
-    """Record a failed login attempt."""
     from app.config import settings
     now = datetime.now(timezone.utc)
     failures = _login_failures[email]
@@ -32,7 +32,6 @@ def _record_failure(email: str):
 
 
 def _is_locked(email: str) -> bool:
-    """Check if account is locked due to too many failures."""
     from app.config import settings
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
@@ -45,9 +44,18 @@ def _clear_failures(email: str):
     _login_failures.pop(email, None)
 
 
-@router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def signup(payload: UserCreate, db: Session = Depends(get_db)):
-    # Check email isn't already taken
+# ── SIGNUP: 3 attempts / hour / IP ──
+@router.post(
+    "/signup",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("3/hour")
+def signup(
+    request: Request,                       # ← REQUIRED by slowapi
+    payload: UserCreate,
+    db: Session = Depends(get_db),
+):
     existing = db.execute(
         select(User).where(User.email == payload.email)
     ).scalar_one_or_none()
@@ -67,7 +75,6 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    # Ensure default permissions exist for this user
     try:
         from app.services.permission_service import ensure_defaults_for_user
         ensure_defaults_for_user(db, user.id)
@@ -78,9 +85,15 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)):
     return TokenResponse(access_token=token, user=UserRead.model_validate(user))
 
 
+# ── LOGIN: 10 attempts / 15 min / IP (slowapi) + per-email lockout (in-memory) ──
 @router.post("/login", response_model=TokenResponse)
-def login(payload: UserLogin, db: Session = Depends(get_db)):
-    # Check lockout
+@limiter.limit("10/15minutes")
+def login(
+    request: Request,                       # ← REQUIRED by slowapi
+    payload: UserLogin,
+    db: Session = Depends(get_db),
+):
+    # Per-email lockout (stops distributed brute force on a specific account)
     if _is_locked(payload.email):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -100,7 +113,6 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
 
     _clear_failures(payload.email)
 
-    # Ensure default permissions exist (idempotent)
     try:
         from app.services.permission_service import ensure_defaults_for_user
         ensure_defaults_for_user(db, user.id)

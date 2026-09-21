@@ -113,11 +113,18 @@ def enrich_and_rank(
 ) -> dict:
     """
     1. Search products (fast)
-    2. Enrich top N with specs (slow)
+    2. Enrich top N with specs (parallel)
     3. Score against user intent
     4. Return ranked list
     """
-    # Step 1: search
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    start = time.time()
+    TOTAL_BUDGET = 45            # hard cap for the whole enrichment phase
+    PER_PRODUCT_TIMEOUT = 25     # each product fetch cap
+
+    # ── Step 1: search ──
     search_result = search_products(
         user_query=user_query,
         budget_override=budget_override,
@@ -130,13 +137,15 @@ def enrich_and_rank(
     if not products:
         return {**search_result, "enriched_count": 0}
 
-    # Step 2: enrich top N
+    # ── Step 2: enrich top N IN PARALLEL ──
     candidates = products[:enrich_top_n]
     enriched = []
 
-    for p in candidates:
+    def _enrich_one(p: dict) -> dict | None:
+        """Enrich a single product. Runs inside a thread."""
         try:
             result = extract_specs(p["url"])
+
             if result.get("error"):
                 p["enrich_error"] = result["error"]
                 p["specs"] = {}
@@ -151,57 +160,70 @@ def enrich_and_rank(
                 p["reviews"] = spec_data.get("reviews") or {}
                 p["trust_signals"] = spec_data.get("trust_signals") or {}
 
-                # If the extractor found a price, use it
                 if spec_data.get("price") and not p["price"]:
                     p["price"] = spec_data["price"]
                     p["currency"] = spec_data.get("currency") or p["currency"]
 
-                # Ratings from the spec extraction
                 ratings = spec_data.get("ratings") or {}
                 if ratings.get("overall") and not p.get("rating"):
                     p["rating"] = ratings["overall"]
                 if ratings.get("count") and not p.get("reviews_count"):
                     p["reviews_count"] = ratings["count"]
 
-            # Compute intent score (ALWAYS — even if enrichment failed)
+            # Score against intent
             spec_data_for_scoring = {
                 "specs": p.get("specs") or {},
+                "reviews": p.get("reviews") or {},
                 "price": p.get("price"),
             }
-            scored = score_product(spec_data_for_scoring, intent)
-            p["score"] = scored["score"]
-            p["score_reasons"] = scored["reasons"]
+            score_info = score_product(spec_data_for_scoring, intent)
+            p["score"] = score_info.get("score", 0)
+            p["score_reasons"] = score_info.get("reasons", [])
 
-            # Compute trust score (ALWAYS)
-            trust = compute_trust_score(p)
-            p["trust_score"] = trust["score"]
-            p["trust_level"] = trust["level"]
-            p["trust_reasons"] = trust["reasons"]
+            # Trust
+            trust_info = compute_trust_score(p)
+            p["trust_level"] = trust_info.get("level", "medium")
 
+            return p
         except Exception as e:
-            p["enrich_error"] = str(e)
-            p["score"] = 30
-            p["score_reasons"] = [f"Enrichment failed: {str(e)[:60]}"]
-            p["trust_score"] = 30
-            p["trust_level"] = "low"
-            p["trust_reasons"] = ["Enrichment failed"]
+            print(f"[shopping] enrich failed for {p.get('url')}: {e}")
+            p["score"] = 0
+            p["score_reasons"] = []
+            p["specs"] = {}
+            return p
 
-        enriched.append(p)
+    print(f"[shopping] enriching {len(candidates)} products in parallel…")
 
-        # Sort by intent score (highest first)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        future_to_product = {pool.submit(_enrich_one, p): p for p in candidates}
+
+        for future in as_completed(future_to_product, timeout=TOTAL_BUDGET):
+            # Check total budget
+            if time.time() - start > TOTAL_BUDGET:
+                print(f"[shopping] total budget exceeded ({TOTAL_BUDGET}s), stopping")
+                break
+            try:
+                r = future.result(timeout=PER_PRODUCT_TIMEOUT)
+                if r:
+                    enriched.append(r)
+            except Exception as e:
+                p = future_to_product[future]
+                print(f"[shopping] future failed for {p.get('url')}: {e}")
+                # Still add the product with empty enrichment so user sees it
+                p["score"] = 0
+                p["score_reasons"] = []
+                enriched.append(p)
+
+    print(f"[shopping] enriched {len(enriched)} products in "
+          f"{time.time() - start:.1f}s")
+
+    # ── Step 3: sort by score, take top N ──
     enriched.sort(key=lambda p: p.get("score", 0), reverse=True)
-
-    # Filter out low-quality results for university/work/gaming use cases
-    use_case = intent.get("use_case", "general")
-    if use_case in ("university", "work", "gaming"):
-        # Keep products scoring at least 45
-        filtered = [p for p in enriched if p.get("score", 0) >= 45]
-        # But don't return empty if everything is bad
-        if filtered:
-            enriched = filtered
+    final_products = enriched[:enrich_top_n]
 
     return {
-        **search_result,
-        "products": enriched,
+        "intent": intent,
+        "products": final_products,
         "enriched_count": len(enriched),
+        "elapsed_seconds": round(time.time() - start, 1),
     }

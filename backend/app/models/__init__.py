@@ -15,7 +15,10 @@ from app.models.pending_action import PendingAction
 from app.models.plan import Plan
 from app.models.subscription import Subscription
 from app.models.usage import UsageRecord
-
+from app.models.feature_flag import FeatureFlag
+from app.models.announcement import Announcement
+from app.models.bee import BeeTask, BeeCheckpoint, BeePermission  # noqa: F401
+from app.models.generated_video import GeneratedVideo  # noqa: F401
 __all__ = [
     "User",
     "Conversation",
@@ -34,4 +37,9 @@ __all__ = [
     "Plan",
     "Subscription",
     "UsageRecord"
+    "FeatureFlag",
+    "Announcement",
+    "BeeTask"
+    "BeeCheckpoint"
+    "BeePermission"
 ]

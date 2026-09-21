@@ -47,9 +47,14 @@ export const spotifyNowPlaying = async (): Promise<NowPlaying> => {
   return res.data;
 };
 
-export const spotifySearch = async (q: string): Promise<SpotifyTrack[]> => {
-  const res = await api.get("/api/spotify/search", { params: { q } });
-  return res.data.tracks;
+export const spotifySearch = async (
+  query: string,
+  maxResults: number = 25
+): Promise<SpotifyTrack[]> => {
+  const res = await api.get("/api/spotify/search", {
+    params: { q: query, max_results: maxResults },
+  });
+  return res.data.results ?? res.data;
 };
 
 export const spotifyPlay = async (uri?: string): Promise<void> => {
@@ -84,9 +89,14 @@ export type YouTubeVideo = {
   duration: string;
 };
 
-export const youtubeSearch = async (q: string): Promise<YouTubeVideo[]> => {
-  const res = await api.get("/api/youtube/search", { params: { q } });
-  return res.data.results;
+export const youtubeSearch = async (
+  query: string,
+  maxResults: number = 25
+): Promise<YouTubeVideo[]> => {
+  const res = await api.get("/api/youtube/search", {
+    params: { q: query, max_results: maxResults },
+  });
+  return res.data.results ?? res.data;
 };
 
 // ----- Local Media -----
@@ -111,12 +121,15 @@ export type MediaFile = {
 
 export const listMediaRoots = async (): Promise<MediaRoot[]> => {
   const res = await api.get("/api/media/roots");
-  return res.data.roots;
+  const data = res.data;
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.roots)) return data.roots;
+  return [];
 };
 
 export const scanMedia = async (
   rootIndex: number,
-  kind?: "audio" | "video"
+  kind?: "audio" | "video",
 ): Promise<{ count: number; files: MediaFile[]; root_name: string }> => {
   const res = await api.get("/api/media/scan", {
     params: { root_index: rootIndex, ...(kind ? { kind } : {}) },

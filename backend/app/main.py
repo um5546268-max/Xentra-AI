@@ -1,12 +1,13 @@
-from app.models import User, Conversation, Message, Task, Integration, UserFile, GeneratedImage  # noqa: F401
+from app.models import (
+    User, Conversation, Message, Task, Integration,
+    UserFile, GeneratedImage,
+)  # noqa: F401
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-from app.routes import automations as automation_routes
-from app.routes import notifications as notification_routes
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 
@@ -35,76 +36,59 @@ from app.routes import system as system_routes
 from app.routes import voice as voice_routes
 from app.routes import billing as billing_routes
 from app.routes import admin as admin_routes
+from app.routes import automations as automation_routes
+from app.routes import notifications as notification_routes
+from app.routes import bees as bee_routes
+from app.routes import integrations_lang as lang_routes
+import os
+from pathlib import Path
+from app.routes import videos as video_routes
 
+# Core
+from app.core.sentry import init_sentry
+from app.core.logging import setup_logging
+from app.core.rate_limit import register_rate_limiter
+from app.middleware.request_id import RequestIDMiddleware
 
-# ==== Create the app ====
+setup_logging()
+init_sentry()
+
+# Auto-add MSYS2 to PATH on Windows if present
+if os.name == "nt":
+    for sub in ("mingw64", "ucrt64", "clang64"):
+        msys_bin = Path(r"C:\msys64") / sub / "bin"
+        if msys_bin.exists() and str(msys_bin) not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = f"{msys_bin}{os.pathsep}{os.environ.get('PATH', '')}"
+
+# ==== App ====
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Xentra AI — Your AI Operating Assistant",
     version="0.1.0",
+    docs_url="/docs" if settings.ENV != "production" else None,
+    redoc_url="/redoc" if settings.ENV != "production" else None,
 )
+
+# Rate limiting (slowapi)
+register_rate_limiter(app)
+
+# Request ID
+app.add_middleware(RequestIDMiddleware)
 
 
 # ==== CORS ====
 if settings.CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(o) for o in settings.CORS_ORIGINS.split(",")],
+        allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID"],
     )
 
-    from fastapi import Request
-from fastapi.responses import JSONResponse
 
-
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    """
-    Enforce rate limits on API routes.
-    Skips docs, static, health.
-    """
-    path = request.url.path
-
-    # Skip non-API routes
-    if not path.startswith("/api/"):
-        return await call_next(request)
-
-    # Skip health and static
-    if path in ("/api/health",) or path.startswith("/static/"):
-        return await call_next(request)
-
-    # Try to identify the user from the JWT
-    user_id = None
-    auth_header = request.headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        try:
-            from app.core.security import decode_access_token
-            token = auth_header.split(" ", 1)[1]
-            subject = decode_access_token(token)
-            if subject:
-                user_id = subject
-        except Exception:
-            pass
-
-    # Fall back to IP if no user
-    if not user_id:
-        user_id = f"ip:{request.client.host if request.client else 'unknown'}"
-
-    try:
-        from app.services.rate_limit import check_rate_limit
-        check_rate_limit(user_id)
-    except HTTPException as e:
-        return JSONResponse(
-            status_code=e.status_code,
-            content={"detail": e.detail},
-        )
-
-    return await call_next(request)
-
-
-# ==== Static files (uploaded images) ====
+# ==== Static files ====
 _upload_dir = Path(settings.UPLOAD_DIR).expanduser().resolve()
 _upload_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(_upload_dir)), name="static")
@@ -137,6 +121,10 @@ app.include_router(system_routes.router, prefix=settings.API_V1_STR)
 app.include_router(voice_routes.router, prefix=settings.API_V1_STR)
 app.include_router(billing_routes.router, prefix=settings.API_V1_STR)
 app.include_router(admin_routes.router, prefix=settings.API_V1_STR)
+app.include_router(bee_routes.router, prefix=settings.API_V1_STR)
+app.include_router(lang_routes.router, prefix=settings.API_V1_STR)
+app.include_router(video_routes.router, prefix=settings.API_V1_STR)
+
 # ==== Health & root ====
 @app.get("/api/health")
 def health_check():
@@ -149,4 +137,7 @@ def health_check():
 
 @app.get("/")
 def root():
-    return {"message": f"Welcome to {settings.PROJECT_NAME} API. Go to /docs for documentation."}
+    return {
+        "message": f"Welcome to {settings.PROJECT_NAME} API. "
+                   f"Go to /docs for documentation."
+    }

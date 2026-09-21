@@ -1,18 +1,12 @@
 import axios from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-export const api = axios.create({
-  baseURL: API_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
+const api = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
 });
 
-// Attach JWT token automatically (we'll use this later)
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
-    const token = localStorage.getItem("xentra_token");
+    const token = localStorage.getItem("xentra_token");   // ← your actual key!
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

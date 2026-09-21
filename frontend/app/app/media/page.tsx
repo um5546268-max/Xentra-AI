@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Music,
   Video,
@@ -29,26 +30,40 @@ import {
   MediaFile,
   MediaRoot,
 } from "@/lib/media";
+import { useMediaStore } from "@/lib/media-store";
+import { usePlayerStore } from "@/lib/player-store";
 
 type Tab = "spotify" | "youtube" | "local";
 
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 export default function MediaPage() {
-  const [tab, setTab] = useState<Tab>("spotify");
+  const { tab, setTab, clear } = useMediaStore();
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto p-8 space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-pink-500/20 border border-pink-500/40 flex items-center justify-center">
-            <Music className="w-5 h-5 text-pink-300" />
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-pink-500/20 border border-pink-500/40 flex items-center justify-center">
+              <Music className="w-5 h-5 text-pink-300" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold">Media</h1>
+              <p className="text-sm text-slate-500">
+                Music, videos, and local files — all in one place.
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-semibold">Media</h1>
-            <p className="text-sm text-slate-500">
-              Music, videos, and local files — all in one place.
-            </p>
-          </div>
+
+          <button
+            onClick={clear}
+            className="text-xs text-slate-500 hover:text-slate-300 transition"
+          >
+            Clear results
+          </button>
         </div>
 
         {/* Tabs */}
@@ -84,7 +99,6 @@ export default function MediaPage() {
 // ============================================================
 // Tab Button
 // ============================================================
-
 function TabButton({
   active,
   onClick,
@@ -114,10 +128,15 @@ function TabButton({
 // ============================================================
 // Spotify Tab
 // ============================================================
-
 function SpotifyTab() {
-  const [query, setQuery] = useState("");
-  const [tracks, setTracks] = useState<SpotifyTrack[]>([]);
+  const {
+    spotifyQuery: query,
+    setSpotifyQuery: setQuery,
+    spotifyTracks: tracks,
+    setSpotifyTracks: setTracks,
+  } = useMediaStore();
+
+  const { play } = usePlayerStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<NowPlaying | null>(null);
@@ -130,7 +149,6 @@ function SpotifyTab() {
     }
   };
 
-  // Poll now-playing every 5s
   useInterval(refreshNow, 5000);
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -139,7 +157,8 @@ function SpotifyTab() {
     setLoading(true);
     setError(null);
     try {
-      setTracks(await spotifySearch(query.trim()));
+      const results = await spotifySearch(query.trim(), 50);
+      setTracks(results);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err.message || "Search failed");
     } finally {
@@ -147,11 +166,30 @@ function SpotifyTab() {
     }
   };
 
-  const handlePlay = async (uri: string) => {
+  const handlePlay = async (track: SpotifyTrack) => {
     try {
       setError(null);
-      await spotifyPlay(uri);
-      setTimeout(refreshNow, 800);
+      await spotifyPlay(track.uri);
+      play(
+        {
+          id: track.id,
+          title: track.name,
+          artist: track.artist,
+          image: track.image,
+          uri: track.uri,
+          source: "spotify",
+          duration_ms: (track as any).duration_ms,
+        },
+        tracks.map((t) => ({
+          id: t.id,
+          title: t.name,
+          artist: t.artist,
+          image: t.image,
+          uri: t.uri,
+          source: "spotify" as const,
+          duration_ms: (t as any).duration_ms,
+        }))
+      );
     } catch (err: any) {
       setError(err?.response?.data?.detail || err.message || "Play failed");
     }
@@ -161,7 +199,19 @@ function SpotifyTab() {
     try {
       setError(null);
       await spotifyPause();
+      usePlayerStore.getState().pause();
       setTimeout(refreshNow, 500);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err.message);
+    }
+  };
+
+  const handleResume = async () => {
+    try {
+      setError(null);
+      await spotifyPlay();
+      usePlayerStore.getState().resume();
+      setTimeout(refreshNow, 800);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err.message);
     }
@@ -170,6 +220,7 @@ function SpotifyTab() {
   const handleNext = async () => {
     try {
       await spotifyNext();
+      usePlayerStore.getState().next();
       setTimeout(refreshNow, 800);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err.message);
@@ -179,6 +230,7 @@ function SpotifyTab() {
   const handlePrevious = async () => {
     try {
       await spotifyPrevious();
+      usePlayerStore.getState().previous();
       setTimeout(refreshNow, 800);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err.message);
@@ -187,7 +239,6 @@ function SpotifyTab() {
 
   return (
     <div className="space-y-6">
-      {/* Now Playing */}
       {now?.track && (
         <div className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 flex gap-4 items-center">
           {now.track.image && (
@@ -222,7 +273,7 @@ function SpotifyTab() {
               </button>
             ) : (
               <button
-                onClick={() => spotifyPlay()}
+                onClick={handleResume}
                 className="p-2 rounded-lg bg-violet-600 hover:bg-violet-500"
               >
                 <Play className="w-4 h-4" />
@@ -238,7 +289,6 @@ function SpotifyTab() {
         </div>
       )}
 
-      {/* Search */}
       <form onSubmit={handleSearch} className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -265,7 +315,6 @@ function SpotifyTab() {
         </div>
       )}
 
-      {/* Results */}
       {tracks.length > 0 && (
         <div className="space-y-1">
           {tracks.map((t) => (
@@ -283,7 +332,7 @@ function SpotifyTab() {
                 </div>
               </div>
               <button
-                onClick={() => handlePlay(t.uri)}
+                onClick={() => handlePlay(t)}
                 className="opacity-0 group-hover:opacity-100 transition p-2 rounded-lg bg-violet-600 hover:bg-violet-500"
                 title="Play"
               >
@@ -300,13 +349,21 @@ function SpotifyTab() {
 // ============================================================
 // YouTube Tab
 // ============================================================
-
 function YouTubeTab() {
-  const [query, setQuery] = useState("");
-  const [videos, setVideos] = useState<YouTubeVideo[]>([]);
+  const {
+    youtubeQuery: query,
+    setYoutubeQuery: setQuery,
+    youtubeVideos: videos,
+    setYoutubeVideos: setVideos,
+    youtubePlayingId: playingId,
+    setYoutubePlayingId: setPlayingId,
+    youtubePlayMode: playMode,
+    setYoutubePlayMode: setPlayMode,
+  } = useMediaStore();
+
+  const { play, pause, stop } = usePlayerStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -315,12 +372,50 @@ function YouTubeTab() {
     setError(null);
     setPlayingId(null);
     try {
-      setVideos(await youtubeSearch(query.trim()));
+      const results = await youtubeSearch(query.trim(), 50);
+      setVideos(results);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err.message || "Search failed");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePlayVideo = (v: YouTubeVideo) => {
+    setPlayingId(v.video_id);
+
+    if (playMode === "inline") {
+      // Playing locally in the Media page — stop the global mini player
+      stop();
+      return;
+    }
+
+    // Mini player mode — push to the global YouTube player
+    play(
+      {
+        id: v.video_id,
+        title: v.title,
+        artist: v.channel,
+        image: v.thumbnail,
+        url: `https://www.youtube.com/embed/${v.video_id}?autoplay=1`,
+        source: "youtube",
+      },
+      videos.map((x) => ({
+        id: x.video_id,
+        title: x.title,
+        artist: x.channel,
+        image: x.thumbnail,
+        url: `https://www.youtube.com/embed/${x.video_id}?autoplay=1`,
+        source: "youtube" as const,
+      }))
+    );
+  };
+
+  const handleModeSwitch = (mode: "mini" | "inline") => {
+    setPlayMode(mode);
+    // Stop whichever player is active so we don't double-play
+    stop();
+    setPlayingId(null);
   };
 
   const formatViews = (n: number): string => {
@@ -331,6 +426,33 @@ function YouTubeTab() {
 
   return (
     <div className="space-y-6">
+      {/* Play-mode toggle */}
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-slate-500">Play in:</span>
+        <button
+          onClick={() => handleModeSwitch("mini")}
+          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium transition ${
+            playMode === "mini"
+              ? "border-violet-500 bg-violet-500/20 text-violet-300"
+              : "border-slate-700 text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <Music className="w-3.5 h-3.5" />
+          Mini Player
+        </button>
+        <button
+          onClick={() => handleModeSwitch("inline")}
+          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium transition ${
+            playMode === "inline"
+              ? "border-red-500 bg-red-500/20 text-red-300"
+              : "border-slate-700 text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <Video className="w-3.5 h-3.5" />
+          Inline (this page)
+        </button>
+      </div>
+
       <form onSubmit={handleSearch} className="flex gap-2">
         <div className="relative flex-1">
           <Video className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -357,8 +479,9 @@ function YouTubeTab() {
         </div>
       )}
 
-      {playingId && (
-        <div className="rounded-2xl overflow-hidden border border-slate-800 aspect-video bg-black">
+      {/* Player area — depends on mode */}
+      {playingId && playMode === "inline" && (
+        <div className="rounded-2xl overflow-hidden border border-red-500/40 aspect-video bg-black">
           <iframe
             src={`https://www.youtube.com/embed/${playingId}?autoplay=1`}
             title="YouTube video"
@@ -369,12 +492,34 @@ function YouTubeTab() {
         </div>
       )}
 
+      {playingId && playMode === "mini" && (
+        <div className="rounded-2xl overflow-hidden border border-violet-500/40 bg-black aspect-video relative">
+          {(() => {
+            const current = videos.find((v) => v.video_id === playingId);
+            return current?.thumbnail ? (
+              <img
+                src={current.thumbnail}
+                alt={current.title}
+                className="w-full h-full object-cover opacity-40"
+              />
+            ) : null;
+          })()}
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-white gap-2">
+            <Play className="w-12 h-12" />
+            <div className="text-xs uppercase tracking-wider text-slate-300">
+              Playing in mini player →
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Video grid */}
       {videos.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
           {videos.map((v) => (
             <button
               key={v.video_id}
-              onClick={() => setPlayingId(v.video_id)}
+              onClick={() => handlePlayVideo(v)}
               className={`text-left rounded-2xl overflow-hidden border transition group ${
                 playingId === v.video_id
                   ? "border-red-500"
@@ -413,27 +558,39 @@ function YouTubeTab() {
 // ============================================================
 // Local Media Tab
 // ============================================================
-
 function LocalTab() {
+  const {
+    localRootIndex: selectedRoot,
+    setLocalRootIndex: setSelectedRoot,
+    localKind: kindFilter,
+    setLocalKind: setKindFilter,
+    localFiles: files,
+    setLocalFiles: setFiles,
+  } = useMediaStore();
+
+  const { play } = usePlayerStore();
   const [roots, setRoots] = useState<MediaRoot[]>([]);
-  const [files, setFiles] = useState<MediaFile[]>([]);
-  const [selectedRoot, setSelectedRoot] = useState<number | null>(null);
-  const [kindFilter, setKindFilter] = useState<"audio" | "video" | undefined>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadRoots = async () => {
+  const loadRoots = useCallback(async () => {
     try {
       const r = await listMediaRoots();
-      setRoots(r);
-      const firstValid = r.findIndex((x) => x.exists);
-      if (firstValid >= 0) setSelectedRoot(firstValid);
+      setRoots(r ?? []);
+      if (selectedRoot === null) {
+        const firstValid = r.findIndex((x: MediaRoot) => x.exists);
+        if (firstValid >= 0) setSelectedRoot(firstValid);
+      }
     } catch (err: any) {
+      console.error("[LocalTab] loadRoots failed:", err);
       setError(err?.message || "Failed to load roots");
     }
-  };
+  }, [selectedRoot, setSelectedRoot]);
 
-  useInterval(loadRoots, null); // run once on mount
+  useEffect(() => {
+    loadRoots();
+  }, [loadRoots]);
+
 
   const handleScan = async () => {
     if (selectedRoot === null) return;
@@ -449,6 +606,37 @@ function LocalTab() {
     }
   };
 
+  const handlePlayLocal = (f: MediaFile) => {
+    // Stream through the backend so the audio element can play it.
+    // Falls back to any stream_url the backend already provides.
+    const url =
+      (f as any).stream_url ||
+      `${API_URL}/api/media/file?path=${encodeURIComponent(f.relative_path)}`
+
+    play(
+      {
+        id: f.relative_path,
+        title: f.title,
+        artist: f.relative_path.split(/[\\/]/).slice(-2, -1)[0] ?? "",
+        url,
+        source: "local",
+        duration_ms: (f as any).duration_ms,
+      },
+       files.map((x: MediaFile) => ({
+        id: x.relative_path,
+        title: x.title,
+        artist: x.relative_path.split(/[\\/]/).slice(-2, -1)[0] ?? "",
+        url:
+          (x as any).stream_url ||
+          `${API_URL}/api/media/file?path=${encodeURIComponent(
+            x.relative_path
+          )}`,
+        source: "local" as const,
+        duration_ms: (x as any).duration_ms,
+      }))
+    );
+  };
+
   const formatBytes = (n: number): string => {
     if (n >= 1_000_000_000) return `${(n / 1e9).toFixed(1)} GB`;
     if (n >= 1_000_000) return `${(n / 1e6).toFixed(1)} MB`;
@@ -458,14 +646,13 @@ function LocalTab() {
 
   return (
     <div className="space-y-6">
-      {roots.length === 0 ? (
+      {!roots || roots.length === 0 ? (
         <div className="text-center py-16 text-slate-600 text-sm">
           No media roots configured. Add paths to <code>MEDIA_ROOTS</code> in
           your backend <code>.env</code>.
         </div>
       ) : (
         <>
-          {/* Controls */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-3">
             <div className="flex items-center gap-3 flex-wrap">
               <label className="text-xs text-slate-500 uppercase tracking-wider">
@@ -530,7 +717,7 @@ function LocalTab() {
               {files.map((f, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-3 rounded-lg p-2 hover:bg-slate-900/60 transition"
+                  className="group flex items-center gap-3 rounded-lg p-2 hover:bg-slate-900/60 transition"
                 >
                   <div
                     className={`w-8 h-8 rounded flex items-center justify-center shrink-0 ${
@@ -556,6 +743,13 @@ function LocalTab() {
                   <div className="text-xs text-slate-500 shrink-0">
                     {formatBytes(f.size_bytes)}
                   </div>
+                  <button
+                    onClick={() => handlePlayLocal(f)}
+                    className="opacity-0 group-hover:opacity-100 transition p-2 rounded-lg bg-violet-600 hover:bg-violet-500"
+                    title="Play"
+                  >
+                    <Play className="w-4 h-4" />
+                  </button>
                 </div>
               ))}
             </div>
@@ -597,11 +791,8 @@ function FilterBtn({
 }
 
 // ============================================================
-// useInterval — declarative setInterval, runs once when delay is null
+// useInterval
 // ============================================================
-
-import { useEffect, useRef } from "react";
-
 function useInterval(callback: () => void, delay: number | null) {
   const savedCallback = useRef(callback);
 

@@ -1,6 +1,8 @@
 "use client";
 
 import { use, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   Send,
   Loader2,
@@ -24,6 +26,8 @@ import {
   GeneratedImageEvent,
   AttachedFile,
   MemoryUsage,
+  BeeStreamEvent,
+  TopicImage,
   getMessages,
   streamChat,
   streamResearch,
@@ -31,6 +35,7 @@ import {
 } from "@/lib/conversations";
 import { resolveImageUrl } from "@/lib/images";
 import { useVoice } from "@/lib/voice-store";
+import { useLiveBees } from "@/lib/live-bees";
 import MarkdownMessage from "@/components/MarkdownMessage";
 import MicButton from "@/components/MicButton";
 
@@ -41,12 +46,27 @@ const MODELS = [
   { id: "qwen/qwen3.6-27b", label: "Qwen 3.6 27B" },
 ];
 
+const BEE_RESULT_URLS: Record<string, string> = {
+  manager: "/app/bees",
+  web: "/app/browser",
+  computer: "/app/browser",
+  coding: "/app/code",
+  file: "/app/files",
+  shopping: "/app/shopping",
+  maps: "/app/maps",
+  media: "/app/media",
+  research: "/app/browser",
+  health: "/app/system-health",
+  video: "/app/videos",
+};
+
 export default function ConversationPage({
   params,
 }: {
   params: Promise<{ conversationId: string }>;
 }) {
   const { conversationId } = use(params);
+  const router = useRouter();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [committedText, setCommittedText] = useState("");
@@ -64,8 +84,11 @@ export default function ConversationPage({
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastSpokenRef = useRef<string | null>(null);
+  const lastBeeTypeRef = useRef<string>("manager");
+  const [lightbox, setLightbox] = useState<TopicImage | null>(null);
 
-  // Voice
+  const { setBees, updateProgress, removeBee } = useLiveBees();
+
   const {
     settings: voiceSettings,
     speaking,
@@ -114,10 +137,9 @@ export default function ConversationPage({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Auto-speak when a message finishes streaming
+  // Auto-speak
   useEffect(() => {
     if (!voiceSettings?.auto_speak) return;
-
     const lastMsg = messages[messages.length - 1];
     if (
       lastMsg &&
@@ -131,54 +153,42 @@ export default function ConversationPage({
     }
   }, [messages, voiceSettings?.auto_speak, speakText]);
 
-  // Wake word listener
+  // Wake word
   useEffect(() => {
     if (!voiceSettings?.wake_word_enabled) {
       stopWakeWordListener();
       return;
     }
-
     startWakeWordListener((text) => {
       const handled = handleVoiceCommand(text);
       if (handled) return;
-
       setCommittedText((prev) => {
         const base = prev.trim();
         return base ? `${base} ${text}` : text;
       });
     });
-
     return () => {
       stopWakeWordListener();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    voiceSettings?.wake_word_enabled,
-    startWakeWordListener,
-    stopWakeWordListener,
-  ]);
+  }, [voiceSettings?.wake_word_enabled, startWakeWordListener, stopWakeWordListener]);
 
-  // Voice command handler
   const handleVoiceCommand = (text: string): boolean => {
     const lower = text.toLowerCase().trim();
-
     if (lower === "stop" || lower === "stop talking") {
       stopVoice();
       return true;
     }
-
     if (lower === "clear" || lower === "clear input") {
       setCommittedText("");
       setInterimText("");
       return true;
     }
-
     if (lower === "send" || lower === "send it") {
       const syntheticEvent = { preventDefault: () => {} } as React.FormEvent;
       handleSend(syntheticEvent);
       return true;
     }
-
     if (
       lower === "read that again" ||
       lower === "say that again" ||
@@ -190,8 +200,35 @@ export default function ConversationPage({
       if (lastAssistant) speakText(lastAssistant.content, lastAssistant.id);
       return true;
     }
-
     return false;
+  };
+
+  // 🐝 Shared bee handlers
+  const makeBeeHandlers = () => {
+    const onBees = (bees: BeeStreamEvent[]) => {
+      setBees(bees);
+      const primary = bees.find((b) => b.type !== "manager") ?? bees[0];
+      if (primary) lastBeeTypeRef.current = primary.type;
+      toast.info(`🐝 ${bees.length} Bees dispatched`, {
+        description: bees.map((b) => b.title).slice(0, 3).join(" · "),
+        duration: 4000,
+      });
+    };
+    const onBeeProgress = (map: Record<string, number>) => {
+      updateProgress(map);
+    };
+    const onBeesDone = (ids: string[]) => {
+      const target = BEE_RESULT_URLS[lastBeeTypeRef.current] || "/app/bees";
+      toast.success("🐝 Task complete", {
+        description: "Click to see the results.",
+        action: { label: "Open", onClick: () => router.push(target) },
+        duration: 10000,
+      });
+      setTimeout(() => {
+        for (const id of ids) removeBee(id);
+      }, 4000);
+    };
+    return { onBees, onBeeProgress, onBeesDone };
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -267,11 +304,26 @@ export default function ConversationPage({
       );
     };
 
+    // 🖼 Topic image handler
+    const onTopicImage = (img: TopicImage) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempAi.id ? { ...m, _topic_image: img } : m
+        )
+      );
+    };
+
+    const { onBees, onBeeProgress, onBeesDone } = makeBeeHandlers();
+
     try {
       if (mode === "research") {
         await streamResearch(conversationId, history, onDelta, {
           onSources,
           onMemories,
+          onBees,
+          onBeeProgress,
+          onBeesDone,
+          onTopicImage,
           signal: controller.signal,
         });
       } else {
@@ -281,6 +333,10 @@ export default function ConversationPage({
           onImage,
           onFiles,
           onMemories,
+          onBees,
+          onBeeProgress,
+          onBeesDone,
+          onTopicImage,
           signal: controller.signal,
         });
       }
@@ -314,7 +370,6 @@ export default function ConversationPage({
   const handleRegenerate = async () => {
     if (sending) return;
     setError(null);
-
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     if (!lastUser) return;
 
@@ -371,7 +426,6 @@ export default function ConversationPage({
 
   const submitEdit = async (m: Message) => {
     if (!editText.trim()) return;
-
     const index = messages.findIndex((x) => x.id === m.id);
     if (index === -1) return;
     const kept = messages.slice(0, index);
@@ -405,6 +459,16 @@ export default function ConversationPage({
 
     const controller = new AbortController();
     abortRef.current = controller;
+
+    const { onBees, onBeeProgress, onBeesDone } = makeBeeHandlers();
+
+    const onTopicImage = (img: TopicImage) => {
+      setMessages((prev) =>
+        prev.map((x) =>
+          x.id === tempAi.id ? { ...x, _topic_image: img } : x
+        )
+      );
+    };
 
     try {
       await streamChat(
@@ -447,6 +511,10 @@ export default function ConversationPage({
               )
             );
           },
+          onBees,
+          onBeeProgress,
+          onBeesDone,
+          onTopicImage,
           signal: controller.signal,
         }
       );
@@ -484,17 +552,10 @@ export default function ConversationPage({
                   ? "border-emerald-500 bg-emerald-500/20 text-emerald-300"
                   : "border-slate-700 text-slate-500"
               }`}
-              title={
-                wakeWordArmed
-                  ? "Listening — say your command"
-                  : "Wake word active — say 'Hey Xentra or Hey Zen'"
-              }
             >
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
-                  wakeWordArmed
-                    ? "bg-emerald-400 animate-pulse"
-                    : "bg-slate-600"
+                  wakeWordArmed ? "bg-emerald-400 animate-pulse" : "bg-slate-600"
                 }`}
               />
               {wakeWordArmed ? "Listening" : "Wake word"}
@@ -513,9 +574,6 @@ export default function ConversationPage({
                 ? "border-violet-500 bg-violet-500/20 text-violet-300"
                 : "border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
             }`}
-            title={
-              voiceSettings?.auto_speak ? "Auto-speak ON" : "Auto-speak OFF"
-            }
           >
             {voiceSettings?.auto_speak ? (
               <Volume2 className="w-3.5 h-3.5" />
@@ -610,8 +668,49 @@ export default function ConversationPage({
                       >
                         {m.role === "user" ? (
                           m.content
-                        ) : m.content || m._image ? (
+                        ) : m.content || m._image || m._topic_image ? (
                           <>
+                            {/* 🖼 Topic image (image-first chat) */}
+                            {m._topic_image && (
+  <div className="rounded-xl overflow-hidden mb-3 border border-slate-700 max-w-md">
+    <button
+      onClick={() => setLightbox(m._topic_image!)}
+      className="block w-full cursor-zoom-in"
+      title="Click to enlarge"
+    >
+      <img
+        src={m._topic_image.url}
+        alt={m._topic_image.title}
+        className="w-full max-h-60 object-cover hover:opacity-95 transition"
+        loading="lazy"
+      />
+    </button>
+    <div className="text-[10px] text-slate-500 px-2 py-1 bg-slate-900/60 flex items-center justify-between gap-2">
+      <span className="truncate">
+        {m._topic_image.source} · {m._topic_image.title}
+      </span>
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={() => setLightbox(m._topic_image!)}
+          className="text-violet-400 hover:text-violet-300"
+        >
+          Expand
+        </button>
+        {m._topic_image.page_url && (
+          <a
+            href={m._topic_image.page_url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-violet-400 hover:text-violet-300"
+          >
+            Open
+          </a>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
                             {m._image && (
                               <img
                                 src={resolveImageUrl(m._image.url)}
@@ -637,7 +736,6 @@ export default function ConversationPage({
                                   {m._memories.slice(0, 5).map((mem) => (
                                     <span
                                       key={mem.id}
-                                      title={`${mem.key}: ${mem.value}`}
                                       className="inline-flex items-center gap-1 rounded border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[10px] text-purple-300 truncate max-w-xs"
                                     >
                                       {mem.key}
@@ -684,7 +782,7 @@ export default function ConversationPage({
                         )}
                       </div>
 
-                      {/* Per-message actions */}
+                      {/* Actions */}
                       <div
                         className={`flex items-center gap-3 text-xs text-slate-400 mt-1 ${
                           m.role === "user" ? "justify-end" : ""
@@ -700,9 +798,6 @@ export default function ConversationPage({
                               }
                             }}
                             className="hover:text-violet-400 transition flex items-center gap-1"
-                            title={
-                              isThisMessageSpeaking ? "Stop speaking" : "Speak"
-                            }
                           >
                             {isThisMessageSpeaking ? (
                               <>
@@ -719,7 +814,6 @@ export default function ConversationPage({
                         <button
                           onClick={() => handleCopy(m)}
                           className="hover:text-violet-400 transition flex items-center gap-1"
-                          title="Copy"
                         >
                           {copiedId === m.id ? (
                             <>
@@ -736,7 +830,6 @@ export default function ConversationPage({
                           <button
                             onClick={() => startEdit(m)}
                             className="hover:text-violet-400 transition flex items-center gap-1"
-                            title="Edit & resend"
                           >
                             <Pencil className="w-3.5 h-3.5" /> Edit
                           </button>
@@ -746,7 +839,6 @@ export default function ConversationPage({
                           <button
                             onClick={handleRegenerate}
                             className="hover:text-violet-400 transition flex items-center gap-1"
-                            title="Regenerate"
                           >
                             <RotateCcw className="w-3.5 h-3.5" /> Regenerate
                           </button>
@@ -822,7 +914,6 @@ export default function ConversationPage({
                   setInterimText("");
                   return;
                 }
-
                 setCommittedText((prev) => {
                   const base = prev.trim();
                   return base ? `${base} ${text}` : text;
@@ -840,7 +931,6 @@ export default function ConversationPage({
               type="button"
               onClick={handleStop}
               className="rounded-xl bg-red-600 p-3 hover:bg-red-500 transition"
-              title="Stop"
             >
               <Square className="w-5 h-5" />
             </button>
@@ -862,14 +952,18 @@ export default function ConversationPage({
           onClose={() => setCompareOpen(false)}
         />
       )}
+      {lightbox && (
+  <ImageLightbox
+    image={lightbox}
+    onClose={() => setLightbox(null)}
+    onReply={(text) => setCommittedText(text)}
+  />
+)}
     </div>
   );
 }
 
-// ============================================================
-// ModeButton
-// ============================================================
-
+// ─── Mode Button ───
 function ModeButton({
   active,
   onClick,
@@ -897,10 +991,7 @@ function ModeButton({
   );
 }
 
-// ============================================================
-// Sources
-// ============================================================
-
+// ─── Sources ───
 function Sources({
   sources,
   onCompare,
@@ -909,10 +1000,8 @@ function Sources({
   onCompare?: () => void;
 }) {
   if (!sources?.length) return null;
-
   const avgTrust =
     sources.reduce((sum, s) => sum + (s._trust || 0), 0) / sources.length;
-
   return (
     <div className="mt-3 space-y-2 border-t border-slate-700 pt-3">
       <div className="flex items-center justify-between">
@@ -930,15 +1019,12 @@ function Sources({
           )}
           <div className="flex items-center gap-1.5 text-[11px]">
             <span className="text-slate-500">Avg trust</span>
-            <span
-              className={`font-mono font-semibold ${trustTextColor(avgTrust)}`}
-            >
+            <span className={`font-mono font-semibold ${trustTextColor(avgTrust)}`}>
               {Math.round(avgTrust)}
             </span>
           </div>
         </div>
       </div>
-
       {sources.map((s, i) => (
         <a
           key={i}
@@ -952,7 +1038,6 @@ function Sources({
             <span className="text-[11px] font-mono text-violet-400 shrink-0 mt-0.5">
               [{i + 1}]
             </span>
-
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex items-center gap-2">
                 <div className="text-xs text-slate-300 truncate flex-1">
@@ -968,7 +1053,6 @@ function Sources({
                   </span>
                 )}
               </div>
-
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="text-[11px] text-slate-500 truncate">
@@ -1054,10 +1138,7 @@ function FreshnessChip({ level, hint }: { level: string; hint?: string }) {
   );
 }
 
-// ============================================================
-// Compare Modal
-// ============================================================
-
+// ─── Compare Modal ───
 function CompareModal({
   sources,
   onClose,
@@ -1085,7 +1166,6 @@ function CompareModal({
             <X className="w-5 h-5" />
           </button>
         </div>
-
         <div className="flex-1 overflow-auto">
           <div className="grid grid-cols-2 gap-3 p-4">
             {sources.map((s, i) => (
@@ -1106,7 +1186,6 @@ function CompareModal({
                     {s.title || s.url}
                   </a>
                 </div>
-
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[11px] text-slate-500">
                     {s._domain}
@@ -1120,23 +1199,7 @@ function CompareModal({
                       Trust {s._trust} · {s._trust_level}
                     </span>
                   )}
-                  {s._kind && (
-                    <span
-                      className={`rounded px-1 py-0.5 text-[9px] uppercase font-semibold ${kindColor(
-                        s._kind
-                      )}`}
-                    >
-                      {s._kind}
-                    </span>
-                  )}
-                  {s._freshness && s._freshness !== "unknown" && (
-                    <FreshnessChip
-                      level={s._freshness}
-                      hint={s._freshness_hint}
-                    />
-                  )}
                 </div>
-
                 <div className="text-xs text-slate-400 leading-relaxed max-h-40 overflow-y-auto">
                   {s.content?.slice(0, 600) || "(no preview)"}
                   {(s.content?.length || 0) > 600 ? "…" : ""}
@@ -1147,5 +1210,244 @@ function CompareModal({
         </div>
       </div>
     </div>
+  );
+}
+// ═══════════════════════════════════════════════════════════════
+// LIGHTBOX — full-screen image viewer with zoom / download / reply
+// ═══════════════════════════════════════════════════════════════
+function ImageLightbox({
+  image,
+  onClose,
+  onReply,
+}: {
+  image: TopicImage;
+  onClose: () => void;
+  onReply: (text: string) => void;
+}) {
+  const [zoom, setZoom] = useState(1);
+  const [copied, setCopied] = useState(false);
+
+  const zoomIn = () => setZoom((z) => Math.min(4, z + 0.25));
+  const zoomOut = () => setZoom((z) => Math.max(0.5, z - 0.25));
+  const resetZoom = () => setZoom(1);
+
+  const download = async () => {
+    try {
+      const res = await fetch(image.url);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${image.title.replace(/\s+/g, "_") || "image"}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Download failed:", err);
+      // Fallback: open in new tab
+      window.open(image.url, "_blank");
+    }
+  };
+
+  const copyUrl = async () => {
+    await navigator.clipboard.writeText(image.url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const handleReply = () => {
+    onReply(`About this image of ${image.title}: `);
+    onClose();
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "+" || e.key === "=") zoomIn();
+      if (e.key === "-") zoomOut();
+      if (e.key === "0") resetZoom();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex flex-col"
+      onClick={onClose}
+    >
+      {/* Top bar */}
+      <div
+        className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950/80"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="min-w-0">
+          <div className="text-sm text-slate-200 truncate">{image.title}</div>
+          <div className="text-[11px] text-slate-500">
+            {image.source}
+            {image.page_url && (
+              <>
+                {" · "}
+                <a
+                  href={image.page_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-violet-400 hover:text-violet-300"
+                >
+                  View source
+                </a>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <IconButton
+            onClick={zoomOut}
+            label="Zoom out (−)"
+            icon={
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                <line x1="8" y1="11" x2="14" y2="11" />
+              </svg>
+            }
+          />
+          <span className="text-xs text-slate-400 font-mono w-12 text-center">
+            {Math.round(zoom * 100)}%
+          </span>
+          <IconButton
+            onClick={zoomIn}
+            label="Zoom in (+)"
+            icon={
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                <line x1="8" y1="11" x2="14" y2="11" />
+                <line x1="11" y1="8" x2="11" y2="14" />
+              </svg>
+            }
+          />
+          <IconButton
+            onClick={resetZoom}
+            label="Reset zoom (0)"
+            icon={
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                <polyline points="3 3 3 8 8 8" />
+              </svg>
+            }
+          />
+        </div>
+      </div>
+
+      {/* Image area */}
+      <div
+        className="flex-1 overflow-auto flex items-center justify-center p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img
+          src={image.url}
+          alt={image.title}
+          className="max-w-none transition-transform duration-150 select-none"
+          style={{
+            transform: `scale(${zoom})`,
+            transformOrigin: "center",
+            maxHeight: zoom === 1 ? "85vh" : "none",
+          }}
+          draggable={false}
+        />
+      </div>
+
+      {/* Bottom action bar */}
+      <div
+        className="flex items-center justify-center gap-2 px-4 py-3 border-t border-slate-800 bg-slate-950/80 flex-wrap"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <ActionButton
+          onClick={download}
+          label="Download"
+          icon={
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          }
+        />
+        <ActionButton
+          onClick={copyUrl}
+          label={copied ? "Copied!" : "Copy URL"}
+          icon={
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          }
+        />
+        <ActionButton
+          onClick={handleReply}
+          label="Reply about this"
+          icon={
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="9 17 4 12 9 7" />
+              <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+            </svg>
+          }
+        />
+        <ActionButton
+          onClick={onClose}
+          label="Close"
+          icon={
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
+function IconButton({
+  onClick,
+  label,
+  icon,
+}: {
+  onClick: () => void;
+  label: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition"
+    >
+      {icon}
+    </button>
+  );
+}
+
+function ActionButton({
+  onClick,
+  label,
+  icon,
+}: {
+  onClick: () => void;
+  label: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 px-3 py-1.5 text-xs text-slate-300 transition"
+    >
+      {icon}
+      {label}
+    </button>
   );
 }

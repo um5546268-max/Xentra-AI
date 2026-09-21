@@ -1,150 +1,80 @@
-"""
-Local media scanner.
-Strictly whitelisted — only scans directories listed in settings.MEDIA_ROOTS.
-"""
+# app/services/local_media.py
 import os
-import mimetypes
-from datetime import datetime
 from pathlib import Path
-from fastapi import HTTPException
+from typing import Any
 
 from app.config import settings
 
 
-AUDIO_EXTENSIONS = {
-    ".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus", ".wma",
-}
-VIDEO_EXTENSIONS = {
-    ".mp4", ".mkv", ".mov", ".avi", ".webm", ".flv", ".wmv", ".m4v",
-}
-
-
 def _get_roots() -> list[Path]:
-    raw = settings.MEDIA_ROOTS or ""
+    raw = getattr(settings, "MEDIA_ROOTS", "") or ""
+    return [
+        Path(r.strip()).expanduser().resolve()
+        for r in raw.split(",")
+        if r.strip()
+    ]
+
+
+def list_media_roots():
+    raw = getattr(settings, "MEDIA_ROOTS", "") or ""
     roots = []
     for r in raw.split(","):
         r = r.strip()
         if not r:
             continue
-        p = Path(r).resolve()
-        roots.append(p)
+        p = Path(r).expanduser().resolve()
+        roots.append({
+            "path": str(p),
+            "name": p.name,
+            "exists": p.exists(),
+            "label": p.name,
+        })
     return roots
 
 
-def list_roots() -> list[dict]:
-    """Return metadata about each configured media root."""
-    roots = _get_roots()
-    result = []
-    for p in roots:
-        result.append({
-            "path": str(p),
-            "name": p.name,
-            "exists": p.exists() and p.is_dir(),
-            "label": p.name or str(p),
-        })
-    return result
+AUDIO_EXTS = {".mp3", ".m4a", ".wav", ".flac", ".ogg", ".aac"}
+VIDEO_EXTS = {".mp4", ".mkv", ".webm", ".mov", ".avi"}
 
 
-def _is_inside_roots(path: Path, roots: list[Path]) -> bool:
-    """Verify path is inside one of the whitelisted roots."""
-    try:
-        path = path.resolve()
-    except (OSError, RuntimeError):
-        return False
-
-    for root in roots:
-        try:
-            path.relative_to(root)
-            return True
-        except ValueError:
-            continue
-    return False
-
-
-def _classify(ext: str) -> str | None:
-    ext = ext.lower()
-    if ext in AUDIO_EXTENSIONS:
-        return "audio"
-    if ext in VIDEO_EXTENSIONS:
-        return "video"
-    return None
-
-
-def scan_root(
-    root_index: int,
-    kind: str | None = None,
-    max_files: int = 500,
-) -> dict:
+def scan_media_files(root_index: int, kind: str | None = None) -> dict:
     """
-    Scan a whitelisted root folder and return media files.
-    kind: "audio" | "video" | None (both)
+    Walk a media root and return audio/video files.
+    kind: 'audio' | 'video' | None (both)
     """
     roots = _get_roots()
     if root_index < 0 or root_index >= len(roots):
-        raise HTTPException(status_code=404, detail="Root not found")
+        return {"files": []}
 
     root = roots[root_index]
     if not root.exists() or not root.is_dir():
-        raise HTTPException(status_code=404, detail="Root directory does not exist")
+        return {"files": []}
 
     files = []
-    scanned = 0
+    for dirpath, _, filenames in os.walk(root):
+        for name in filenames:
+            p = Path(dirpath) / name
+            ext = p.suffix.lower()
+            is_audio = ext in AUDIO_EXTS
+            is_video = ext in VIDEO_EXTS
 
-    # Walk the folder, but ONLY descend inside this root
-    for dirpath, dirnames, filenames in os.walk(root):
-        # Skip hidden folders
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-        if len(dirnames) > 50:
-            dirnames[:] = dirnames[:50]
-
-        for fname in filenames:
-            if scanned >= max_files:
-                break
-
-            # Skip hidden files
-            if fname.startswith("."):
+            if not (is_audio or is_video):
                 continue
-
-            full = Path(dirpath) / fname
-
-            # Belt-and-suspenders: verify inside whitelist
-            if not _is_inside_roots(full, roots):
+            if kind == "audio" and not is_audio:
                 continue
-
-            ext = full.suffix
-            file_kind = _classify(ext)
-            if not file_kind:
-                continue
-            if kind and file_kind != kind:
+            if kind == "video" and not is_video:
                 continue
 
             try:
-                stat = full.stat()
+                size = p.stat().st_size
             except OSError:
-                continue
+                size = 0
 
             files.append({
-                "path": str(full),
-                "name": fname,
-                "title": full.stem,   # filename without extension
-                "kind": file_kind,
-                "extension": ext.lower(),
-                "size_bytes": stat.st_size,
-                "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "relative_path": str(full.relative_to(root)),
+                "title": p.stem,
+                "relative_path": str(p.relative_to(root)),
+                "absolute_path": str(p),
+                "kind": "audio" if is_audio else "video",
+                "size_bytes": size,
             })
-            scanned += 1
 
-        if scanned >= max_files:
-            break
-
-    # Sort newest first
-    files.sort(key=lambda f: f["modified_at"], reverse=True)
-
-    return {
-        "root": str(root),
-        "root_name": root.name,
-        "kind_filter": kind,
-        "count": len(files),
-        "files": files,
-    }
+    return {"files": files}

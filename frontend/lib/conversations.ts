@@ -1,7 +1,8 @@
 import api from "./api";
 
-// ---------- Types ----------
-
+// ═══════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════
 export type Conversation = {
   id: string;
   title: string;
@@ -48,6 +49,24 @@ export type MemoryUsage = {
   pinned: boolean;
 };
 
+// 🐝 Bee stream event
+export type BeeStreamEvent = {
+  id: string;
+  type: string;
+  title: string;
+  progress: number;
+  status: string;
+  stoppable: boolean;
+};
+
+// 🖼 Topic image (image-first chat)
+export type TopicImage = {
+  url: string;
+  source: string;
+  title: string;
+  page_url?: string;
+};
+
 export type Message = {
   id: string;
   role: string;
@@ -59,10 +78,12 @@ export type Message = {
   _image?: GeneratedImageEvent;
   _files?: AttachedFile[];
   _memories?: MemoryUsage[];
+  _topic_image?: TopicImage;      // 👈 NEW
 };
 
-// ---------- Conversations ----------
-
+// ═══════════════════════════════════════════════════════════════
+// CONVERSATIONS
+// ═══════════════════════════════════════════════════════════════
 export const getConversations = async (): Promise<Conversation[]> => {
   const res = await api.get("/api/conversations");
   return res.data;
@@ -89,8 +110,9 @@ export const updateConversation = async (
   return res.data;
 };
 
-// ---------- Messages ----------
-
+// ═══════════════════════════════════════════════════════════════
+// MESSAGES
+// ═══════════════════════════════════════════════════════════════
 export const getMessages = async (
   conversationId: string
 ): Promise<Message[]> => {
@@ -98,8 +120,9 @@ export const getMessages = async (
   return res.data;
 };
 
-// ---------- Chat (streaming) ----------
-
+// ═══════════════════════════════════════════════════════════════
+// STREAMING CHAT
+// ═══════════════════════════════════════════════════════════════
 export const streamChat = async (
   conversationId: string,
   messages: { role: string; content: string }[],
@@ -110,6 +133,10 @@ export const streamChat = async (
     onImage?: (image: GeneratedImageEvent) => void;
     onFiles?: (files: AttachedFile[]) => void;
     onMemories?: (memories: MemoryUsage[]) => void;
+    onBees?: (bees: BeeStreamEvent[]) => void;
+    onBeeProgress?: (map: Record<string, number>) => void;
+    onBeesDone?: (ids: string[]) => void;
+    onTopicImage?: (img: TopicImage) => void;      // 👈 NEW
     signal?: AbortSignal;
   }
 ): Promise<void> => {
@@ -159,14 +186,30 @@ export const streamChat = async (
         if (parsed.files && options?.onFiles) options.onFiles(parsed.files);
         if (parsed.memories && options?.onMemories)
           options.onMemories(parsed.memories);
+
+        // 🐝 Bee events
+        if (parsed.bees && options?.onBees) options.onBees(parsed.bees);
+        if (parsed.bee_progress && options?.onBeeProgress) {
+          const map: Record<string, number> = {};
+          for (const p of parsed.bee_progress) map[p.id] = p.progress;
+          options.onBeeProgress(map);
+        }
+        if (parsed.bees_done && options?.onBeesDone)
+          options.onBeesDone(parsed.bees_done);
+
+        // 🖼 Topic image event
+        if (parsed.topic_image && options?.onTopicImage)
+          options.onTopicImage(parsed.topic_image);
+
         if (parsed.error) throw new Error(parsed.error);
       } catch {}
     }
   }
 };
 
-// ---------- Research (streaming) ----------
-
+// ═══════════════════════════════════════════════════════════════
+// STREAMING RESEARCH
+// ═══════════════════════════════════════════════════════════════
 export const streamResearch = async (
   conversationId: string,
   messages: { role: string; content: string }[],
@@ -174,6 +217,10 @@ export const streamResearch = async (
   options?: {
     onSources?: (sources: Source[]) => void;
     onMemories?: (memories: MemoryUsage[]) => void;
+    onBees?: (bees: BeeStreamEvent[]) => void;
+    onBeeProgress?: (map: Record<string, number>) => void;
+    onBeesDone?: (ids: string[]) => void;
+    onTopicImage?: (img: TopicImage) => void;      // 👈 NEW
     signal?: AbortSignal;
   }
 ): Promise<void> => {
@@ -220,14 +267,30 @@ export const streamResearch = async (
           options.onSources(parsed.sources);
         if (parsed.memories && options?.onMemories)
           options.onMemories(parsed.memories);
+
+        // 🐝 Bee events
+        if (parsed.bees && options?.onBees) options.onBees(parsed.bees);
+        if (parsed.bee_progress && options?.onBeeProgress) {
+          const map: Record<string, number> = {};
+          for (const p of parsed.bee_progress) map[p.id] = p.progress;
+          options.onBeeProgress(map);
+        }
+        if (parsed.bees_done && options?.onBeesDone)
+          options.onBeesDone(parsed.bees_done);
+
+        // 🖼 Topic image event
+        if (parsed.topic_image && options?.onTopicImage)
+          options.onTopicImage(parsed.topic_image);
+
         if (parsed.error) throw new Error(parsed.error);
       } catch {}
     }
   }
 };
 
-// ---------- Regenerate ----------
-
+// ═══════════════════════════════════════════════════════════════
+// REGENERATE
+// ═══════════════════════════════════════════════════════════════
 export const regenerateChat = async (
   conversationId: string,
   messages: { role: string; content: string }[]

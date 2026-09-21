@@ -3,6 +3,11 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
+from app.models.feature_flag import FeatureFlag
+from app.models.announcement import Announcement
+from app.models.notification import Notification
+from app.services.feature_flags import list_flags, upsert_flag
+from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.deps import require_admin
@@ -172,3 +177,195 @@ def delete_user(
     db.delete(user)
     db.commit()
     return None
+# ============================================================
+# Feature flags
+# ============================================================
+
+class FeatureFlagRead(BaseModel):
+    id: uuid.UUID
+    key: str
+    description: str | None
+    enabled: bool
+    rollout_percent: int
+    enabled_for_users: dict | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FeatureFlagUpdate(BaseModel):
+    enabled: bool | None = None
+    rollout_percent: int | None = Field(default=None, ge=0, le=100)
+    description: str | None = None
+    enabled_for_users: dict | None = None
+
+
+@router.get("/feature-flags", response_model=list[FeatureFlagRead])
+def get_feature_flags(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    return list_flags(db)
+
+
+@router.put("/feature-flags/{key}", response_model=FeatureFlagRead)
+def set_feature_flag(
+    key: str,
+    payload: FeatureFlagUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    flag = upsert_flag(
+        db,
+        key=key,
+        enabled=payload.enabled,
+        rollout_percent=payload.rollout_percent,
+        enabled_for_users=payload.enabled_for_users,
+        description=payload.description,
+    )
+    return flag
+
+
+# ============================================================
+# Announcements
+# ============================================================
+
+class AnnouncementCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    body: str | None = None
+    level: str = Field(default="info", pattern="^(info|success|warning|error)$")
+    target: str = Field(default="all", pattern="^(all|admins)$")
+    dismissible: bool = True
+
+
+class AnnouncementRead(BaseModel):
+    id: uuid.UUID
+    title: str
+    body: str | None
+    level: str
+    active: bool
+    dismissible: bool
+    target: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+@router.post("/announcements", response_model=AnnouncementRead, status_code=201)
+def create_announcement(
+    payload: AnnouncementCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Create an announcement AND notify every user."""
+    ann = Announcement(
+        title=payload.title,
+        body=payload.body,
+        level=payload.level,
+        target=payload.target,
+        dismissible=payload.dismissible,
+        active=True,
+    )
+    db.add(ann)
+    db.commit()
+    db.refresh(ann)
+
+    # Notify all users (or just admins)
+    if payload.target == "all":
+        users = db.execute(select(User)).scalars().all()
+    else:
+        users = db.execute(select(User).where(User.is_admin == True)).scalars().all()  # noqa: E712
+
+    from app.services.notifications import create_notification
+    for u in users:
+        try:
+            create_notification(
+                db,
+                u.id,
+                title=f"📢 {payload.title}",
+                body=payload.body,
+                level=payload.level,
+                source="announcement",
+                source_id=ann.id,
+                link="/app",
+            )
+        except Exception as e:
+            print(f"[announcement] notify {u.email} failed: {e}")
+
+    return ann
+
+
+@router.get("/announcements", response_model=list[AnnouncementRead])
+def list_announcements(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    return db.execute(
+        select(Announcement).order_by(Announcement.created_at.desc()).limit(100)
+    ).scalars().all()
+
+
+@router.delete("/announcements/{announcement_id}", status_code=204)
+def delete_announcement(
+    announcement_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    ann = db.get(Announcement, announcement_id)
+    if not ann:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    db.delete(ann)
+    db.commit()
+    return None
+
+
+# ============================================================
+# System health
+# ============================================================
+
+@router.get("/health")
+def admin_health(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Quick health check of core systems."""
+    from datetime import timezone as _tz
+    from sqlalchemy import text as _text
+
+    health = {
+        "database": "unknown",
+        "ai_provider": "unknown",
+        "checked_at": datetime.now(_tz.utc).isoformat(),
+    }
+
+    # Database ping
+    try:
+        db.execute(_text("SELECT 1"))
+        health["database"] = "ok"
+    except Exception as e:
+        health["database"] = f"error: {str(e)[:100]}"
+
+    # AI provider check
+    try:
+        from app.config import settings as _s
+        health["ai_provider"] = "configured" if _s.GROQ_API_KEY else "missing_key"
+    except Exception as e:
+        health["ai_provider"] = f"error: {str(e)[:100]}"
+
+    # Last error
+    from app.models.audit_log import AuditLog
+    last_error = db.execute(
+        select(AuditLog)
+        .where(AuditLog.status == "failed")
+        .order_by(AuditLog.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if last_error:
+        health["last_error"] = {
+            "action": last_error.action,
+            "error": (last_error.error or "")[:200],
+            "at": last_error.created_at.isoformat(),
+        }
+
+    return health

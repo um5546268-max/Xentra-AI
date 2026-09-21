@@ -1,4 +1,6 @@
 from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field
+from typing import Any, Optional
 
 
 class ShoppingIntent(BaseModel):
@@ -34,9 +36,9 @@ class ShoppingSearchResponse(BaseModel):
 
 class ShoppingCompareRequest(BaseModel):
     query: str = Field(min_length=2, max_length=300)
-    budget: float | None = None
-    currency: str | None = None
-    top_n: int = Field(default=3, ge=1, le=8)
+    top_n: int = Field(default=5, ge=1, le=10)   # 👈 raise limit if needed
+    budget: Optional[float] = None
+    currency: Optional[str] = None
 
 
 class ProductEnriched(BaseModel):
@@ -60,11 +62,8 @@ class ProductEnriched(BaseModel):
 
 
 class ShoppingEnrichedResponse(BaseModel):
-    query: str
-    intent: ShoppingIntent
-    budget: float | None = None
-    currency: str
-    count: int
-    enriched_count: int
-    products: list[ProductEnriched]
+    intent: dict[str, Any]
+    products: list[dict[str, Any]]
+    enriched_count: int = 0
+    elapsed_seconds: Optional[float] = None
     

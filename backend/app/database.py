@@ -1,22 +1,46 @@
+"""Database configuration."""
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.orm import declarative_base, sessionmaker
+
 from app.config import settings
 
-# Create the SQLAlchemy engine
+
+# ═══════════════════════════════════════════════════════════════
+# DECLARATIVE BASE — every model inherits from this
+# ═══════════════════════════════════════════════════════════════
+Base = declarative_base()
+
+
+# ═══════════════════════════════════════════════════════════════
+# ENGINE
+# pool_pre_ping + pool_recycle prevent idle-in-transaction drops
+# ═══════════════════════════════════════════════════════════════
 engine = create_engine(
     settings.DATABASE_URL,
-    pool_pre_ping=True,   # reconnect if Neon closes idle connection
-    echo=False,           # set True if you want to see SQL in terminal
+    pool_pre_ping=True,      # verify connection before use
+    pool_recycle=280,        # recycle before Postgres' 5-min idle timeout
+    pool_size=10,
+    max_overflow=20,
+    pool_timeout=30,
+    echo=False,
+    future=True,
 )
 
-# Session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base class for all models
-class Base(DeclarativeBase):
-    pass
+# ═══════════════════════════════════════════════════════════════
+# SESSION FACTORY
+# ═══════════════════════════════════════════════════════════════
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+    expire_on_commit=False,
+)
 
-# Dependency to use in routes
+
+# ═══════════════════════════════════════════════════════════════
+# FASTAPI DEPENDENCY
+# ═══════════════════════════════════════════════════════════════
 def get_db():
     db = SessionLocal()
     try:

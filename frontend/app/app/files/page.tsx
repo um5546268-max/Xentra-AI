@@ -32,6 +32,7 @@ import {
   FilePreview,
 } from "@/lib/files";
 import api from "@/lib/api";
+import { useFilesStore } from "@/lib/files-store";
 
 export default function FilesPage() {
   const router = useRouter();
@@ -187,6 +188,10 @@ export default function FilesPage() {
             </p>
           </div>
         </div>
+
+        <button onClick={() => useFilesStore.getState().clear()}>
+  Clear results
+</button>
 
         {/* Upload zone */}
         <div

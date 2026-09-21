@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, usePathname } from "next/navigation";
 import {
   Plus,
   Search,
   Trash2,
   LogOut,
-  Moon,
-  Sun,
   MessageSquare,
   ListTodo,
   Play,
@@ -27,14 +25,19 @@ import {
   Clock,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Wrench,
   Shield,
   Settings,
   ScrollText,
   CreditCard,
+  ShieldCheck,
+  Activity,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Video,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { useTheme } from "@/lib/theme";
 import {
   Conversation,
   getConversations,
@@ -42,6 +45,10 @@ import {
   deleteConversation,
 } from "@/lib/conversations";
 import { useTasks } from "@/lib/tasks-store";
+import { useBeeHive } from "@/lib/use-bee-hive";
+import { useShellStore } from "@/lib/shell-store";
+import { BeeIcon } from "@/components/hive/BeeIcon";
+import { BEE_STYLE, BeeType } from "@/lib/bees";
 import NewTaskModal from "./NewTaskModal";
 import NotificationsBell from "./NotificationsBell";
 
@@ -57,6 +64,7 @@ const TOOLS = [
   { path: "/app/automations", label: "Automations", icon: Clock },
   { path: "/app/settings", label: "Settings", icon: Settings },
   { path: "/app/billing", label: "Billing", icon: CreditCard },
+  { path: "/app/videos", label: "Video generator", icon: Video },
 ];
 
 const SECURITY = [
@@ -65,12 +73,17 @@ const SECURITY = [
   { path: "/app/audit", label: "Audit log", icon: ScrollText },
 ];
 
+const HIVE_SHOWCASE: BeeType[] = ["web", "shopping", "file", "coding", "media"];
+
 export default function Sidebar() {
   const router = useRouter();
   const params = useParams<{ conversationId?: string }>();
+  const pathname = usePathname();
+
   const { user, logout } = useAuth();
-  const { theme, toggle, load } = useTheme();
   const { tasks, startPolling, stopPolling, run } = useTasks();
+  const hive = useBeeHive();
+  const { sidebarCollapsed, toggleSidebar } = useShellStore();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [search, setSearch] = useState("");
@@ -78,10 +91,19 @@ export default function Sidebar() {
   const [showNewTask, setShowNewTask] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
+  const [showTasks, setShowTasks] = useState(true);
 
+  // ── Keyboard shortcut: Ctrl+B / Cmd+B ──
   useEffect(() => {
-    load();
-  }, [load]);
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleSidebar]);
 
   useEffect(() => {
     startPolling();
@@ -112,7 +134,14 @@ export default function Sidebar() {
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    await deleteConversation(id);
+    try {
+      await deleteConversation(id);
+    } catch (err: any) {
+      if (err?.response?.status !== 404) {
+        console.error("[sidebar] Delete failed:", err);
+        return;
+      }
+    }
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (params.conversationId === id) router.push("/app");
   };
@@ -123,11 +152,121 @@ export default function Sidebar() {
     router.push("/login");
   };
 
+  // ═══════════════════════════════════════════════════════════
+  // COLLAPSED MODE — icon-only rail
+  // ═══════════════════════════════════════════════════════════
+  if (sidebarCollapsed) {
+    return (
+      <aside className="w-14 shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col h-screen items-center py-3 gap-1">
+        {/* Expand button */}
+        <button
+          onClick={toggleSidebar}
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-800 hover:text-slate-200 transition"
+          title="Expand sidebar (Ctrl+B)"
+        >
+          <PanelLeftOpen className="w-4 h-4" />
+        </button>
+
+        <div className="w-8 border-t border-slate-800 my-1" />
+
+        {/* New conversation */}
+        <button
+          onClick={handleNew}
+          className="w-9 h-9 rounded-lg flex items-center justify-center bg-violet-600 hover:bg-violet-500 text-white transition"
+          title="New conversation"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+
+        {/* New task */}
+        <button
+          onClick={() => setShowNewTask(true)}
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition"
+          title="New task"
+        >
+          <Sparkles className="w-4 h-4" />
+        </button>
+
+        <div className="w-8 border-t border-slate-800 my-1" />
+
+        {/* Bees */}
+        <button
+          onClick={() => router.push("/app/bees")}
+          className={`w-9 h-9 rounded-lg flex items-center justify-center transition ${
+            pathname?.startsWith("/app/bees")
+              ? "bg-violet-500/20 text-violet-300"
+              : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+          }`}
+          title={`Bees (${hive?.active ?? 0}/${hive?.quota ?? 0})`}
+        >
+          <span className="text-base">🐝</span>
+        </button>
+
+        {/* Tools — show each tool icon */}
+        {TOOLS.slice(0, 6).map((tool) => {
+          const Icon = tool.icon;
+          const active = pathname === tool.path;
+          return (
+            <button
+              key={tool.path}
+              onClick={() => router.push(tool.path)}
+              className={`w-9 h-9 rounded-lg flex items-center justify-center transition ${
+                active
+                  ? "bg-violet-500/20 text-violet-300"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+              }`}
+              title={tool.label}
+            >
+              <Icon className="w-4 h-4" />
+            </button>
+          );
+        })}
+
+        {/* Settings */}
+        <button
+          onClick={() => router.push("/app/settings")}
+          className={`w-9 h-9 rounded-lg flex items-center justify-center transition ${
+            pathname === "/app/settings"
+              ? "bg-violet-500/20 text-violet-300"
+              : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+          }`}
+          title="Settings"
+        >
+          <Settings className="w-4 h-4" />
+        </button>
+
+        <div className="mt-auto flex flex-col items-center gap-1">
+          <div className="w-8 border-t border-slate-800 my-1" />
+          {/* Avatar */}
+          <div
+            className="w-8 h-8 rounded-full bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-xs font-bold text-violet-300"
+            title={user?.email}
+          >
+            {(user?.full_name?.[0] || user?.email?.[0] || "U").toUpperCase()}
+          </div>
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-800 hover:text-red-400 transition"
+            title="Log out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+
+        {showNewTask && <NewTaskModal onClose={() => setShowNewTask(false)} />}
+      </aside>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // EXPANDED MODE — full sidebar
+  // ═══════════════════════════════════════════════════════════
   return (
     <aside className="w-72 shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col h-screen">
-      {/* Brand + Notifications */}
+      {/* Brand + Notifications + Collapse toggle */}
       <div className="p-4 border-b border-slate-800 flex items-start justify-between gap-2">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold bg-gradient-to-r from-violet-400 via-cyan-300 to-violet-400 bg-clip-text text-transparent">
             Xentra AI
           </h1>
@@ -135,7 +274,16 @@ export default function Sidebar() {
             Your AI Operating Assistant
           </p>
         </div>
-        <NotificationsBell />
+        <div className="flex items-center gap-1 shrink-0">
+          <NotificationsBell />
+          <button
+            onClick={toggleSidebar}
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-800 hover:text-slate-200 transition"
+            title="Collapse sidebar (Ctrl+B)"
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Primary actions */}
@@ -167,6 +315,64 @@ export default function Sidebar() {
         </div>
       </div>
 
+      {/* Bees */}
+      <div className="border-b border-slate-800 shrink-0">
+        <button
+          onClick={() => router.push("/app/bees")}
+          className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition ${
+            pathname?.startsWith("/app/bees")
+              ? "bg-violet-500/10 text-violet-300 border-l-2 border-violet-500"
+              : "text-slate-300 hover:bg-slate-900"
+          }`}
+        >
+          <span className="text-base leading-none">🐝</span>
+          <span className="flex-1 text-left">Bees</span>
+          {hive && (
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full border ${
+                hive.busy
+                  ? "border-amber-500/40 text-amber-300 bg-amber-500/10"
+                  : "border-slate-700 text-slate-400 bg-slate-900"
+              }`}
+            >
+              {hive.active}/{hive.quota}
+            </span>
+          )}
+        </button>
+
+        {hive && hive.bees.length > 0 && (
+          <div className="px-3 pb-3">
+            <div className="grid grid-cols-5 gap-1.5">
+              {HIVE_SHOWCASE.map((t) => {
+                const bee = hive.bees.find(
+                  (b: { type: string }) => b.type === t
+                );
+                const pct = bee?.progress ?? 0;
+                const style = BEE_STYLE[t];
+                return (
+                  <button
+                    key={t}
+                    onClick={() => router.push("/app/bees")}
+                    className="flex flex-col items-center gap-1 group"
+                    title={style.label}
+                  >
+                    <div className="relative">
+                      <BeeIcon type={t} size={28} />
+                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[8px] px-1 rounded-full bg-slate-900 border border-slate-700 text-slate-400 whitespace-nowrap">
+                        {bee ? `${pct}%` : "idle"}
+                      </div>
+                    </div>
+                    <span className="text-[9px] text-slate-500 group-hover:text-slate-300">
+                      {style.label.split(" ")[0]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Tools (collapsible) */}
       <div className="border-b border-slate-800 shrink-0">
         <button
@@ -186,7 +392,7 @@ export default function Sidebar() {
           <div className="px-3 pb-3 space-y-1.5">
             {TOOLS.map((tool) => {
               const Icon = tool.icon;
-              const active = typeof window !== "undefined" && window.location.pathname === tool.path;
+              const active = pathname === tool.path;
               return (
                 <button
                   key={tool.path}
@@ -206,7 +412,22 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* Security */}
+      {/* System Health */}
+      <div className="border-b border-slate-800 shrink-0">
+        <button
+          onClick={() => router.push("/app/system-health")}
+          className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition ${
+            pathname?.startsWith("/app/system-health")
+              ? "bg-violet-500/10 text-violet-300 border-l-2 border-violet-500"
+              : "text-slate-300 hover:bg-slate-900"
+          }`}
+        >
+          <Activity className="w-4 h-4" />
+          <span className="flex-1 text-left">System Health</span>
+        </button>
+      </div>
+
+      {/* Security (collapsible) */}
       <div className="border-b border-slate-800 shrink-0">
         <button
           onClick={() => setShowSecurity(!showSecurity)}
@@ -225,11 +446,16 @@ export default function Sidebar() {
           <div className="px-3 pb-3 space-y-1.5">
             {SECURITY.map((item) => {
               const Icon = item.icon;
+              const active = pathname === item.path;
               return (
                 <button
                   key={item.path}
                   onClick={() => router.push(item.path)}
-                  className="w-full flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
+                  className={`w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                    active
+                      ? "border-violet-500 bg-violet-500/10 text-violet-300"
+                      : "border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
+                  }`}
                 >
                   <Icon className="w-4 h-4" />
                   {item.label}
@@ -239,58 +465,79 @@ export default function Sidebar() {
           </div>
         )}
       </div>
-      {/* Tasks */}
-      {tasks.length > 0 && (
-        <div className="border-b border-slate-800 p-3 space-y-1 shrink-0">
-          <div className="flex items-center justify-between px-2 py-1">
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-500 uppercase tracking-wider">
-              <ListTodo className="w-3.5 h-3.5" />
-              Tasks
-            </div>
-            <span className="text-xs text-slate-600">
-              {tasks.filter((t) => t.status === "running").length} running
-            </span>
-          </div>
 
-          <div className="space-y-1 max-h-48 overflow-y-auto">
-            {tasks.slice(0, 8).map((t) => (
-              <div
-                key={t.id}
-                className="rounded-lg bg-slate-900/60 px-2 py-1.5 space-y-1"
-              >
-                <div className="flex items-center gap-2 text-xs">
-                  <StatusDot status={t.status} />
-                  <span className="truncate flex-1 text-slate-300">
-                    {t.type}
-                  </span>
-                  <span className="text-slate-500 font-mono">
-                    {t.progress}%
-                  </span>
-                  {t.status === "queued" && (
-                    <button
-                      onClick={() => run(t.id)}
-                      className="text-violet-400 hover:text-violet-300"
-                      title="Run"
-                    >
-                      <Play className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-                <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-500 ${progressColor(
-                      t.status
-                    )}`}
-                    style={{ width: `${t.progress}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* Admin */}
+      {user?.is_admin && (
+        <div className="border-b border-slate-800 shrink-0">
+          <button
+            onClick={() => router.push("/app/admin")}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-violet-400 uppercase tracking-wider hover:bg-violet-500/10 transition"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span className="flex-1 text-left">Admin</span>
+          </button>
         </div>
       )}
 
-      {/* Conversation list — takes remaining space */}
+      {/* Tasks (foldable) */}
+      {tasks.length > 0 && (
+        <div className="border-b border-slate-800 shrink-0">
+          <button
+            onClick={() => setShowTasks(!showTasks)}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wider hover:bg-slate-900 transition"
+          >
+            <ListTodo className="w-3.5 h-3.5" />
+            <span className="flex-1 text-left">
+              Tasks ({tasks.filter((t) => t.status === "running").length} running)
+            </span>
+            {showTasks ? (
+              <ChevronDown className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5" />
+            )}
+          </button>
+
+          {showTasks && (
+            <div className="p-3 pt-0 space-y-1 max-h-48 overflow-y-auto">
+              {tasks.slice(0, 8).map((t) => (
+                <div
+                  key={t.id}
+                  className="rounded-lg bg-slate-900/60 px-2 py-1.5 space-y-1"
+                >
+                  <div className="flex items-center gap-2 text-xs">
+                    <StatusDot status={t.status} />
+                    <span className="truncate flex-1 text-slate-300">
+                      {t.type}
+                    </span>
+                    <span className="text-slate-500 font-mono">
+                      {t.progress}%
+                    </span>
+                    {t.status === "queued" && (
+                      <button
+                        onClick={() => run(t.id)}
+                        className="text-violet-400 hover:text-violet-300"
+                        title="Run"
+                      >
+                        <Play className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-500 ${progressColor(
+                        t.status
+                      )}`}
+                      style={{ width: `${t.progress}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Conversation list */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {loading ? (
           <div className="text-xs text-slate-600 text-center py-8">
@@ -328,22 +575,7 @@ export default function Sidebar() {
       </div>
 
       {/* Footer */}
-      <div className="border-t border-slate-800 p-3 space-y-2 shrink-0">
-        <button
-          onClick={toggle}
-          className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 hover:bg-slate-900 hover:text-white transition"
-        >
-          {theme === "dark" ? (
-            <>
-              <Sun className="w-4 h-4" /> Light mode
-            </>
-          ) : (
-            <>
-              <Moon className="w-4 h-4" /> Dark mode
-            </>
-          )}
-        </button>
-
+      <div className="border-t border-slate-800 p-3 shrink-0">
         <div className="flex items-center justify-between rounded-lg px-3 py-2">
           <div className="min-w-0">
             <div className="text-xs text-slate-500 truncate">
@@ -363,9 +595,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {showNewTask && (
-        <NewTaskModal onClose={() => setShowNewTask(false)} />
-      )}
+      {showNewTask && <NewTaskModal onClose={() => setShowNewTask(false)} />}
     </aside>
   );
 }

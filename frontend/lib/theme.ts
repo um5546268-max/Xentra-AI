@@ -1,31 +1,44 @@
+"use client";
+
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 type Theme = "dark" | "light";
 
-type ThemeState = {
+type Store = {
   theme: Theme;
+  setTheme: (t: Theme) => void;
   toggle: () => void;
   load: () => void;
 };
 
-export const useTheme = create<ThemeState>((set, get) => ({
-  theme: "dark",
+function applyTheme(theme: Theme) {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  if (theme === "dark") {
+    root.classList.add("dark");
+    root.classList.remove("light");
+  } else {
+    root.classList.remove("dark");
+    root.classList.add("light");
+  }
+}
 
-  load: () => {
-    if (typeof window === "undefined") return;
-    const stored = localStorage.getItem("xentra_theme") as Theme | null;
-    if (stored) {
-      set({ theme: stored });
-      document.documentElement.classList.toggle("dark", stored === "dark");
-    } else {
-      document.documentElement.classList.add("dark");
-    }
-  },
-
-  toggle: () => {
-    const next = get().theme === "dark" ? "light" : "dark";
-    set({ theme: next });
-    localStorage.setItem("xentra_theme", next);
-    document.documentElement.classList.toggle("dark", next === "dark");
-  },
-}));
+export const useTheme = create<Store>()(
+  persist(
+    (set, get) => ({
+      theme: "dark",
+      setTheme: (t) => {
+        applyTheme(t);
+        set({ theme: t });
+      },
+      toggle: () => {
+        const next = get().theme === "dark" ? "light" : "dark";
+        applyTheme(next);
+        set({ theme: next });
+      },
+      load: () => applyTheme(get().theme),
+    }),
+    { name: "xentra-theme" }
+  )
+);
