@@ -149,3 +149,33 @@ export const learnFromFile = async (
   });
   return res.data;
 };
+
+// ── Mind Map ──
+export type MindMapNode = {
+  id: string;
+  label: string;
+  description: string;
+  level: number;
+  parent: string | null;
+};
+
+export type MindMapEdge = {
+  id: string;
+  source: string;
+  target: string;
+  label: string | null;
+};
+
+export type MindMapGraph = {
+  nodes: MindMapNode[];
+  edges: MindMapEdge[];
+};
+
+export const getSessionMindMap = async (
+  sessionId: string,
+): Promise<MindMapGraph> => {
+  const res = await api.get(`/api/learn/session/${sessionId}/mindmap`, {
+    timeout: 60000,
+  });
+  return res.data;
+};

@@ -113,7 +113,7 @@ const STUDY_TOOLS = [
   { path: "/app/learn", label: "Flashcards", icon: Layers },
   { path: "/app/learn?tab=quiz", label: "Quizzes", icon: HelpCircle },
   { path: "/app/notes", label: "Notes", icon: StickyNote },
-  { path: "/app/learn/mindmap", label: "Mind Map", icon: GitBranch },
+  { path: "/app/learn", label: "Mind Map", icon: GitBranch },
   { path: "/app/learn/practice", label: "Practice Tests", icon: ClipboardList },
 ];
 

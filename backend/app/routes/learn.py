@@ -410,3 +410,31 @@ def delete_session(
         raise HTTPException(404, "Session not found")
     db.delete(session)
     db.commit()
+
+    # ─────────────────────────────────────────────────────────────
+# GET /api/learn/session/{id}/mindmap
+# ─────────────────────────────────────────────────────────────
+@router.get("/session/{session_id}/mindmap")
+def get_session_mindmap(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate (or return cached) a mind map for a session."""
+    from app.services.mindmap_service import generate_mindmap
+
+    session = db.execute(
+        select(LearnSession).where(
+            LearnSession.id == session_id,
+            LearnSession.user_id == current_user.id,
+        )
+    ).scalar_one_or_none()
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    concepts = session.concepts or []
+    if not concepts:
+        raise HTTPException(400, "This session has no concepts to map")
+
+    graph = generate_mindmap(session.title, concepts)
+    return graph

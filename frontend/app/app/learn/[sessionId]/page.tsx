@@ -9,6 +9,7 @@ import {
 } from "@/lib/learn";
 import { FlashcardViewer } from "@/components/learn/FlashcardViewer";
 import { QuizViewer } from "@/components/learn/QuizViewer";
+import { GitBranch } from "lucide-react";
 
 type Tab = "flashcards" | "quiz" | "summary";
 
@@ -108,6 +109,13 @@ export default function LearnSessionPage() {
             label="Summary"
           />
         </div>
+            <button
+            onClick={() => router.push(`/app/learn/${sessionId}/mindmap`)}
+            className="flex items-center gap-1.5 rounded-lg border border-violet-500 bg-violet-500/20 px-3 py-1.5 text-xs font-medium text-violet-300 hover:bg-violet-500/30 transition ml-auto"
+          >
+            <GitBranch className="w-3.5 h-3.5" />
+            Mind Map
+          </button>
 
         {/* Content */}
         {tab === "flashcards" && (
