@@ -58,6 +58,7 @@ import {
   BookOpen, Languages, GitBranch, ClipboardList, TrendingUp, Trophy,
   Library, Upload, ChevronDown as ChevronDownIcon, Layers, HelpCircle,
 } from "lucide-react";
+import { Target } from "lucide-react";
 
 const TOOLS = [
   { path: "/app/browser", label: "Browser agent", icon: Globe },
@@ -117,6 +118,7 @@ const STUDY_TOOLS = [
 ];
 
 const STUDY_MORE = [
+  { path: "/app/goals", label: "Goals", icon: Target },              // ← NEW
   { path: "/app/library", label: "My Library", icon: Library },
   { path: "/app/import", label: "Import & Convert", icon: Upload },
   { path: "/app/progress", label: "Progress & Points", icon: TrendingUp },

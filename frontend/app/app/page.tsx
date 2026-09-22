@@ -15,6 +15,7 @@ import {
   StudyStats,
 } from "@/lib/learn";
 import { BriefingCard } from "@/components/learn/BriefingCard";
+import { GoalsWidget } from "@/components/learn/GoalsWidget";
 
 export default function AppHome() {
   const router = useRouter();
@@ -88,6 +89,8 @@ export default function AppHome() {
                 {stats.xp_in_level} / {stats.xp_to_next} XP
               </span>
             </div>
+            {/* Your Goals */}
+             <GoalsWidget />
             <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-violet-500 to-cyan-500 transition-all"
