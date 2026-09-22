@@ -55,6 +55,7 @@ from app.routes import notes as note_routes
 from app.routes import goals as goal_routes
 from app.routes import progress as progress_routes
 from app.routes import practice as practice_routes
+from app.routes import library as library_routes
 
 setup_logging()
 init_sentry()
@@ -137,6 +138,7 @@ app.include_router(note_routes.router, prefix=settings.API_V1_STR)
 app.include_router(goal_routes.router, prefix=settings.API_V1_STR)
 app.include_router(progress_routes.router, prefix=settings.API_V1_STR)
 app.include_router(practice_routes.router, prefix=settings.API_V1_STR)
+app.include_router(library_routes.router, prefix=settings.API_V1_STR)
 
 # ==== Health & root ====
 @app.get("/api/health")
