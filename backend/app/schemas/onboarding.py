@@ -14,3 +14,4 @@ class OnboardingStatus(BaseModel):
     class_level: str | None = None
     learning_goal: str | None = None
     interests: list[str] | None = None
+    tour_completed: bool = False

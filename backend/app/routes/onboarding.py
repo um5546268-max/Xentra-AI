@@ -19,6 +19,7 @@ def get_status(current_user: User = Depends(get_current_user)):
         class_level=current_user.class_level,
         learning_goal=current_user.learning_goal,
         interests=current_user.interests or [],
+        tour_completed=bool(current_user.tour_completed),
     )
 
 
@@ -34,6 +35,7 @@ def submit_onboarding(
     current_user.interests = payload.interests
     current_user.onboarding_completed = True
 
+    # Give them a welcome bonus
     record_activity(db, current_user, "daily_login")
 
     db.commit()
@@ -45,4 +47,25 @@ def submit_onboarding(
         class_level=current_user.class_level,
         learning_goal=current_user.learning_goal,
         interests=current_user.interests or [],
+        tour_completed=bool(current_user.tour_completed),
+    )
+
+
+@router.post("/complete-tour", response_model=OnboardingStatus)
+def complete_tour(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Mark the onboarding tour as completed for the current user."""
+    current_user.tour_completed = True
+    db.commit()
+    db.refresh(current_user)
+
+    return OnboardingStatus(
+        completed=bool(current_user.onboarding_completed),
+        display_name=current_user.display_name,
+        class_level=current_user.class_level,
+        learning_goal=current_user.learning_goal,
+        interests=current_user.interests or [],
+        tour_completed=True,
     )

@@ -52,6 +52,11 @@ export function BriefingCard() {
           )}
         </div>
       )}
+      return (
+  <div
+    data-tour="daily-briefing"
+    className="rounded-2xl border border-violet-500/30 bg-gradient-to-br from-violet-500/10 via-violet-500/5 to-transparent p-5 space-y-3"
+  ></div>
     </div>
   );
 }

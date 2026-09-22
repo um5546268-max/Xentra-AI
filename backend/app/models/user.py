@@ -112,6 +112,9 @@ class User(Base):
     learning_goal: Mapped[str | None] = mapped_column(String(40), nullable=True)
     interests: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
     display_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    tour_completed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
 
         # ===== Gamification =====
     points: Mapped[int] = mapped_column(

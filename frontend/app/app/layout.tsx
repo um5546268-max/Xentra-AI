@@ -10,6 +10,9 @@ import { useShoppingStore } from "@/lib/shopping-store";
 import { GlobalYouTubePlayer } from "@/components/hive/GlobalYouTubePlayer";
 import { MiniPlayer } from "@/components/hive/MiniPlayer";
 import { dailyCheckin } from "@/lib/gamification";
+import { useState } from "react";
+import { getOnboardingStatus } from "@/lib/onboarding";
+import { OnboardingTour } from "@/components/OnboardingTour";
 
 export default function AppLayout({
   children,
@@ -29,6 +32,19 @@ export default function AppLayout({
   const showCommandCenter =
     pathname?.startsWith("/app/c/") && pathname !== "/app/c/";
 
+  const [showTour, setShowTour] = useState(false);
+
+  useEffect(() => {
+    getOnboardingStatus()
+      .then((s) => {
+        if (s.completed && !s.tour_completed) {
+          // Small delay so the UI settles
+          setTimeout(() => setShowTour(true), 800);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="flex h-screen bg-slate-950 text-white">
       <Sidebar />
@@ -36,6 +52,7 @@ export default function AppLayout({
       {showCommandCenter && <CommandCenter />}
       <GlobalAudioHost />
       <GlobalYouTubePlayer />
+      {showTour && <OnboardingTour onComplete={() => setShowTour(false)} />}
     </div>
   );
 }

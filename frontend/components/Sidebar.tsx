@@ -199,6 +199,11 @@ const STUDY_MORE = [
           <PanelLeftOpen className="w-4 h-4" />
         </button>
 
+          <aside
+                data-tour="sidebar"
+                className="w-72 shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col h-screen"
+               ></aside>
+
         <div className="w-8 border-t border-slate-800 my-1" />
 
         <button
@@ -425,11 +430,12 @@ const STUDY_MORE = [
           <div className="px-3 pb-3 space-y-1">
             {/* Direct subject links */}
             {STUDY_ITEMS.map((item) => {
-              const Icon = item.icon;
-              const active = pathname === item.path;
-              return (
-                <button
-                  key={item.path}
+  const Icon = item.icon;
+  const active = pathname === item.path;
+  return (
+    <button
+      key={item.path}
+      {...(item.path === "/app/learn/subjects" ? { "data-tour": "learn" } : {})}
                   onClick={() => router.push(item.path)}
                   className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition ${
                     active
@@ -443,8 +449,9 @@ const STUDY_MORE = [
               );
             })}
 
-            {/* Study Tools (nested collapsible) */}
+                        {/* Study Tools (nested collapsible) */}
             <button
+              data-tour="study-tools"
               onClick={() => setShowStudyTools(!showStudyTools)}
               className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition"
             >
@@ -477,13 +484,13 @@ const STUDY_MORE = [
             )}
 
             {/* Other study links */}
-            {STUDY_MORE.map((item) => {
-              const Icon = item.icon;
-              const active = pathname === item.path;
-              return (
-                <button
-                  key={item.path}
-                  onClick={() => router.push(item.path)}
+           {STUDY_MORE.map((item) => {
+  const Icon = item.icon;
+  const active = pathname === item.path;
+  return (
+    <button
+      key={item.path}
+      {...(item.path === "/app/progress" ? { "data-tour": "progress" } : {})}
                   className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition ${
                     active
                       ? "bg-violet-500/20 text-violet-300"

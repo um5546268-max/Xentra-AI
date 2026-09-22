@@ -26,12 +26,12 @@ class UserRead(BaseModel):
     emergency_stop: bool = False
     created_at: datetime
 
-    # NEW
     onboarding_completed: bool = False
     class_level: str | None = None
     learning_goal: str | None = None
     interests: list[str] | None = None
     display_name: str | None = None
+    tour_completed: bool = False               # ← NEW
 
     class Config:
         from_attributes = True
