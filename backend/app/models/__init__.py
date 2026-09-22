@@ -22,6 +22,7 @@ from app.models.generated_video import GeneratedVideo  # noqa: F401
 from app.models.learn import LearnSession, Flashcard, QuizAttempt  # noqa: F401
 from app.models.note import Note  # noqa: F401
 from app.models.goal import Goal  # noqa: F401
+from app.models.practice import PracticeTest  # noqa: F401
 
 __all__ = [
     "User",

@@ -240,3 +240,79 @@ def apply_sm2(
     new_ef = ease_factor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
     new_ef = max(1.3, new_ef)
     return repetitions + 1, new_ef, interval
+
+PRACTICE_SYSTEM = """You are a JSON generator. You ONLY output raw JSON.
+
+Create {num} multiple-choice exam questions from the given concepts.
+
+Schema:
+{
+  "questions": [
+    {
+      "question": "string",
+      "options": ["string", "string", "string", "string"],
+      "correct_index": 0,
+      "explanation": "string"
+    }
+  ]
+}
+
+Rules:
+- EXACTLY {num} questions
+- 4 options each
+- correct_index: 0, 1, 2, or 3 (vary them, don't always pick 0)
+- Explanations: 1 sentence
+- Mix easy / medium / hard
+- Cover all concepts
+- No markdown, no extra text
+
+Start with { and end with }."""
+
+
+def generate_practice_questions(concepts: list[dict], num_questions: int = 30) -> list[dict]:
+    """Generate N exam-style questions. Splits into batches if N is large."""
+    all_questions: list[dict] = []
+
+    # Batch: Groq struggles with > 15 questions per call
+    batch_size = 15
+    remaining = num_questions
+    while remaining > 0:
+        n = min(batch_size, remaining)
+        system = PRACTICE_SYSTEM.replace("{num}", str(n))
+        payload = json.dumps(
+            {"concepts": concepts[:10], "existing_count": len(all_questions)},
+            indent=2,
+        )
+        result = chat_completion(
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": payload},
+            ],
+            max_tokens=4000,
+            temperature=0.7,
+        )
+        content = result.get("content", "") if isinstance(result, dict) else str(result)
+        data = _safe_json(content)
+        batch = data.get("questions", [])
+
+        # Validate + shuffle
+        for q in batch:
+            if not isinstance(q, dict):
+                continue
+            if not all(k in q for k in ("question", "options", "correct_index", "explanation")):
+                continue
+            if len(q.get("options", [])) != 4:
+                continue
+            ci = q.get("correct_index")
+            if not isinstance(ci, int) or ci < 0 or ci > 3:
+                continue
+            all_questions.append(_shuffle_question(q))
+
+        remaining -= n
+        if not batch:
+            break  # give up if Groq keeps failing
+
+    if len(all_questions) < 5:
+        raise HTTPException(500, f"Only generated {len(all_questions)} questions")
+
+    return all_questions[:num_questions]
