@@ -45,7 +45,6 @@ def _call_llm(system: str, user: str, max_tokens: int, temperature: float) -> An
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        model="llama-3.1-8b-instant",
         max_tokens=max_tokens,
         temperature=temperature,
     )
@@ -187,7 +186,6 @@ def generate_quiz(concepts: list[dict], flashcards: list[dict]) -> list[dict]:
             {"role": "system", "content": QUIZ_SYSTEM},
             {"role": "user", "content": payload},
         ],
-        model="llama-3.1-8b-instant",
         max_tokens=4000,
         temperature=0.6,
     )
