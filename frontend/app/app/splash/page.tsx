@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { XHologram } from "@/components/brand/XHologram";
 
 // Fake "requirements" — replace with real checks if you want
 const STEPS = [
@@ -74,7 +73,6 @@ export default function SplashPage() {
 
       {/* X hologram */}
       <div className="relative z-10 mb-12">
-        <XHologram size={200} />
       </div>
 
       {/* Name */}

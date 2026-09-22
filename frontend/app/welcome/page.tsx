@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserPlus, LogIn, Sparkles, Shield, Zap } from "lucide-react";
-import { XHologram } from "@/components/brand/XHologram";
 import { useAuth } from "@/lib/auth";
 
 export default function WelcomePage() {
@@ -46,8 +45,12 @@ export default function WelcomePage() {
         {/* Left — brand */}
         <div className="space-y-6 text-center lg:text-left">
           <div className="flex justify-center lg:justify-start">
-            <XHologram size={160} />
-          </div>
+  <img
+    src="/x-logo.png"
+    alt="Xentra"
+    className="w-40 h-40 object-contain drop-shadow-[0_0_50px_rgba(139,92,246,0.9)]"
+  />
+</div>
 
           <div>
             <div className="text-[10px] uppercase tracking-[0.3em] text-violet-400 mb-2">

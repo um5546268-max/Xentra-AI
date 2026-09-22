@@ -6,7 +6,6 @@ import {
   ChevronLeft, ChevronRight, Check, Loader2, Mail,
   User as UserIcon, Sparkles, GraduationCap, Heart,
 } from "lucide-react";
-import { XHologram } from "@/components/brand/XHologram";
 import { useAuth } from "@/lib/auth";
 import { submitOnboarding } from "@/lib/onboarding";
 
@@ -152,8 +151,12 @@ export default function SignupPage() {
 
         <div className="rounded-3xl border border-slate-800 bg-slate-950/70 backdrop-blur-xl p-8 shadow-2xl shadow-violet-500/5 space-y-6">
           <div className="flex justify-center">
-            <XHologram size={80} />
-          </div>
+  <img
+    src="/x-logo.png"
+    alt="Xentra"
+    className="w-20 h-20 object-contain drop-shadow-[0_0_30px_rgba(139,92,246,0.9)]"
+  />
+</div>
 
           {/* Step 0 — Email */}
           {step === 0 && (
