@@ -54,10 +54,12 @@ import { BEE_STYLE, BeeType } from "@/lib/bees";
 import NewTaskModal from "./NewTaskModal";
 import NotificationsBell from "./NotificationsBell";
 import { UserStats } from "@/components/learn/UserStats";
+import {
+  BookOpen, Languages, GitBranch, ClipboardList, TrendingUp, Trophy,
+  Library, Upload, ChevronDown as ChevronDownIcon, Layers, HelpCircle,
+} from "lucide-react";
 
 const TOOLS = [
-  { path: "/app/learn", label: "Learn", icon: GraduationCap },
-  { path: "/app/notes", label: "Notes", icon: StickyNote },
   { path: "/app/browser", label: "Browser agent", icon: Globe },
   { path: "/app/integrations", label: "Integrations", icon: Link2 },
   { path: "/app/media", label: "Media", icon: Music },
@@ -97,6 +99,29 @@ export default function Sidebar() {
   const [showTools, setShowTools] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showTasks, setShowTasks] = useState(true);
+  const [showStudy, setShowStudy] = useState(true);
+  const [showStudyTools, setShowStudyTools] = useState(false);
+
+  const STUDY_ITEMS = [
+  { path: "/app/learn/subjects", label: "All Subjects", icon: BookOpen },
+  { path: "/app/learn/languages", label: "Languages", icon: Languages },
+  { path: "/app/learn/school", label: "School / College", icon: GraduationCap },
+];
+
+const STUDY_TOOLS = [
+  { path: "/app/learn", label: "Flashcards", icon: Layers },
+  { path: "/app/learn?tab=quiz", label: "Quizzes", icon: HelpCircle },
+  { path: "/app/notes", label: "Notes", icon: StickyNote },
+  { path: "/app/learn/mindmap", label: "Mind Map", icon: GitBranch },
+  { path: "/app/learn/practice", label: "Practice Tests", icon: ClipboardList },
+];
+
+const STUDY_MORE = [
+  { path: "/app/library", label: "My Library", icon: Library },
+  { path: "/app/import", label: "Import & Convert", icon: Upload },
+  { path: "/app/progress", label: "Progress & Points", icon: TrendingUp },
+  { path: "/app/leaderboard", label: "Leaderboards", icon: Trophy },
+];
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -367,6 +392,95 @@ export default function Sidebar() {
                 );
               })}
             </div>
+          </div>
+        )}
+      </div>
+
+            {/* Study (collapsible) */}
+      <div className="border-b border-slate-800 shrink-0">
+        <button
+          onClick={() => setShowStudy(!showStudy)}
+          className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wider hover:bg-slate-900 transition"
+        >
+          <GraduationCap className="w-3.5 h-3.5" />
+          <span className="flex-1 text-left">Study</span>
+          {showStudy ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        </button>
+
+        {showStudy && (
+          <div className="px-3 pb-3 space-y-1">
+            {/* Direct subject links */}
+            {STUDY_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const active = pathname === item.path;
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => router.push(item.path)}
+                  className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition ${
+                    active
+                      ? "bg-violet-500/20 text-violet-300"
+                      : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {item.label}
+                </button>
+              );
+            })}
+
+            {/* Study Tools (nested collapsible) */}
+            <button
+              onClick={() => setShowStudyTools(!showStudyTools)}
+              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span className="flex-1 text-left">Study Tools</span>
+              {showStudyTools ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            </button>
+
+            {showStudyTools && (
+              <div className="pl-4 space-y-0.5">
+                {STUDY_TOOLS.map((tool) => {
+                  const Icon = tool.icon;
+                  const active = pathname === tool.path;
+                  return (
+                    <button
+                      key={tool.path}
+                      onClick={() => router.push(tool.path)}
+                      className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-1 text-[11px] transition ${
+                        active
+                          ? "bg-violet-500/20 text-violet-300"
+                          : "text-slate-500 hover:bg-slate-900 hover:text-slate-200"
+                      }`}
+                    >
+                      <Icon className="w-3 h-3" />
+                      {tool.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Other study links */}
+            {STUDY_MORE.map((item) => {
+              const Icon = item.icon;
+              const active = pathname === item.path;
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => router.push(item.path)}
+                  className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition ${
+                    active
+                      ? "bg-violet-500/20 text-violet-300"
+                      : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
