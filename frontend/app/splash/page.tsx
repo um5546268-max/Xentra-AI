@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2, Volume2 } from "lucide-react";
 
 const STEPS = [
   { label: "Loading core system", ms: 700 },
@@ -12,36 +12,54 @@ const STEPS = [
   { label: "Preparing your sessions", ms: 600 },
 ];
 
-// Timing (seconds)
-const LOGO_APPEAR_AT = 19.2;   // when X logo shows
-const VIDEO_END_AT = 24.0;     // when video finishes
+const LOGO_APPEAR_AT = 19.2;
+const VIDEO_END_AT = 24.0;
 
 export default function SplashPage() {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const [started, setStarted] = useState(false);   // ← new: has user tapped?
   const [showLogo, setShowLogo] = useState(false);
   const [videoDone, setVideoDone] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [checklistDone, setChecklistDone] = useState(false);
 
-  // ── Trigger logo + flash at 19.2s ──
+  // ── Start the video with sound when the user taps ──
+  const handleStart = async () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = false;
+    v.volume = 1;
+    try {
+      await v.play();
+      setStarted(true);
+    } catch (e) {
+      // Fallback if sound still fails — play muted
+      v.muted = true;
+      await v.play();
+      setStarted(true);
+    }
+  };
+
+  // ── Trigger X logo flash at 19.2s ──
   useEffect(() => {
+    if (!started) return;
     const t = setTimeout(() => setShowLogo(true), LOGO_APPEAR_AT * 1000);
     return () => clearTimeout(t);
-  }, []);
+  }, [started]);
 
-  // ── Fallback: if video errors or doesn't reach the end, advance anyway ──
+  // ── Fallback: force-advance after video length ──
   useEffect(() => {
+    if (!started) return;
     const t = setTimeout(() => setVideoDone(true), (VIDEO_END_AT + 1) * 1000);
     return () => clearTimeout(t);
-  }, []);
+  }, [started]);
 
-  // ── Loading checklist runs AFTER video ends ──
+  // ── Checklist runs after video ends ──
   useEffect(() => {
     if (!videoDone) return;
-
     let cancelled = false;
     let elapsed = 0;
     const total = STEPS.reduce((sum, s) => sum + s.ms, 0);
@@ -49,7 +67,6 @@ export default function SplashPage() {
     const tick = () => {
       elapsed += 50;
       setProgress(Math.min(100, (elapsed / total) * 100));
-
       let cum = 0;
       for (let i = 0; i < STEPS.length; i++) {
         cum += STEPS[i].ms;
@@ -58,7 +75,6 @@ export default function SplashPage() {
           break;
         }
       }
-
       if (elapsed < total && !cancelled) {
         setTimeout(tick, 50);
       } else if (!cancelled) {
@@ -67,33 +83,51 @@ export default function SplashPage() {
         setTimeout(() => router.push("/welcome"), 700);
       }
     };
-
     tick();
     return () => { cancelled = true; };
   }, [videoDone, router]);
 
-  // ── Video ended → switch to checklist ──
-  const handleVideoEnd = () => setVideoDone(true);
-
   return (
     <div className="min-h-screen bg-black relative overflow-hidden flex items-center justify-center">
-      {/* ── FULLSCREEN INTRO VIDEO ── */}
-      {!videoDone && (
-        <video
-          ref={videoRef}
-          src="/x-intro.mp4"
-          autoPlay
-          muted
-          playsInline
-          preload="auto"
-          onEnded={handleVideoEnd}
-          onError={handleVideoEnd}
-          className="absolute inset-0 w-full h-full object-cover"
-        />
+      {/* Video is always rendered so it preloads */}
+      <video
+        ref={videoRef}
+        src="/x-intro.mp4"
+        playsInline
+        preload="auto"
+        onEnded={() => setVideoDone(true)}
+        onError={() => setVideoDone(true)}
+        className="absolute inset-0 w-full h-full object-cover"
+        style={{ opacity: started && !videoDone ? 1 : 0, transition: "opacity 0.4s" }}
+      />
+
+      {/* ── TAP-TO-START GATE ── */}
+      {!started && (
+        <button
+          onClick={handleStart}
+          className="relative z-30 flex flex-col items-center gap-6 group cursor-pointer"
+        >
+          <img
+            src="/x-logo.png"
+            alt="Xentra"
+            className="w-32 h-32 object-contain drop-shadow-[0_0_60px_rgba(139,92,246,1)] group-hover:scale-105 transition-transform"
+          />
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full border border-violet-500/40 bg-violet-500/10 backdrop-blur">
+              <Volume2 className="w-4 h-4 text-violet-300 animate-pulse" />
+              <span className="text-sm text-slate-200 font-medium">
+                Tap to begin with sound
+              </span>
+            </div>
+            <span className="text-[10px] uppercase tracking-[0.4em] text-slate-500">
+              Xentra AI
+            </span>
+          </div>
+        </button>
       )}
 
-      {/* ── X LOGO OVERLAY (appears at 19.2s with flash) ── */}
-      {!videoDone && (
+      {/* ── X LOGO OVERLAY (at 19.2s) ── */}
+      {started && !videoDone && (
         <div
           className="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
           style={{
@@ -101,7 +135,6 @@ export default function SplashPage() {
             transition: "opacity 0.15s ease-out",
           }}
         >
-          {/* The flash behind the X */}
           <div
             className="absolute rounded-full"
             style={{
@@ -115,8 +148,6 @@ export default function SplashPage() {
               filter: "blur(40px)",
             }}
           />
-
-          {/* The X logo — appears with slow zoom-down */}
           <img
             src="/x-logo.png"
             alt="Xentra"
@@ -135,7 +166,7 @@ export default function SplashPage() {
         </div>
       )}
 
-      {/* ── LOADING CHECKLIST (appears after video) ── */}
+      {/* ── LOADING CHECKLIST ── */}
       {videoDone && (
         <div className="relative z-10 flex flex-col items-center gap-8">
           <img
@@ -234,15 +265,12 @@ export default function SplashPage() {
       )}
 
       <style>{`
-        /* Big flash that fires once when the logo appears */
         @keyframes hugeFlash {
           0%   { opacity: 0;   transform: scale(0.3); }
           20%  { opacity: 1;   transform: scale(1.1); }
           40%  { opacity: 0.5; transform: scale(1.3); }
           100% { opacity: 0;   transform: scale(1.6); }
         }
-
-        /* X logo — pops in big, then settles down slowly */
         @keyframes logoIn {
           0%   { opacity: 0; transform: scale(2.2); filter: brightness(3) blur(8px); }
           25%  { opacity: 1; transform: scale(1.6); filter: brightness(2.5) blur(2px); }
