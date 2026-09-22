@@ -4,13 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { learnFromTopic } from "@/lib/learn";
+import { ClassPicker } from "@/components/learn/ClassPicker";
 
 const SUBJECTS = [
   { id: "math", label: "Mathematics", emoji: "📐", color: "cyan" },
   { id: "physics", label: "Physics", emoji: "⚛️", color: "violet" },
   { id: "chemistry", label: "Chemistry", emoji: "🧪", color: "emerald" },
   { id: "biology", label: "Biology", emoji: "🧬", color: "pink" },
-  { id: "english_lit", label: "English Literature", emoji: "📖", color: "amber" },
+  { id: "english_lit", label: "English", emoji: "📖", color: "amber" },
   { id: "history", label: "History", emoji: "🏛️", color: "amber" },
   { id: "geography", label: "Geography", emoji: "🌍", color: "cyan" },
   { id: "economics", label: "Economics", emoji: "💰", color: "emerald" },
@@ -32,12 +33,19 @@ export default function SchoolPage() {
   const router = useRouter();
   const [generating, setGenerating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingSubject, setPendingSubject] = useState<{ id: string; label: string } | null>(null);
 
-  const handleSubject = async (subject: string, label: string) => {
+  const handleGenerate = async (subject: string, label: string, className: string) => {
+    setPendingSubject(null);
     setGenerating(subject);
     setError(null);
     try {
-      const session = await learnFromTopic(`${label} — Class 11`, 8, "school");
+      const session = await learnFromTopic(
+        label,
+        8,
+        "school",
+        className,
+      );
       router.push(`/app/learn/${session.id}`);
     } catch (e: any) {
       setError(e?.response?.data?.detail || e.message || "Failed to generate");
@@ -64,7 +72,7 @@ export default function SchoolPage() {
           <div>
             <h1 className="text-2xl font-semibold">School / College</h1>
             <p className="text-sm text-slate-500">
-              Pick a subject to generate flashcards, quizzes, and study material
+              Pick a subject and class — content is tailored to your level
             </p>
           </div>
         </div>
@@ -82,9 +90,9 @@ export default function SchoolPage() {
             return (
               <button
                 key={s.id}
-                onClick={() => handleSubject(s.id, s.label)}
+                onClick={() => setPendingSubject({ id: s.id, label: s.label })}
                 disabled={loading}
-                className={`rounded-xl border bg-gradient-to-br ${style} p-4 text-center hover:scale-[1.03] transition disabled:opacity-60 disabled:cursor-wait space-y-2`}
+                className={`rounded-xl border bg-gradient-to-br ${style} p-4 text-center hover:scale-[1.03] transition disabled:opacity-60 space-y-2`}
               >
                 <div className="text-2xl">{s.emoji}</div>
                 <div className="text-sm font-medium">{s.label}</div>
@@ -101,6 +109,17 @@ export default function SchoolPage() {
           })}
         </div>
       </div>
+
+      {pendingSubject && (
+        <ClassPicker
+          subject={pendingSubject.label}
+          loading={generating === pendingSubject.id}
+          onClose={() => setPendingSubject(null)}
+          onPick={(className) =>
+            handleGenerate(pendingSubject.id, pendingSubject.label, className)
+          }
+        />
+      )}
     </div>
   );
 }

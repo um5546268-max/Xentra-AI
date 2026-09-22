@@ -67,12 +67,14 @@ export type QuizResult = {
 export const learnFromTopic = async (
   topic: string,
   numConcepts: number = 8,
-  subject?: string,               // ← NEW
+  subject?: string,
+  className?: string,
 ): Promise<LearnSessionDetail> => {
   const res = await api.post("/api/learn/from-topic", {
     topic,
     num_concepts: numConcepts,
-    subject: subject ?? null,     // ← NEW
+    subject: subject ?? null,
+    class_name: className ?? null,
   });
   return res.data;
 };
@@ -177,5 +179,25 @@ export const getSessionMindMap = async (
   const res = await api.get(`/api/learn/session/${sessionId}/mindmap`, {
     timeout: 60000,
   });
+  return res.data;
+};
+
+export type Resource = {
+  type: "video" | "website" | "pdf" | "course";
+  title: string;
+  url: string;
+  source: string;
+  description: string;
+  difficulty: "beginner" | "intermediate" | "advanced";
+};
+
+export const getResources = async (
+  topic: string,
+  className?: string,
+): Promise<{ topic: string; resources: Resource[] }> => {
+  const res = await api.post("/api/resources", {
+    topic,
+    class_name: className,
+  }, { timeout: 60000 });
   return res.data;
 };

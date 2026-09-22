@@ -73,11 +73,32 @@ Schema:
 }"""
 
 
-def extract_concepts(topic: str | None, text: str | None, num: int = 8) -> dict:
+CLASS_HINTS = {
+    "class_6": "Grade 6 level (age 11-12). Simple language, foundational concepts.",
+    "class_7": "Grade 7 level (age 12-13). Simple language, foundational concepts.",
+    "class_8": "Grade 8 level (age 13-14). Moderate complexity, intro to key ideas.",
+    "class_9": "Grade 9 / Matric level (age 14-15). Standard secondary school depth.",
+    "class_10": "Grade 10 / Matric level (age 15-16). Standard secondary school depth.",
+    "class_11": "Grade 11 / FSc 1st year (age 16-17). Advanced secondary level.",
+    "class_12": "Grade 12 / FSc 2nd year (age 17-18). Advanced secondary level.",
+    "university": "Undergraduate university level. Rigorous, technical depth.",
+}
+
+
+def extract_concepts(
+    topic: str | None,
+    text: str | None,
+    num: int = 8,
+    class_name: str | None = None,
+) -> dict:
+    class_hint = ""
+    if class_name and class_name in CLASS_HINTS:
+        class_hint = f"\n\nTarget level: {CLASS_HINTS[class_name]}\nAdapt the concepts to this level."
+
     if topic:
-        user = f"Topic: {topic}\n\nExtract {num} key concepts."
+        user = f"Topic: {topic}{class_hint}\n\nExtract {num} key concepts."
     else:
-        user = f"Study material:\n\n{text[:8000]}\n\nExtract {num} key concepts."
+        user = f"Study material:\n\n{text[:8000]}{class_hint}\n\nExtract {num} key concepts."
 
     data = _call_llm(CONCEPT_SYSTEM, user, max_tokens=2000, temperature=0.3)
     if "concepts" not in data:

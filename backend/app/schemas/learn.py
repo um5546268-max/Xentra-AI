@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 class LearnFromTopicRequest(BaseModel):
     topic: str = Field(min_length=2, max_length=200)
     num_concepts: int = Field(default=8, ge=4, le=12)
-    subject: str | None = None        # ← NEW
+    subject: str | None = None   
+    class_name: str | None = None    
 
 
 class LearnFromTextRequest(BaseModel):

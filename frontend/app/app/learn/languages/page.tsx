@@ -3,27 +3,29 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
-import { learnFromTopic } from "@/lib/learn";
+import { learnFromTopic, getResources, Resource } from "@/lib/learn";
+import { ClassPicker } from "@/components/learn/ClassPicker";
+import { ResourcesPanel } from "@/components/learn/ResourcesPanel";
 
 type Category = "programming" | "world" | "other";
 
 const PROGRAMMING_LANGS = [
-  { id: "python", label: "Python", emoji: "🐍", color: "emerald" },
-  { id: "javascript", label: "JavaScript", emoji: "🟨", color: "amber" },
-  { id: "typescript", label: "TypeScript", emoji: "🔵", color: "cyan" },
-  { id: "cpp", label: "C / C++", emoji: "⚙️", color: "violet" },
-  { id: "java", label: "Java", emoji: "☕", color: "red" },
-  { id: "csharp", label: "C#", emoji: "🎯", color: "violet" },
-  { id: "go", label: "Go", emoji: "🐹", color: "cyan" },
-  { id: "rust", label: "Rust", emoji: "🦀", color: "amber" },
-  { id: "php", label: "PHP", emoji: "🐘", color: "violet" },
-  { id: "swift", label: "Swift", emoji: "🦅", color: "red" },
-  { id: "kotlin", label: "Kotlin", emoji: "🟣", color: "violet" },
-  { id: "sql", label: "SQL", emoji: "🗄️", color: "emerald" },
-  { id: "html_css", label: "HTML & CSS", emoji: "🎨", color: "pink" },
-  { id: "react", label: "React", emoji: "⚛️", color: "cyan" },
-  { id: "nodejs", label: "Node.js", emoji: "🟢", color: "emerald" },
-  { id: "bash", label: "Bash / Shell", emoji: "💻", color: "slate" },
+  { id: "python", label: "Python", emoji: "🐍", color: "emerald", noClass: true },
+  { id: "javascript", label: "JavaScript", emoji: "🟨", color: "amber", noClass: true },
+  { id: "typescript", label: "TypeScript", emoji: "🔵", color: "cyan", noClass: true },
+  { id: "cpp", label: "C / C++", emoji: "⚙️", color: "violet", noClass: true },
+  { id: "java", label: "Java", emoji: "☕", color: "red", noClass: true },
+  { id: "csharp", label: "C#", emoji: "🎯", color: "violet", noClass: true },
+  { id: "go", label: "Go", emoji: "🐹", color: "cyan", noClass: true },
+  { id: "rust", label: "Rust", emoji: "🦀", color: "amber", noClass: true },
+  { id: "php", label: "PHP", emoji: "🐘", color: "violet", noClass: true },
+  { id: "swift", label: "Swift", emoji: "🦅", color: "red", noClass: true },
+  { id: "kotlin", label: "Kotlin", emoji: "🟣", color: "violet", noClass: true },
+  { id: "sql", label: "SQL", emoji: "🗄️", color: "emerald", noClass: true },
+  { id: "html_css", label: "HTML & CSS", emoji: "🎨", color: "pink", noClass: true },
+  { id: "react", label: "React", emoji: "⚛️", color: "cyan", noClass: true },
+  { id: "nodejs", label: "Node.js", emoji: "🟢", color: "emerald", noClass: true },
+  { id: "bash", label: "Bash / Shell", emoji: "💻", color: "slate", noClass: true },
 ];
 
 const WORLD_LANGS = [
@@ -41,7 +43,7 @@ const WORLD_LANGS = [
   { id: "italian", label: "Italian", emoji: "🇮🇹" },
   { id: "russian", label: "Russian", emoji: "🇷🇺" },
   { id: "turkish", label: "Turkish", emoji: "🇹🇷" },
-  { id: "persian", label: "Persian (Farsi)", emoji: "🇮🇷" },
+  { id: "persian", label: "Persian", emoji: "🇮🇷" },
   { id: "bengali", label: "Bengali", emoji: "🇧🇩" },
   { id: "punjabi", label: "Punjabi", emoji: "🟠" },
   { id: "pashto", label: "Pashto", emoji: "🇦🇫" },
@@ -63,14 +65,40 @@ export default function LanguagesPage() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleLanguageClick = async (langId: string, langLabel: string) => {
+  // Class picker state
+  const [pendingSubject, setPendingSubject] = useState<{ id: string; label: string } | null>(null);
+
+  // Resources state
+  const [resources, setResources] = useState<Resource[] | null>(null);
+  const [resourcesFor, setResourcesFor] = useState<string | null>(null);
+
+  const handleLanguageClick = (langId: string, langLabel: string, noClass?: boolean) => {
+    if (noClass) {
+      generateSession(langId, langLabel, null);
+    } else {
+      setPendingSubject({ id: langId, label: langLabel });
+    }
+  };
+
+  const generateSession = async (
+    langId: string,
+    langLabel: string,
+    className: string | null,
+  ) => {
+    setPendingSubject(null);
     setGenerating(langId);
     setError(null);
     try {
-      const topic = category === "programming"
-        ? `${langLabel} programming language`
-        : `Learning ${langLabel} language`;
-      const session = await learnFromTopic(topic, 8, category === "programming" ? "programming" : "languages");
+      const topic =
+        category === "programming"
+          ? `${langLabel} programming language`
+          : `Learning ${langLabel} language`;
+      const session = await learnFromTopic(
+        topic,
+        8,
+        category === "programming" ? "programming" : "languages",
+        className ?? undefined,
+      );
       router.push(`/app/learn/${session.id}`);
     } catch (e: any) {
       setError(e?.response?.data?.detail || e.message || "Failed to generate");
@@ -79,16 +107,35 @@ export default function LanguagesPage() {
     }
   };
 
+  const handleShowResources = async (langId: string, langLabel: string) => {
+    setResourcesFor(langLabel);
+    setResources(null);
+    try {
+      const data = await getResources(
+        category === "programming"
+          ? `${langLabel} programming`
+          : `${langLabel} language learning`,
+      );
+      setResources(data.resources);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "Failed to load resources");
+      setResourcesFor(null);
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto p-8 space-y-6">
-        {/* Header */}
         <button
-          onClick={() => category ? setCategory(null) : router.push("/app/learn")}
+          onClick={() => {
+            if (resourcesFor) { setResourcesFor(null); setResources(null); }
+            else if (category) setCategory(null);
+            else router.push("/app/learn");
+          }}
           className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-300"
         >
           <ArrowLeft className="w-4 h-4" />
-          {category ? "Back to categories" : "Back to Learn"}
+          Back
         </button>
 
         <div className="flex items-center gap-3">
@@ -97,18 +144,20 @@ export default function LanguagesPage() {
           </div>
           <div>
             <h1 className="text-2xl font-semibold">
-              {category === "programming"
+              {resourcesFor
+                ? `${resourcesFor} resources`
+                : category === "programming"
                 ? "Programming Languages"
                 : category === "world"
                 ? "World Languages"
-                : category === "other"
-                ? "Other Languages"
                 : "Languages"}
             </h1>
             <p className="text-sm text-slate-500">
-              {category
-                ? "Click any language to generate a personalized study session"
-                : "Choose a category to explore"}
+              {resourcesFor
+                ? "Curated videos, websites, and PDFs"
+                : category
+                ? "Click Learn to study, or Resources to browse links"
+                : "Choose a category"}
             </p>
           </div>
         </div>
@@ -120,7 +169,7 @@ export default function LanguagesPage() {
         )}
 
         {/* Category selection */}
-        {!category && (
+        {!category && !resourcesFor && (
           <div className="grid grid-cols-3 gap-3">
             <CategoryCard
               emoji="💻"
@@ -149,8 +198,8 @@ export default function LanguagesPage() {
           </div>
         )}
 
-        {/* Programming languages grid */}
-        {category === "programming" && (
+        {/* Programming languages */}
+        {category === "programming" && !resourcesFor && (
           <div className="grid grid-cols-4 gap-3">
             {PROGRAMMING_LANGS.map((lang) => (
               <LanguageCard
@@ -159,14 +208,15 @@ export default function LanguagesPage() {
                 label={lang.label}
                 color={lang.color}
                 loading={generating === lang.id}
-                onClick={() => handleLanguageClick(lang.id, lang.label)}
+                onLearn={() => handleLanguageClick(lang.id, lang.label, true)}
+                onResources={() => handleShowResources(lang.id, lang.label)}
               />
             ))}
           </div>
         )}
 
-        {/* World languages grid */}
-        {category === "world" && (
+        {/* World languages */}
+        {category === "world" && !resourcesFor && (
           <div className="grid grid-cols-4 gap-3">
             {WORLD_LANGS.map((lang) => (
               <LanguageCard
@@ -175,20 +225,39 @@ export default function LanguagesPage() {
                 label={lang.label}
                 color="cyan"
                 loading={generating === lang.id}
-                onClick={() => handleLanguageClick(lang.id, lang.label)}
+                onLearn={() => handleLanguageClick(lang.id, lang.label)}
+                onResources={() => handleShowResources(lang.id, lang.label)}
               />
             ))}
           </div>
         )}
 
-        {/* Other */}
-        {category === "other" && (
-          <div className="text-center py-16 text-slate-600 text-sm space-y-2">
-            <div className="text-4xl">🔜</div>
-            <div>More language categories coming soon.</div>
-          </div>
+        {/* Resources view */}
+        {resourcesFor && (
+          <>
+            {!resources && (
+              <div className="flex flex-col items-center justify-center py-16 gap-3">
+                <Loader2 className="w-6 h-6 animate-spin text-violet-400" />
+                <div className="text-sm text-slate-500">
+                  Finding the best resources for {resourcesFor}…
+                </div>
+              </div>
+            )}
+            {resources && <ResourcesPanel resources={resources} />}
+          </>
         )}
       </div>
+
+      {pendingSubject && (
+        <ClassPicker
+          subject={pendingSubject.label}
+          loading={generating === pendingSubject.id}
+          onClose={() => setPendingSubject(null)}
+          onPick={(className) =>
+            generateSession(pendingSubject.id, pendingSubject.label, className)
+          }
+        />
+      )}
     </div>
   );
 }
@@ -223,31 +292,44 @@ function CategoryCard({
 }
 
 function LanguageCard({
-  emoji, label, color, loading, onClick,
+  emoji, label, color, loading, onLearn, onResources,
 }: {
   emoji: string;
   label: string;
   color: string;
   loading: boolean;
-  onClick: () => void;
+  onLearn: () => void;
+  onResources: () => void;
 }) {
   const style = COLOR_MAP[color] ?? COLOR_MAP.violet;
   return (
-    <button
-      onClick={onClick}
-      disabled={loading}
-      className={`rounded-xl border bg-gradient-to-br ${style} p-4 text-center hover:scale-[1.03] transition disabled:opacity-60 disabled:cursor-wait space-y-2`}
+    <div
+      className={`rounded-xl border bg-gradient-to-br ${style} p-3 text-center space-y-2`}
     >
       <div className="text-2xl">{emoji}</div>
       <div className="text-sm font-medium">{label}</div>
-      {loading ? (
-        <Loader2 className="w-3.5 h-3.5 mx-auto animate-spin text-violet-300" />
-      ) : (
-        <div className="text-[9px] text-slate-500 flex items-center justify-center gap-1">
-          <Sparkles className="w-2.5 h-2.5" />
-          Learn
-        </div>
-      )}
-    </button>
+      <div className="flex gap-1">
+        <button
+          onClick={onLearn}
+          disabled={loading}
+          className="flex-1 flex items-center justify-center gap-1 rounded-md bg-violet-600 hover:bg-violet-500 py-1.5 text-[10px] font-medium text-white disabled:opacity-40"
+        >
+          {loading ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <>
+              <Sparkles className="w-2.5 h-2.5" />
+              Learn
+            </>
+          )}
+        </button>
+        <button
+          onClick={onResources}
+          className="flex-1 rounded-md border border-slate-700 hover:bg-slate-800 py-1.5 text-[10px] text-slate-400"
+        >
+          Resources
+        </button>
+      </div>
+    </div>
   );
 }

@@ -37,7 +37,12 @@ def learn_from_topic(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    data = learn_service.extract_concepts(topic=payload.topic, text=None, num=payload.num_concepts)
+    data = learn_service.extract_concepts(
+        topic=payload.topic,
+        text=None,
+        num=payload.num_concepts,
+        class_name=payload.class_name,
+    )
 
     session = LearnSession(
         user_id=current_user.id,
