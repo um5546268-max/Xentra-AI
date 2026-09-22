@@ -6,3 +6,6 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserRead
+
+class GoogleSignInRequest(BaseModel):
+    credential: str

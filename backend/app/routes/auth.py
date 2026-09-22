@@ -13,6 +13,8 @@ from app.schemas.user import UserCreate, UserLogin, UserRead
 from app.schemas.auth import TokenResponse
 from app.core.security import hash_password, verify_password, create_access_token
 from app.core.rate_limit import limiter
+from app.schemas.auth import GoogleSignInRequest
+from app.services.google_signin import verify_google_id_token
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -130,3 +132,70 @@ def me(
     current_user: User = Depends(get_current_user),
 ):
     return current_user
+
+    # ── Sign in / sign up with Google ──
+@router.post("/google", response_model=TokenResponse)
+def google_signin(
+    payload: GoogleSignInRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Accept a Google ID token. Verify it. Find or create the user.
+    Issue our own JWT (same as email/password flow).
+    """
+    claims = verify_google_id_token(payload.credential)
+
+    google_id = claims["sub"]
+    email = claims["email"].lower().strip()
+    name = claims.get("name") or email.split("@")[0]
+    picture = claims.get("picture")
+
+    # 1. Look up by google_id first (returning user via Google)
+    user = db.execute(
+        select(User).where(User.google_id == google_id)
+    ).scalar_one_or_none()
+
+    # 2. Fall back to email lookup (auto-link)
+    if not user:
+        user = db.execute(
+            select(User).where(User.email == email)
+        ).scalar_one_or_none()
+
+        if user:
+            # Existing email/password user → link their Google ID
+            user.google_id = google_id
+            if not user.full_name:
+                user.full_name = name
+            if not user.avatar_url:
+                user.avatar_url = picture
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+    # 3. New user → create account
+    if not user:
+        # Generate a random password hash they'll never use
+        import secrets
+        random_pw = secrets.token_urlsafe(32)
+
+        user = User(
+            email=email,
+            password_hash=hash_password(random_pw),
+            full_name=name,
+            google_id=google_id,
+            avatar_url=picture,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        # Bootstrap defaults
+        try:
+            from app.services.permission_service import ensure_defaults_for_user
+            ensure_defaults_for_user(db, user.id)
+        except Exception as e:
+            print(f"[auth.google] Default permissions failed: {e}")
+
+    # 4. Issue our own JWT (same shape as login/signup)
+    token = create_access_token(subject=user.id)
+    return TokenResponse(access_token=token, user=UserRead.model_validate(user))

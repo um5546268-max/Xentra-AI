@@ -4,11 +4,62 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserPlus, LogIn, Sparkles, Shield, Zap } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { useRef, } from "react";
 
 export default function WelcomePage() {
   const router = useRouter();
   const { user } = useAuth();
   const [hovered, setHovered] = useState<"signin" | "signup" | null>(null);
+const { googleSignIn } = useAuth();
+const [gsiReady, setGsiReady] = useState(false);
+const googleBtnRef = useRef<HTMLDivElement>(null);
+
+// Load Google Identity Services script once
+useEffect(() => {
+  if (typeof window === "undefined") return;
+  const script = document.createElement("script");
+  script.src = "https://accounts.google.com/gsi/client";
+  script.async = true;
+  script.defer = true;
+  script.onload = () => setGsiReady(true);
+  document.body.appendChild(script);
+  return () => {
+    if (document.body.contains(script)) document.body.removeChild(script);
+  };
+}, []);
+
+// Render the Google button once the script + ref are ready
+useEffect(() => {
+  if (!gsiReady || !googleBtnRef.current) return;
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_SIGNIN_CLIENT_ID;
+  if (!clientId) {
+    console.warn("[google] NEXT_PUBLIC_GOOGLE_SIGNIN_CLIENT_ID is missing");
+    return;
+  }
+
+  // @ts-ignore — google is injected by the script
+  const g = (window as any).google;
+  if (!g?.accounts?.id) return;
+
+  g.accounts.id.initialize({
+    client_id: clientId,
+    callback: async (response: { credential: string }) => {
+      const ok = await googleSignIn(response.credential);
+      if (ok) router.push("/app");
+    },
+    auto_select: false,
+    cancel_on_tap_outside: true,
+  });
+
+  g.accounts.id.renderButton(googleBtnRef.current, {
+    theme: "filled_black",
+    size: "large",
+    shape: "pill",
+    text: "continue_with",
+    width: 400,
+    logo_alignment: "left",
+  });
+}, [gsiReady, googleSignIn, router]);
 
   // If already logged in → check onboarding and redirect
   useEffect(() => {
@@ -71,6 +122,18 @@ export default function WelcomePage() {
             <FeatureBadge icon={<Shield className="w-3.5 h-3.5" />} label="Private & secure" />
           </div>
         </div>
+
+        {/* ── Sign in with Google ── */}
+<div className="flex flex-col items-center gap-3">
+  <div ref={googleBtnRef} />
+  <div className="flex items-center gap-3 w-full">
+    <div className="flex-1 h-px bg-slate-800" />
+    <span className="text-[10px] uppercase tracking-wider text-slate-600">
+      or
+    </span>
+    <div className="flex-1 h-px bg-slate-800" />
+  </div>
+</div>
 
         {/* Right — action buttons */}
         <div className="space-y-4">

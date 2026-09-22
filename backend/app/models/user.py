@@ -116,6 +116,12 @@ class User(Base):
         Boolean, default=False, server_default="false", nullable=False
     )
 
+        # ===== Google Sign-In =====
+    google_id: Mapped[str | None] = mapped_column(
+        String(60), nullable=True, unique=True, index=True
+    )
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
         # ===== Gamification =====
     points: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False

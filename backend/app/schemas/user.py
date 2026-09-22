@@ -31,7 +31,8 @@ class UserRead(BaseModel):
     learning_goal: str | None = None
     interests: list[str] | None = None
     display_name: str | None = None
-    tour_completed: bool = False               # ← NEW
+    tour_completed: bool = False
+    avatar_url: str | None = None             # ← NEW
 
     class Config:
         from_attributes = True

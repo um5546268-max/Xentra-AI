@@ -22,6 +22,7 @@ type AuthState = {
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   loadFromStorage: () => void;
+  googleSignIn: (credential: string) => Promise<boolean>;
 };
 
 export const useAuth = create<AuthState>((set) => ({
@@ -83,6 +84,32 @@ export const useAuth = create<AuthState>((set) => ({
 
       if (!res.ok) {
         set({ loading: false, error: data.detail || "Login failed" });
+        return false;
+      }
+
+      localStorage.setItem("xentra_token", data.access_token);
+      localStorage.setItem("xentra_user", JSON.stringify(data.user));
+      set({ user: data.user, token: data.access_token, loading: false, error: null });
+      return true;
+    } catch {
+      set({ loading: false, error: "Network error — is the backend running?" });
+      return false;
+    }
+  },
+
+    googleSignIn: async (credential) => {
+    set({ loading: true, error: null });
+    try {
+      const res = await fetch(`${API_URL}/api/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        set({ loading: false, error: data.detail || "Google sign-in failed" });
         return false;
       }
 
