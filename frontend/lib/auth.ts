@@ -23,6 +23,7 @@ type AuthState = {
   logout: () => void;
   loadFromStorage: () => void;
   googleSignIn: (credential: string) => Promise<boolean>;
+  githubSignIn: (code: string) => Promise<boolean>;
 };
 
 export const useAuth = create<AuthState>((set) => ({
@@ -67,6 +68,29 @@ export const useAuth = create<AuthState>((set) => ({
       return true;
     } catch {
       set({ loading: false, error: "Network error — is the backend running?" });
+      return false;
+    }
+  },
+
+  githubSignIn: async (code) => {
+    set({ loading: true, error: null });
+    try {
+      const res = await fetch(`${API_URL}/api/auth/github`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        set({ loading: false, error: data.detail || "GitHub sign-in failed" });
+        return false;
+      }
+      localStorage.setItem("xentra_token", data.access_token);
+      localStorage.setItem("xentra_user", JSON.stringify(data.user));
+      set({ user: data.user, token: data.access_token, loading: false, error: null });
+      return true;
+    } catch {
+      set({ loading: false, error: "Network error" });
       return false;
     }
   },
