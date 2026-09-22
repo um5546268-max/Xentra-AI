@@ -21,112 +21,94 @@ def get_progress_stats(
     db: Session = Depends(get_db),
 ):
     """
-    Return aggregated stats for the last N days.
+    Optimized progress stats. No Postgres-specific functions.
+    ~8 queries, everything grouped in Python.
     """
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=days)
 
-    # ─── 1. Daily points (approximate — from user's total, but we don't
-    #         have per-day points. We'll estimate from activity count) ───
-    daily: dict[str, int] = {}
-    for i in range(days):
-        day = (since + timedelta(days=i)).date().isoformat()
-        daily[day] = 0
-
-    # Sum activity by day (sessions + flashcards + quizzes created)
-    sessions_by_day = db.execute(
-        select(
-            func.date(LearnSession.created_at).label("d"),
-            func.count().label("c"),
-        )
+    # ─── 1. Fetch all sessions (user's, in window) — 1 query ───
+    sessions = db.execute(
+        select(LearnSession.created_at, LearnSession.subject)
         .where(
             LearnSession.user_id == current_user.id,
             LearnSession.created_at >= since,
         )
-        .group_by(func.date(LearnSession.created_at))
     ).all()
 
-    for row in sessions_by_day:
-        d = row.d.isoformat() if hasattr(row.d, "isoformat") else str(row.d)
-        if d in daily:
-            daily[d] += row.c * 20  # 20 points per session
-
-    # ─── 2. Cards reviewed per day (approximate from flashcard review times) ───
-    # We only track last_reviewed_at, so count cards reviewed each day
-    cards_by_day = db.execute(
-        select(
-            func.date(Flashcard.last_reviewed_at).label("d"),
-            func.count().label("c"),
-        )
+    # ─── 2. Fetch all reviewed cards in window — 1 query ───
+    cards = db.execute(
+        select(Flashcard.last_reviewed_at)
         .join(LearnSession)
         .where(
             LearnSession.user_id == current_user.id,
             Flashcard.last_reviewed_at >= since,
         )
-        .group_by(func.date(Flashcard.last_reviewed_at))
     ).all()
 
-    for row in cards_by_day:
-        d = row.d.isoformat() if hasattr(row.d, "isoformat") else str(row.d)
-        if d in daily:
-            daily[d] += row.c * 2  # 2 points per review
+    # ─── 3. Group by day in Python ───
+    session_by_day: dict[str, int] = {}
+    for row in sessions:
+        d = row.created_at.date().isoformat()
+        session_by_day[d] = session_by_day.get(d, 0) + 1
 
-    # ─── 3. Sessions per week (last 12 weeks) ───
+    card_by_day: dict[str, int] = {}
+    for row in cards:
+        if row.last_reviewed_at:
+            d = row.last_reviewed_at.date().isoformat()
+            card_by_day[d] = card_by_day.get(d, 0) + 1
+
+    # Daily points array
+    daily_points = []
+    for i in range(days):
+        day = (since + timedelta(days=i)).date().isoformat()
+        pts = session_by_day.get(day, 0) * 20 + card_by_day.get(day, 0) * 2
+        daily_points.append({"date": day, "points": pts})
+
+    # ─── 4. Weekly sessions (last 12 weeks) — Python grouping ───
+    all_sessions = db.execute(
+        select(LearnSession.created_at)
+        .where(LearnSession.user_id == current_user.id)
+    ).all()
+
     weekly = []
     for w in range(11, -1, -1):
         week_start = (now - timedelta(weeks=w + 1)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
         week_end = week_start + timedelta(weeks=1)
-        count = db.execute(
-            select(func.count())
-            .select_from(LearnSession)
-            .where(
-                LearnSession.user_id == current_user.id,
-                LearnSession.created_at >= week_start,
-                LearnSession.created_at < week_end,
-            )
-        ).scalar() or 0
+        count = sum(
+            1 for row in all_sessions
+            if week_start <= row.created_at < week_end
+        )
         weekly.append({
             "week": week_start.strftime("%b %d"),
             "sessions": count,
         })
 
-    # ─── 4. Subject breakdown ───
-    subjects_query = db.execute(
-        select(
-            LearnSession.subject,
-            func.count().label("c"),
-        )
-        .where(LearnSession.user_id == current_user.id)
-        .group_by(LearnSession.subject)
-    ).all()
+    # ─── 5. Subject breakdown — Python grouping ───
+    subject_map: dict[str, int] = {}
+    for row in sessions:
+        if row.subject:
+            subject_map[row.subject] = subject_map.get(row.subject, 0) + 1
+    subject_breakdown = [
+        {"subject": s, "count": c} for s, c in subject_map.items()
+    ]
 
-    subject_breakdown = []
-    for row in subjects_query:
-        if row.subject:  # skip null subjects
-            subject_breakdown.append({
-                "subject": row.subject,
-                "count": row.c,
-            })
-
-    # ─── 5. Totals ───
+    # ─── 6. Totals — 5 simple count queries ───
     total_sessions = db.execute(
-        select(func.count())
-        .select_from(LearnSession)
+        select(func.count()).select_from(LearnSession)
         .where(LearnSession.user_id == current_user.id)
     ).scalar() or 0
 
     total_flashcards = db.execute(
-        select(func.count())
-        .select_from(Flashcard)
+        select(func.count()).select_from(Flashcard)
         .join(LearnSession)
         .where(LearnSession.user_id == current_user.id)
     ).scalar() or 0
 
     total_quizzes = db.execute(
-        select(func.count())
-        .select_from(QuizAttempt)
+        select(func.count()).select_from(QuizAttempt)
         .join(LearnSession)
         .where(
             LearnSession.user_id == current_user.id,
@@ -135,33 +117,40 @@ def get_progress_stats(
     ).scalar() or 0
 
     total_notes = db.execute(
-        select(func.count())
-        .select_from(Note)
+        select(func.count()).select_from(Note)
         .where(Note.user_id == current_user.id)
     ).scalar() or 0
 
     total_goals = db.execute(
-        select(func.count())
-        .select_from(Goal)
+        select(func.count()).select_from(Goal)
         .where(Goal.user_id == current_user.id)
     ).scalar() or 0
 
-    # ─── 6. Daily heatmap data (365 days for GitHub-style grid) ───
+    # ─── 7. Heatmap — one query for 365 days, grouped in Python ───
     heatmap_days = 365
-    heatmap: list[dict] = []
+    heatmap_start = (now - timedelta(days=heatmap_days - 1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    heatmap_sessions = db.execute(
+        select(LearnSession.created_at)
+        .where(
+            LearnSession.user_id == current_user.id,
+            LearnSession.created_at >= heatmap_start,
+        )
+    ).all()
+
+    heatmap_map: dict[str, int] = {}
+    for row in heatmap_sessions:
+        d = row.created_at.date().isoformat()
+        heatmap_map[d] = heatmap_map.get(d, 0) + 1
+
+    heatmap = []
     for i in range(heatmap_days - 1, -1, -1):
         day = (now - timedelta(days=i)).date()
-        day_str = day.isoformat()
-        # Count activity that day (approximate from sessions)
-        count = db.execute(
-            select(func.count())
-            .select_from(LearnSession)
-            .where(
-                LearnSession.user_id == current_user.id,
-                func.date(LearnSession.created_at) == day,
-            )
-        ).scalar() or 0
-        heatmap.append({"date": day_str, "count": count})
+        heatmap.append({
+            "date": day.isoformat(),
+            "count": heatmap_map.get(day.isoformat(), 0),
+        })
 
     return {
         "totals": {
@@ -173,7 +162,7 @@ def get_progress_stats(
             "notes": total_notes,
             "goals": total_goals,
         },
-        "daily_points": [{"date": d, "points": p} for d, p in daily.items()],
+        "daily_points": daily_points,
         "weekly_sessions": weekly,
         "subject_breakdown": subject_breakdown,
         "heatmap": heatmap,
