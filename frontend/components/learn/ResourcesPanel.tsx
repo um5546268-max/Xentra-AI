@@ -1,10 +1,11 @@
 "use client";
 
-import { ExternalLink, Youtube, Globe, FileText, GraduationCap, Sparkles } from "lucide-react";
+import { ExternalLink, Video, Globe, FileText, GraduationCap, Sparkles } from "lucide-react";
 import { Resource } from "@/lib/learn";
 
+
 const TYPE_CONFIG: Record<string, { icon: any; color: string; bg: string }> = {
-  video: { icon: Youtube, color: "text-red-400", bg: "bg-red-500/10 border-red-500/30" },
+  video: { icon: Video, color: "text-red-400", bg: "bg-red-500/10 border-red-500/30" },
   website: { icon: Globe, color: "text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/30" },
   pdf: { icon: FileText, color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/30" },
   course: { icon: GraduationCap, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30" },
