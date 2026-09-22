@@ -85,6 +85,23 @@ export default function SplashPage() {
         }}
       />
 
+            {/* White flash at the moment X hits full size */}
+      <div
+        className="absolute inset-0 pointer-events-none bg-white"
+        style={{ animation: "flash 1.3s ease-out 0.6s both" }}
+      />
+
+      {/* Subtle screen shake at impact */}
+      <style jsx global>{`
+        @keyframes flash {
+          0%   { opacity: 0; }
+          40%  { opacity: 0; }
+          50%  { opacity: 0.7; }
+          55%  { opacity: 0.4; }
+          100% { opacity: 0; }
+        }
+      `}</style>
+
       {/* Content */}
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 py-12">
         {/* X hologram */}
