@@ -1,18 +1,27 @@
 "use client";
 
-import { useEffect, Suspense } from "react"; // 1. Added Suspense
+import { useEffect, Suspense, useRef } from "react"; // Added useRef
 import { useRouter, useSearchParams } from "next/navigation";
-// 2. IMPORT YOUR AUTH FUNCTION HERE (Adjust the path as needed based on where your file is)
-// For example, if it's in a lib folder: import { githubSignIn } from "@/lib/auth";
-import { githubSignIn } from "../../../lib/auth"; // Change this path to your actual file location!
+// IMPORT THE HOOK, NOT THE FUNCTION
+import { useAuth } from "../../../lib/auth"; 
 
 function CallbackInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const code = searchParams.get("code");
     const error = searchParams.get("error");
+    
+    // Get the function from your Zustand store
+    const githubSignIn = useAuth((state) => state.githubSignIn);
+    
+    // Use a ref to prevent React Strict Mode from running this twice
+    const hasAttempted = useRef(false); 
 
     useEffect(() => {
+        // Prevent double execution in development
+        if (hasAttempted.current) return;
+        hasAttempted.current = true;
+
         if (error) {
             router.replace("/welcome");
             return;
@@ -22,10 +31,11 @@ function CallbackInner() {
             return;
         }
 
-        // 3. Added types (: boolean and : any)
+        // Call the Zustand function
         githubSignIn(code).then((ok: boolean) => {
             if (ok) {
-                // If login is successful, go to dashboard
+                // Redirect to your actual dashboard route. 
+                // Change "/app" to wherever your dashboard actually is (e.g., "/dashboard")
                 router.replace("/app"); 
             } else {
                 router.replace("/welcome");
@@ -35,13 +45,13 @@ function CallbackInner() {
             router.replace("/welcome");
         });
 
-    }, [code, error, router]);
+    }, [code, error, router, githubSignIn]);
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-950">
             <div className="flex flex-col items-center gap-3">
                 <div className="w-6 h-6 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
-                <span className="text-sm text-slate-400">Signing you in...</span>
+                <span className="text-sm text-slate-400">Signing you in with GitHub...</span>
             </div>
         </div>
     );
