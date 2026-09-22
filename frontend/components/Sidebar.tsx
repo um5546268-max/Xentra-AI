@@ -39,6 +39,7 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { StickyNote } from "lucide-react";
 import {
   Conversation,
   getConversations,
@@ -56,6 +57,7 @@ import { UserStats } from "@/components/learn/UserStats";
 
 const TOOLS = [
   { path: "/app/learn", label: "Learn", icon: GraduationCap },
+  { path: "/app/notes", label: "Notes", icon: StickyNote },
   { path: "/app/browser", label: "Browser agent", icon: Globe },
   { path: "/app/integrations", label: "Integrations", icon: Link2 },
   { path: "/app/media", label: "Media", icon: Music },
