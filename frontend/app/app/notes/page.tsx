@@ -1,22 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
-  Plus, Trash2, Pin, Search, X, Loader2, StickyNote, Check, Tag,
-  Sparkles, FileText, Clock, Hash, ChevronRight,
+  Plus, Trash2, Pin, Search, X, Loader2, StickyNote, Check,
+  Sparkles, FileText, ChevronRight, Hash,
 } from "lucide-react";
 import {
   Note, listNotes, createNote, updateNote, deleteNote, SUBJECTS,
+  summarizeNote, explainNote, noteToLearn,
 } from "@/lib/notes";
-
-const COLOR_BG: Record<Note["color"], string> = {
-  default: "border-slate-800 bg-slate-900/60",
-  violet: "border-violet-500/30 bg-violet-500/10",
-  cyan: "border-cyan-500/30 bg-cyan-500/10",
-  emerald: "border-emerald-500/30 bg-emerald-500/10",
-  amber: "border-amber-500/30 bg-amber-500/10",
-  pink: "border-pink-500/30 bg-pink-500/10",
-};
 
 const COLOR_SWATCH: Record<Note["color"], string> = {
   default: "bg-slate-700",
@@ -28,11 +21,16 @@ const COLOR_SWATCH: Record<Note["color"], string> = {
 };
 
 export default function NotesPage() {
+  const router = useRouter();
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<string>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // AI action state
+  const [aiLoading, setAiLoading] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState<{ title: string; body: string } | null>(null);
 
   const load = async () => {
     try {
@@ -91,6 +89,52 @@ export default function NotesPage() {
     return { total, subjects, thisWeek };
   }, [notes]);
 
+  // ─── AI actions ───
+  const runSummarize = async () => {
+    if (!selected) return;
+    setAiLoading("summarize");
+    try {
+      const { summary } = await summarizeNote(selected.id);
+      setAiResult({ title: "Summary", body: summary });
+    } catch (e: any) {
+      setAiResult({
+        title: "Error",
+        body: e?.response?.data?.detail || "Failed to summarize",
+      });
+    }
+    setAiLoading(null);
+  };
+
+  const runExplain = async () => {
+    if (!selected) return;
+    setAiLoading("explain");
+    try {
+      const { simplified } = await explainNote(selected.id);
+      setAiResult({ title: "Simplified explanation", body: simplified });
+    } catch (e: any) {
+      setAiResult({
+        title: "Error",
+        body: e?.response?.data?.detail || "Failed to simplify",
+      });
+    }
+    setAiLoading(null);
+  };
+
+  const runToLearn = async (mode: "all" | "quiz" | "cards") => {
+    if (!selected) return;
+    setAiLoading(mode);
+    try {
+      const { session_id } = await noteToLearn(selected.id, mode);
+      router.push(`/app/learn/${session_id}`);
+    } catch (e: any) {
+      setAiResult({
+        title: "Error",
+        body: e?.response?.data?.detail || "Failed to generate study material",
+      });
+    }
+    setAiLoading(null);
+  };
+
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -130,7 +174,6 @@ export default function NotesPage() {
       <div className="flex-1 overflow-hidden flex">
         {/* Column 1 — notes list */}
         <div className="w-72 shrink-0 border-r border-slate-800 overflow-y-auto">
-          {/* Filter tabs */}
           <div className="p-3 border-b border-slate-800 flex items-center gap-1 flex-wrap sticky top-0 bg-slate-950 z-10">
             <FilterChip active={filter === "all"} onClick={() => setFilter("all")} label="All" />
             {SUBJECTS.slice(0, 5).map((s) => (
@@ -143,7 +186,6 @@ export default function NotesPage() {
             ))}
           </div>
 
-          {/* Notes */}
           {filtered.length === 0 ? (
             <div className="p-6 text-center text-xs text-slate-600">
               {search ? "No matches." : "No notes yet."}
@@ -205,23 +247,46 @@ export default function NotesPage() {
 
         {/* Column 3 — right rail */}
         <div className="w-72 shrink-0 border-l border-slate-800 overflow-y-auto p-4 space-y-4">
-          {/* AI Actions */}
-          <RailCard title="AI Study Assistant" icon={<Sparkles className="w-4 h-4 text-violet-300" />} accent>
+          <RailCard
+            title="AI Study Assistant"
+            icon={<Sparkles className="w-4 h-4 text-violet-300" />}
+            accent
+          >
             <p className="text-[11px] text-slate-500 mb-3">
               Powered by Xentra AI
             </p>
             <div className="space-y-1.5">
-              <RailAction icon={<FileText className="w-3.5 h-3.5" />} label="Summarize this note" />
-              <RailAction icon={<StickyNote className="w-3.5 h-3.5" />} label="Create flashcards" />
-              <RailAction icon={<Sparkles className="w-3.5 h-3.5" />} label="Make a quiz" />
-              <RailAction icon={<Sparkles className="w-3.5 h-3.5" />} label="Explain in simple words" />
+              <RailAction
+                icon={<FileText className="w-3.5 h-3.5" />}
+                label="Summarize this note"
+                onClick={runSummarize}
+                loading={aiLoading === "summarize"}
+                disabled={!selected}
+              />
+              <RailAction
+                icon={<StickyNote className="w-3.5 h-3.5" />}
+                label="Create flashcards"
+                onClick={() => runToLearn("cards")}
+                loading={aiLoading === "cards"}
+                disabled={!selected}
+              />
+              <RailAction
+                icon={<Sparkles className="w-3.5 h-3.5" />}
+                label="Make a quiz"
+                onClick={() => runToLearn("quiz")}
+                loading={aiLoading === "quiz"}
+                disabled={!selected}
+              />
+              <RailAction
+                icon={<Sparkles className="w-3.5 h-3.5" />}
+                label="Explain in simple words"
+                onClick={runExplain}
+                loading={aiLoading === "explain"}
+                disabled={!selected}
+              />
             </div>
-            <button className="w-full mt-3 rounded-lg bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 py-2 text-xs font-medium">
-              ✨ Ask AI
-            </button>
           </RailCard>
 
-          {/* Stats */}
           <RailCard title="Notes Stats" icon={<Hash className="w-4 h-4 text-emerald-300" />}>
             <div className="grid grid-cols-3 gap-2">
               <StatMini value={stats.total} label="Total" />
@@ -230,7 +295,6 @@ export default function NotesPage() {
             </div>
           </RailCard>
 
-          {/* Export (placeholder) */}
           <RailCard title="Export / Share" icon={<FileText className="w-4 h-4 text-cyan-300" />}>
             <div className="grid grid-cols-2 gap-2">
               <ExportBtn label="PDF" />
@@ -244,14 +308,59 @@ export default function NotesPage() {
           </RailCard>
         </div>
       </div>
+
+      {/* AI result modal */}
+      {aiResult && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setAiResult(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-2xl rounded-2xl border border-violet-500/40 bg-slate-950 p-6 space-y-4 max-h-[80vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-violet-300" />
+                {aiResult.title}
+              </h3>
+              <button
+                onClick={() => setAiResult(null)}
+                className="p-2 rounded-lg hover:bg-slate-800 text-slate-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
+              {aiResult.body}
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={() => navigator.clipboard.writeText(aiResult.body)}
+                className="px-4 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-800"
+              >
+                Copy
+              </button>
+              <button
+                onClick={() => setAiResult(null)}
+                className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ───────────────────────────────────────────────────────────
-// Components
+// Sub-components
 // ───────────────────────────────────────────────────────────
-function FilterChip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+function FilterChip({
+  active, onClick, label,
+}: { active: boolean; onClick: () => void; label: string }) {
   return (
     <button
       onClick={onClick}
@@ -268,7 +377,12 @@ function FilterChip({ active, onClick, label }: { active: boolean; onClick: () =
 
 function RailCard({
   title, icon, children, accent,
-}: { title: string; icon: React.ReactNode; children: React.ReactNode; accent?: boolean }) {
+}: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  accent?: boolean;
+}) {
   return (
     <div className={`rounded-xl border p-3 ${accent ? "border-violet-500/30 bg-violet-500/5" : "border-slate-800 bg-slate-900/40"}`}>
       <div className="flex items-center gap-2 text-xs font-medium mb-2">
@@ -280,10 +394,22 @@ function RailCard({
   );
 }
 
-function RailAction({ icon, label }: { icon: React.ReactNode; label: string }) {
+function RailAction({
+  icon, label, onClick, loading, disabled,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick?: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+}) {
   return (
-    <button className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition text-left">
-      {icon}
+    <button
+      onClick={onClick}
+      disabled={disabled || loading}
+      className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition text-left disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+      {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : icon}
       <span className="flex-1">{label}</span>
       <ChevronRight className="w-3 h-3" />
     </button>
@@ -389,7 +515,12 @@ function NoteEditor({
           <Pin className="w-4 h-4" />
         </button>
         <button
-          onClick={() => { if (confirm("Delete this note?")) { deleteNote(note.id); onDelete(note.id); } }}
+          onClick={() => {
+            if (confirm("Delete this note?")) {
+              deleteNote(note.id);
+              onDelete(note.id);
+            }
+          }}
           className="p-2 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-red-400"
           title="Delete"
         >
@@ -409,7 +540,7 @@ function NoteEditor({
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="Start writing… Use **bold**, *italic*, and ## headings for structure."
+        placeholder="Start writing…"
         className="w-full min-h-[500px] bg-transparent text-sm text-slate-300 focus:outline-none placeholder-slate-600 resize-none leading-relaxed"
       />
 

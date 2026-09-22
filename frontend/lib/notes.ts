@@ -54,3 +54,23 @@ export const SUBJECTS: { id: NoteSubject; label: string; emoji: string; color: s
   { id: "personal", label: "Personal", emoji: "🎯", color: "pink" },
   { id: "other", label: "Other", emoji: "📄", color: "default" },
 ];
+
+export const summarizeNote = async (id: string): Promise<{ summary: string }> => {
+  const res = await api.post(`/api/notes/${id}/summarize`);
+  return res.data;
+};
+
+export const explainNote = async (id: string): Promise<{ simplified: string }> => {
+  const res = await api.post(`/api/notes/${id}/explain`);
+  return res.data;
+};
+
+export const noteToLearn = async (
+  id: string,
+  mode: "all" | "quiz" | "cards" = "all",
+): Promise<{ session_id: string; title: string }> => {
+  const res = await api.post(`/api/notes/${id}/to-learn?mode=${mode}`, {}, {
+    timeout: 90000, // 90s — 3 Groq calls
+  });
+  return res.data;
+};
