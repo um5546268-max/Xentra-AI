@@ -92,7 +92,15 @@ if settings.CORS_ORIGINS:
         allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()],
         allow_credentials=True,
         allow_methods=["*"],
-        allow_headers=["*"],
+        # ✅ FIX: Explicitly allow the ngrok header and standard headers
+        allow_headers=[
+            "Content-Type", 
+            "Authorization", 
+            "ngrok-skip-browser-warning", 
+            "Accept", 
+            "Origin", 
+            "X-Requested-With"
+        ],
         expose_headers=["X-Request-ID"],
     )
 

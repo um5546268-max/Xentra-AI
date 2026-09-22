@@ -51,7 +51,10 @@ export const useAuth = create<AuthState>((set) => ({
     try {
       const res = await fetch(`${API_URL}/api/auth/signup`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true" // ✅ ADDED
+        },
         body: JSON.stringify({ email, password, full_name: fullName }),
       });
 
@@ -77,7 +80,10 @@ export const useAuth = create<AuthState>((set) => ({
     try {
       const res = await fetch(`${API_URL}/api/auth/github`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true" // ✅ ADDED
+        },
         body: JSON.stringify({ code }),
       });
       const data = await res.json();
@@ -100,7 +106,10 @@ export const useAuth = create<AuthState>((set) => ({
     try {
       const res = await fetch(`${API_URL}/api/auth/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true" // ✅ ADDED
+        },
         body: JSON.stringify({ email, password }),
       });
 
@@ -121,12 +130,15 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
-    googleSignIn: async (credential) => {
+  googleSignIn: async (credential) => {
     set({ loading: true, error: null });
     try {
       const res = await fetch(`${API_URL}/api/auth/google`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true" // ✅ ADDED
+        },
         body: JSON.stringify({ credential }),
       });
 
