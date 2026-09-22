@@ -1,14 +1,11 @@
 "use client";
-import { ComingSoon } from "@/components/ComingSoon";
-import { BookOpen } from "lucide-react";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function AllSubjectsPage() {
-  return (
-    <ComingSoon
-      title="All Subjects"
-      description="Browse all your subjects in one place. Group sessions by Languages, School, Programming, Science, and more."
-      icon={BookOpen}
-      backHref="/app/learn"
-    />
-  );
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/app/learn");
+  }, [router]);
+  return null;
 }

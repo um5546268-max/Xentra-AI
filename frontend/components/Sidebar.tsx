@@ -46,6 +46,7 @@ import {
   createConversation,
   deleteConversation,
 } from "@/lib/conversations";
+import { Book } from "lucide-react";
 import { useTasks } from "@/lib/tasks-store";
 import { useBeeHive } from "@/lib/use-bee-hive";
 import { useShellStore } from "@/lib/shell-store";
@@ -105,6 +106,7 @@ export default function Sidebar() {
 
   const STUDY_ITEMS = [
   { path: "/app/learn/subjects", label: "All Subjects", icon: BookOpen },
+  { path: "/app/books", label: "Books", icon: Book },
   { path: "/app/learn/languages", label: "Languages", icon: Languages },
   { path: "/app/learn/school", label: "School / College", icon: GraduationCap },
 ];

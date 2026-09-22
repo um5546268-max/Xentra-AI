@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -18,6 +19,7 @@ import { ImportRow } from "@/components/home/ImportRow";
 import { SubjectGrid } from "@/components/home/SubjectGrid";
 import { RightRail } from "@/components/home/RightRail";
 import { BottomRow } from "@/components/home/BottomRow";
+import { useSearchParams } from "next/navigation";
 
 type Mode = "topic" | "text" | "upload";
 type SubjectFilter = "all" | "languages" | "school" | "programming" | "science" | "personal";
@@ -31,8 +33,10 @@ const SUBJECTS: { id: SubjectFilter; label: string; emoji: string }[] = [
   { id: "personal", label: "Personal", emoji: "🎯" },
 ];
 
-export default function LearnPage() {
+function LearnPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
 
   // ── Generation state ──
   const [mode, setMode] = useState<Mode>("topic");
@@ -42,7 +46,11 @@ export default function LearnPage() {
   const [file, setFile] = useState<File | null>(null);
   const [numConcepts, setNumConcepts] = useState(8);
   const [subject, setSubject] = useState<SubjectFilter>("all");
-  const [filter, setFilter] = useState<SubjectFilter>("all");
+
+  // ← Now this can safely use searchParams
+  const initialSubject = (searchParams.get("subject") || "all") as SubjectFilter;
+  const [filter, setFilter] = useState<SubjectFilter>(initialSubject);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -70,6 +78,11 @@ export default function LearnPage() {
   useEffect(() => {
     getGamificationStats().then(setGamStats).catch(() => {});
   }, []);
+
+  useEffect(() => {
+  const sub = (searchParams.get("subject") || "all") as SubjectFilter;
+  setFilter(sub);
+  }, [searchParams]);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -414,5 +427,12 @@ function SmallStat({
         {value}
       </div>
     </div>
+  );
+}
+export default function LearnPage() {
+  return (
+    <Suspense fallback={null}>
+      <LearnPageInner />
+    </Suspense>
   );
 }

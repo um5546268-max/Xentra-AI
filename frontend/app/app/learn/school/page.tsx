@@ -1,14 +1,11 @@
 "use client";
-import { ComingSoon } from "@/components/ComingSoon";
-import { GraduationCap } from "lucide-react";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function SchoolPage() {
-  return (
-    <ComingSoon
-      title="School / College"
-      description="Upload class notes, textbooks, and lectures. Get flashcards and quizzes tailored to your syllabus."
-      icon={GraduationCap}
-      backHref="/app/learn?subject=school"
-    />
-  );
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/app/learn?subject=school");
+  }, [router]);
+  return null;
 }

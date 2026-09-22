@@ -1,14 +1,11 @@
 "use client";
-import { ComingSoon } from "@/components/ComingSoon";
-import { Languages } from "lucide-react";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function LanguagesPage() {
-  return (
-    <ComingSoon
-      title="Languages"
-      description="Learn any language with AI-generated flashcards, quizzes, and pronunciation guides."
-      icon={Languages}
-      backHref="/app/learn?subject=languages"
-    />
-  );
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/app/learn?subject=languages");
+  }, [router]);
+  return null;
 }
