@@ -6,7 +6,7 @@ export function XHologram({ size = 180 }: { size?: number }) {
       className="relative flex items-center justify-center"
       style={{ width: size, height: size }}
     >
-      {/* Outer glow ring */}
+      {/* Outer pulse ring */}
       <div
         className="absolute rounded-full animate-ping"
         style={{
@@ -22,19 +22,30 @@ export function XHologram({ size = 180 }: { size?: number }) {
       <div
         className="absolute rounded-full animate-pulse"
         style={{
-          width: size * 0.85,
-          height: size * 0.85,
+          width: size * 0.9,
+          height: size * 0.9,
           background:
-            "radial-gradient(circle, rgba(34,211,238,0.25) 0%, rgba(34,211,238,0) 70%)",
+            "radial-gradient(circle, rgba(34,211,238,0.3) 0%, rgba(34,211,238,0) 70%)",
           animationDuration: "2.5s",
         }}
       />
 
-      {/* The X */}
+      {/* Orbit ring — thin ellipse around the X */}
+      <div
+        className="absolute rounded-full border border-cyan-400/30"
+        style={{
+          width: size * 1.05,
+          height: size * 0.42,
+          transform: "rotate(-20deg)",
+          boxShadow: "0 0 30px rgba(34,211,238,0.3)",
+        }}
+      />
+
+      {/* The X — gradient with glow filter */}
       <svg
         viewBox="0 0 100 100"
-        className="relative"
-        style={{ width: size * 0.55, height: size * 0.55 }}
+        className="relative z-10"
+        style={{ width: size * 0.6, height: size * 0.6 }}
       >
         <defs>
           <linearGradient id="xGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -43,7 +54,7 @@ export function XHologram({ size = 180 }: { size?: number }) {
             <stop offset="100%" stopColor="#a78bfa" />
           </linearGradient>
           <filter id="xGlow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feGaussianBlur stdDeviation="4" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
@@ -51,21 +62,19 @@ export function XHologram({ size = 180 }: { size?: number }) {
           </filter>
         </defs>
         <g filter="url(#xGlow)">
-          {/* Left-to-right stroke */}
           <path
             d="M 15 15 L 85 85"
             stroke="url(#xGrad)"
-            strokeWidth="12"
+            strokeWidth="14"
             strokeLinecap="round"
             fill="none"
             className="animate-pulse"
             style={{ animationDuration: "2s" }}
           />
-          {/* Right-to-left stroke */}
           <path
             d="M 85 15 L 15 85"
             stroke="url(#xGrad)"
-            strokeWidth="12"
+            strokeWidth="14"
             strokeLinecap="round"
             fill="none"
             className="animate-pulse"
