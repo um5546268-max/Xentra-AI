@@ -15,6 +15,8 @@ from app.core.security import hash_password, verify_password, create_access_toke
 from app.core.rate_limit import limiter
 from app.schemas.auth import GoogleSignInRequest
 from app.services.google_signin import verify_google_id_token
+from app.schemas.auth import GitHubSignInRequest          # add to imports
+from app.services.github_signin import exchange_github_code
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -197,5 +199,69 @@ def google_signin(
             print(f"[auth.google] Default permissions failed: {e}")
 
     # 4. Issue our own JWT (same shape as login/signup)
+    token = create_access_token(subject=user.id)
+    return TokenResponse(access_token=token, user=UserRead.model_validate(user))
+
+# ── Sign in / sign up with GitHub ──
+@router.post("/github", response_model=TokenResponse)
+async def github_signin(
+    payload: GitHubSignInRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Accept a GitHub OAuth `code`, exchange for token, fetch profile,
+    find or create the user, issue our own JWT.
+    """
+    gh = await exchange_github_code(payload.code)
+
+    github_id = gh["id"]
+    email = gh["email"]
+    name = gh["name"] or gh["login"]
+    avatar = gh["avatar_url"]
+
+    # 1. Look up by github_id (returning GitHub user)
+    user = db.execute(
+        select(User).where(User.google_id == f"gh_{github_id}")
+    ).scalar_one_or_none()
+
+    # 2. Fall back to email (auto-link)
+    if not user:
+        user = db.execute(
+            select(User).where(User.email == email)
+        ).scalar_one_or_none()
+
+        if user:
+            user.google_id = f"gh_{github_id}"
+            if not user.full_name:
+                user.full_name = name
+            if not user.avatar_url:
+                user.avatar_url = avatar
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+    # 3. New user
+    if not user:
+        import secrets
+        random_pw = secrets.token_urlsafe(32)
+
+        user = User(
+            email=email,
+            password_hash=hash_password(random_pw),
+            full_name=name,
+            google_id=f"gh_{github_id}",   # reuse the same column, prefixed
+            avatar_url=avatar,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        try:
+            from app.services.permission_service import ensure_defaults_for_user
+            ensure_defaults_for_user(db, user.id)
+        except Exception as e:
+            print(f"[auth.github] Default permissions failed: {e}")
+
+    # 4. Issue JWT
     token = create_access_token(subject=user.id)
     return TokenResponse(access_token=token, user=UserRead.model_validate(user))

@@ -9,3 +9,6 @@ class TokenResponse(BaseModel):
 
 class GoogleSignInRequest(BaseModel):
     credential: str
+
+class GitHubSignInRequest(BaseModel):
+    code: str
