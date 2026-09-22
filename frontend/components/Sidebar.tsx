@@ -400,14 +400,24 @@ const STUDY_MORE = [
 
             {/* Study (collapsible) */}
       <div className="border-b border-slate-800 shrink-0">
+        <div className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wider hover:bg-slate-900 transition">
+  <button
+    onClick={() => router.push("/app/learn")}
+    className={`flex items-center gap-2 flex-1 text-left ${
+      pathname?.startsWith("/app/learn") ? "text-violet-300" : ""
+    }`}
+  >
+       <GraduationCap className="w-3.5 h-3.5" />
+          <span>Study</span>
+           </button>
         <button
-          onClick={() => setShowStudy(!showStudy)}
-          className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wider hover:bg-slate-900 transition"
-        >
-          <GraduationCap className="w-3.5 h-3.5" />
-          <span className="flex-1 text-left">Study</span>
+        onClick={() => setShowStudy(!showStudy)}
+      className="p-1 rounded hover:bg-slate-800"
+         aria-label="Toggle study section"
+         >
           {showStudy ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-        </button>
+           </button>
+          </div>
 
         {showStudy && (
           <div className="px-3 pb-3 space-y-1">
