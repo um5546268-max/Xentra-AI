@@ -34,7 +34,7 @@ export function XHologram({ size = 180 }: { size?: number }) {
   src="/x-logo.png"
   alt="Xentra"
   className="relative z-10 drop-shadow-[0_0_40px_rgba(139,92,246,0.8)]"
-  style={{ width: size * 1.25, height: size * 1.25, objectFit: "contain" }}
+  style={{ width: size * 1.45, height: size * 2.25, objectFit: "contain" }}
 />
     </div>
   );
