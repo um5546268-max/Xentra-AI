@@ -11,6 +11,13 @@ import {
   learnFromTopic, learnFromText, learnFromFile,
   listLearnSessions, deleteLearnSession, getLearnStats,
 } from "@/lib/learn";
+import { getGamificationStats, GamificationStats } from "@/lib/gamification";
+import { TopBar } from "@/components/home/TopBar";
+import { HeroSection } from "@/components/home/HeroSection";
+import { ImportRow } from "@/components/home/ImportRow";
+import { SubjectGrid } from "@/components/home/SubjectGrid";
+import { RightRail } from "@/components/home/RightRail";
+import { BottomRow } from "@/components/home/BottomRow";
 
 type Mode = "topic" | "text" | "upload";
 type SubjectFilter = "all" | "languages" | "school" | "programming" | "science" | "personal";
@@ -26,6 +33,8 @@ const SUBJECTS: { id: SubjectFilter; label: string; emoji: string }[] = [
 
 export default function LearnPage() {
   const router = useRouter();
+
+  // ── Generation state ──
   const [mode, setMode] = useState<Mode>("topic");
   const [topic, setTopic] = useState("");
   const [title, setTitle] = useState("");
@@ -36,9 +45,12 @@ export default function LearnPage() {
   const [filter, setFilter] = useState<SubjectFilter>("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Data ──
   const [sessions, setSessions] = useState<LearnSession[]>([]);
   const [stats, setStats] = useState<StudyStats | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [gamStats, setGamStats] = useState<GamificationStats | null>(null);
 
   const loadAll = async () => {
     try {
@@ -51,7 +63,13 @@ export default function LearnPage() {
     } catch {}
   };
 
-  useEffect(() => { loadAll(); }, [filter]);
+  useEffect(() => {
+    loadAll();
+  }, [filter]);
+
+  useEffect(() => {
+    getGamificationStats().then(setGamStats).catch(() => {});
+  }, []);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,11 +78,13 @@ export default function LearnPage() {
     try {
       let session;
       const subj = subject === "all" ? undefined : subject;
+
       if (mode === "topic") {
         if (!topic.trim()) throw new Error("Enter a topic first");
         session = await learnFromTopic(topic.trim(), numConcepts, subj);
       } else if (mode === "text") {
-        if (!text.trim() || text.trim().length < 20) throw new Error("Paste at least 20 characters");
+        if (!text.trim() || text.trim().length < 20)
+          throw new Error("Paste at least 20 characters");
         session = await learnFromText(title.trim() || "Untitled", text.trim(), subj);
       } else {
         if (!file) throw new Error("Choose a file first");
@@ -93,47 +113,224 @@ export default function LearnPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-5xl mx-auto p-8 space-y-8">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-violet-500/20 border border-violet-500/40 flex items-center justify-center">
-            <GraduationCap className="w-5 h-5 text-violet-300" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">Learn</h1>
-            <p className="text-sm text-slate-500">
-              Turn any topic, text, or file into flashcards and quizzes.
-            </p>
-          </div>
-        </div>
+    <div className="h-full flex flex-col bg-slate-950">
+      {/* Top bar */}
+      <TopBar />
 
-        {stats && (
-          <div className="grid grid-cols-4 gap-3">
-            <StatCard label="Sessions" value={stats.total_sessions} />
-            <StatCard label="Flashcards" value={stats.total_flashcards} />
-            <StatCard label="Due today" value={stats.due_today} accent />
-            <StatCard label="Mastered" value={stats.mastered} />
-          </div>
-        )}
+      {/* Main grid */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left: main content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-6 space-y-5">
+            {/* Hero with greeting + stats */}
+            <HeroSection stats={gamStats} studyMinutesToday={60} />
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <TabBtn active={mode === "topic"} onClick={() => setMode("topic")} icon={<Sparkles className="w-3.5 h-3.5" />} label="Explore a topic" />
-            <TabBtn active={mode === "text"} onClick={() => setMode("text")} icon={<FileText className="w-3.5 h-3.5" />} label="Paste text" />
-            <TabBtn active={mode === "upload"} onClick={() => setMode("upload")} icon={<Upload className="w-3.5 h-3.5" />} label="Upload a file" />
-          </div>
+            {/* Import buttons (jump to Import page) */}
+            <ImportRow />
 
-          <form onSubmit={handleGenerate} className="space-y-3">
-            {/* Subject picker */}
+            {/* Subject cards */}
+            <SubjectGrid />
+
+            {/* Create session panel */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setMode("topic")}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                    mode === "topic"
+                      ? "border-violet-500 bg-violet-500/20 text-violet-300"
+                      : "border-slate-700 text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" /> Explore a topic
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("text")}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                    mode === "text"
+                      ? "border-violet-500 bg-violet-500/20 text-violet-300"
+                      : "border-slate-700 text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" /> Paste text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("upload")}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                    mode === "upload"
+                      ? "border-violet-500 bg-violet-500/20 text-violet-300"
+                      : "border-slate-700 text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5" /> Upload a file
+                </button>
+              </div>
+
+              <form onSubmit={handleGenerate} className="space-y-3">
+                {/* Subject picker */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-slate-500">Subject:</span>
+                  {SUBJECTS.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setSubject(s.id)}
+                      className={`text-xs rounded-md px-2 py-1 border transition ${
+                        subject === s.id
+                          ? "border-violet-500 bg-violet-500/20 text-violet-300"
+                          : "border-slate-800 text-slate-500 hover:text-slate-300"
+                      }`}
+                    >
+                      {s.emoji} {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                {mode === "topic" && (
+                  <>
+                    <input
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                      placeholder="e.g. Photosynthesis, React hooks, Mughal Empire…"
+                      className="w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm focus:border-violet-500 focus:outline-none"
+                      disabled={loading}
+                    />
+                    <div className="flex items-center gap-3 text-xs text-slate-500">
+                      <span>Concepts:</span>
+                      <input
+                        type="range" min={4} max={12} value={numConcepts}
+                        onChange={(e) => setNumConcepts(Number(e.target.value))}
+                        className="accent-violet-500"
+                      />
+                      <span className="font-mono">{numConcepts}</span>
+                    </div>
+                  </>
+                )}
+
+                {mode === "text" && (
+                  <>
+                    <input
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="Title (e.g. Chapter 5 notes)"
+                      className="w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm focus:border-violet-500 focus:outline-none"
+                      disabled={loading}
+                    />
+                    <textarea
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      placeholder="Paste your notes, article, or lecture transcript…"
+                      rows={6}
+                      className="w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm focus:border-violet-500 focus:outline-none resize-none"
+                      disabled={loading}
+                    />
+                  </>
+                )}
+
+                {mode === "upload" && (
+                  <>
+                    <input
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="Optional title"
+                      className="w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm focus:border-violet-500 focus:outline-none"
+                      disabled={loading}
+                    />
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) setFile(f);
+                      }}
+                      className="rounded-xl border-2 border-dashed border-slate-700 hover:border-violet-500 transition p-6 text-center cursor-pointer space-y-2"
+                    >
+                      {file ? (
+                        <>
+                          <div className="w-10 h-10 rounded-lg bg-violet-500/20 flex items-center justify-center mx-auto">
+                            {file.type.startsWith("audio/") ? (
+                              <Music className="w-4 h-4 text-violet-300" />
+                            ) : (
+                              <FileText className="w-4 h-4 text-violet-300" />
+                            )}
+                          </div>
+                          <div className="text-sm font-medium">{file.name}</div>
+                          <div className="text-xs text-slate-500">
+                            {formatSize(file.size)} · click to change
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-6 h-6 text-slate-600 mx-auto" />
+                          <div className="text-sm text-slate-400">
+                            Drop a file or{" "}
+                            <span className="text-violet-400">click to browse</span>
+                          </div>
+                          <div className="text-xs text-slate-600">
+                            PDF · DOCX · TXT · MP3 · WAV · M4A (max 25 MB)
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.docx,.doc,.txt,.md,.mp3,.wav,.m4a,.webm,.ogg,.flac"
+                      onChange={(e) => setFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                    />
+                  </>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full rounded-lg bg-violet-600 px-5 py-3 text-sm font-medium hover:bg-violet-500 disabled:opacity-40 transition flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating… ({mode === "upload" ? "up to 60s" : "~20s"})
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Generate flashcards + quiz
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {error && (
+                <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-300 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  {error}
+                </div>
+              )}
+            </div>
+
+            {/* Filter + sessions */}
+            {stats && (
+              <div className="grid grid-cols-4 gap-3">
+                <SmallStat label="Sessions" value={stats.total_sessions} />
+                <SmallStat label="Flashcards" value={stats.total_flashcards} />
+                <SmallStat label="Due Today" value={stats.due_today} accent />
+                <SmallStat label="Mastered" value={stats.mastered} />
+              </div>
+            )}
+
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-slate-500">Subject:</span>
+              <span className="text-xs text-slate-500 mr-1">Filter:</span>
               {SUBJECTS.map((s) => (
                 <button
                   key={s.id}
-                  type="button"
-                  onClick={() => setSubject(s.id)}
-                  className={`text-xs rounded-md px-2 py-1 border transition ${
-                    subject === s.id
+                  onClick={() => setFilter(s.id)}
+                  className={`text-xs rounded-md px-2.5 py-1.5 border transition ${
+                    filter === s.id
                       ? "border-violet-500 bg-violet-500/20 text-violet-300"
                       : "border-slate-800 text-slate-500 hover:text-slate-300"
                   }`}
@@ -143,220 +340,79 @@ export default function LearnPage() {
               ))}
             </div>
 
-            {mode === "topic" && (
-              <>
-                <input
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="e.g. Photosynthesis, React hooks, Mughal Empire…"
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm focus:border-violet-500 focus:outline-none"
-                  disabled={loading}
-                />
-                <div className="flex items-center gap-3 text-xs text-slate-500">
-                  <span>Concepts:</span>
-                  <input type="range" min={4} max={12} value={numConcepts}
-                    onChange={(e) => setNumConcepts(Number(e.target.value))}
-                    className="accent-violet-500"
-                  />
-                  <span className="font-mono">{numConcepts}</span>
+            {sessions.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-slate-500 uppercase tracking-wider px-1">
+                  Your sessions
                 </div>
-              </>
-            )}
-
-            {mode === "text" && (
-              <>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Title (e.g. Chapter 5 notes)"
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm focus:border-violet-500 focus:outline-none"
-                  disabled={loading}
-                />
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder="Paste your notes, article, or lecture transcript…"
-                  rows={8}
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm focus:border-violet-500 focus:outline-none resize-none"
-                  disabled={loading}
-                />
-              </>
-            )}
-
-            {mode === "upload" && (
-              <>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Optional title"
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm focus:border-violet-500 focus:outline-none"
-                  disabled={loading}
-                />
-
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const f = e.dataTransfer.files?.[0];
-                    if (f) setFile(f);
-                  }}
-                  className="rounded-xl border-2 border-dashed border-slate-700 hover:border-violet-500 transition p-8 text-center cursor-pointer space-y-3"
-                >
-                  {file ? (
-                    <>
-                      <div className="w-12 h-12 rounded-lg bg-violet-500/20 flex items-center justify-center mx-auto">
-                        {file.type.startsWith("audio/") ? (
-                          <Music className="w-5 h-5 text-violet-300" />
-                        ) : (
-                          <FileText className="w-5 h-5 text-violet-300" />
-                        )}
+                {sessions.map((s) => (
+                  <div
+                    key={s.id}
+                    className="group flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4 hover:bg-slate-900 transition cursor-pointer"
+                    onClick={() => router.push(`/app/learn/${s.id}`)}
+                  >
+                    <div className="w-9 h-9 rounded-lg bg-violet-500/20 flex items-center justify-center shrink-0">
+                      <BookOpen className="w-4 h-4 text-violet-300" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{s.title}</div>
+                      <div className="text-xs text-slate-500 truncate">
+                        {s.subject ? `${s.subject} · ` : ""}
+                        {s.source_type === "topic" ? "Topic"
+                          : s.source_type === "text" ? "Text"
+                          : "File"} ·{" "}
+                        {new Date(s.created_at).toLocaleDateString()}
                       </div>
-                      <div>
-                        <div className="text-sm font-medium">{file.name}</div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          {formatSize(file.size)} · click to change
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-8 h-8 text-slate-600 mx-auto" />
-                      <div>
-                        <div className="text-sm text-slate-400">
-                          Drop a file here or <span className="text-violet-400">click to browse</span>
-                        </div>
-                        <div className="text-xs text-slate-600 mt-1">
-                          PDF · DOCX · TXT · MP3 · WAV · M4A (max 25 MB)
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.docx,.doc,.txt,.md,.mp3,.wav,.m4a,.webm,.ogg,.flac"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
-                  className="hidden"
-                />
-              </>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-violet-600 px-5 py-3 text-sm font-medium hover:bg-violet-500 disabled:opacity-40 transition flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating… ({mode === "upload" ? "up to 60s" : "~20s"})
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  Generate flashcards + quiz
-                </>
-              )}
-            </button>
-          </form>
-
-          {error && (
-            <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-300 flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              {error}
-            </div>
-          )}
-        </div>
-
-        {/* Subject filter tabs */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-slate-500 mr-1">Filter:</span>
-          {SUBJECTS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setFilter(s.id)}
-              className={`text-xs rounded-md px-2.5 py-1.5 border transition ${
-                filter === s.id
-                  ? "border-violet-500 bg-violet-500/20 text-violet-300"
-                  : "border-slate-800 text-slate-500 hover:text-slate-300"
-              }`}
-            >
-              {s.emoji} {s.label}
-            </button>
-          ))}
-        </div>
-
-        {sessions.length > 0 && (
-          <div className="space-y-2">
-            {sessions.map((s) => (
-              <div
-                key={s.id}
-                className="group flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4 hover:bg-slate-900 transition cursor-pointer"
-                onClick={() => router.push(`/app/learn/${s.id}`)}
-              >
-                <div className="w-9 h-9 rounded-lg bg-violet-500/20 flex items-center justify-center shrink-0">
-                  <BookOpen className="w-4 h-4 text-violet-300" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium truncate">{s.title}</div>
-                  <div className="text-xs text-slate-500 truncate">
-                    {s.subject ? `${s.subject} · ` : ""}
-                    {s.source_type === "topic" ? "Topic"
-                      : s.source_type === "text" ? "Text"
-                      : "File"} ·{" "}
-                    {new Date(s.created_at).toLocaleDateString()}
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(s.id);
+                      }}
+                      className="p-2 rounded-lg hover:bg-slate-800 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                    <ChevronRight className="w-4 h-4 text-slate-600" />
                   </div>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }}
-                  className="p-2 rounded-lg hover:bg-slate-800 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
-                  title="Delete"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-                <ChevronRight className="w-4 h-4 text-slate-600" />
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+            )}
 
-        {sessions.length === 0 && !loading && (
-          <div className="text-center py-12 text-slate-600 text-sm">
-            {filter === "all"
-              ? "Nothing here yet. Enter a topic, paste text, or upload a file."
-              : `No sessions tagged as "${filter}".`}
+            {sessions.length === 0 && !loading && (
+              <div className="text-center py-12 text-slate-600 text-sm">
+                {filter === "all"
+                  ? "Nothing here yet. Enter a topic, paste text, or upload a file."
+                  : `No sessions tagged as "${filter}".`}
+              </div>
+            )}
+
+            {/* Bottom row: Progress + Tools + Analytics */}
+            <BottomRow />
           </div>
-        )}
+        </div>
+
+        {/* Right rail */}
+        <RightRail stats={gamStats} />
       </div>
     </div>
   );
 }
 
-function StatCard({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+function SmallStat({
+  label, value, accent,
+}: { label: string; value: number; accent?: boolean }) {
   return (
-    <div className={`rounded-xl border p-4 ${accent ? "border-violet-500/40 bg-violet-500/5" : "border-slate-800 bg-slate-900/40"}`}>
-      <div className="text-xs text-slate-500 uppercase tracking-wider">{label}</div>
-      <div className={`text-2xl font-semibold mt-1 ${accent ? "text-violet-300" : ""}`}>{value}</div>
-    </div>
-  );
-}
-
-function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-        active
-          ? "border-violet-500 bg-violet-500/20 text-violet-300"
-          : "border-slate-700 text-slate-500 hover:text-slate-300"
+    <div
+      className={`rounded-xl border p-4 ${
+        accent ? "border-violet-500/40 bg-violet-500/5" : "border-slate-800 bg-slate-900/40"
       }`}
     >
-      {icon}
-      {label}
-    </button>
+      <div className="text-xs text-slate-500 uppercase tracking-wider">{label}</div>
+      <div className={`text-2xl font-semibold mt-1 ${accent ? "text-violet-300" : ""}`}>
+        {value}
+      </div>
+    </div>
   );
 }

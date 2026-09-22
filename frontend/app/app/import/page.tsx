@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   Upload, FileText, Music, Link2, Video, Loader2, AlertCircle, Sparkles,
 } from "lucide-react";
@@ -11,7 +12,9 @@ type Mode = "file" | "audio" | "text" | "url" | "youtube";
 
 export default function ImportPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("file");
+  const searchParams = useSearchParams();
+  const initialMode = (searchParams.get("mode") || "file") as Mode;
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
