@@ -89,7 +89,7 @@ export default function SplashPage() {
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 py-12">
         {/* X hologram */}
         <div className="mb-8">
-          <XHologram size={200} />
+          <XHologram size={400} />
         </div>
 
         {/* Brand text */}
