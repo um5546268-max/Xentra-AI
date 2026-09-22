@@ -110,25 +110,9 @@ export default function SplashPage() {
         </div>
 
         {/* Brand text */}
-       <h1
-  className="text-5xl font-bold tracking-[0.15em] bg-gradient-to-r from-violet-300 via-cyan-200 to-violet-300 bg-clip-text text-transparent drop-shadow-[0_0_25px_rgba(139,92,246,0.6)]"
-  style={{
-    animation: "typeIn 1.2s steps(9, end) 2.2s both",
-    overflow: "hidden",
-    whiteSpace: "nowrap",
-    borderRight: "2px solid rgba(139,92,246,0.7)",
-    width: 0,
-  }}
->
+       <h1 className="text-5xl font-bold tracking-[0.15em] bg-gradient-to-r from-violet-300 via-cyan-200 to-violet-300 bg-clip-text text-transparent drop-shadow-[0_0_25px_rgba(139,92,246,0.6)] animate-[fadeUp_1s_ease-out_2s_both]">
   XENTRA AI
 </h1>
-
-<style jsx>{`
-  @keyframes typeIn {
-    from { width: 0; }
-    to { width: 100%; }
-  }
-`}</style>
         <p className="text-sm text-slate-300 tracking-[0.35em] uppercase mt-3">
           Your AI Operating Assistant
         </p>
