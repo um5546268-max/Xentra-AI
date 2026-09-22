@@ -1,8 +1,10 @@
-"use client"; // Ensure this is at the top of the file
+"use client";
 
-import { useEffect } from "react";
+import { useEffect, Suspense } from "react"; // 1. Added Suspense
 import { useRouter, useSearchParams } from "next/navigation";
-// import your auth functions here (githubSignIn, googleSignIn, etc.)
+// 2. IMPORT YOUR AUTH FUNCTION HERE (Adjust the path as needed based on where your file is)
+// For example, if it's in a lib folder: import { githubSignIn } from "@/lib/auth";
+import { githubSignIn } from "../../../lib/auth"; // Change this path to your actual file location!
 
 function CallbackInner() {
     const router = useRouter();
@@ -11,34 +13,25 @@ function CallbackInner() {
     const error = searchParams.get("error");
 
     useEffect(() => {
-        // 1. Handle Errors
         if (error) {
-            console.error("Auth error:", error);
             router.replace("/welcome");
             return;
         }
-
-        // 2. Handle Missing Code
         if (!code) {
-            console.error("No code provided");
             router.replace("/welcome");
             return;
         }
 
-        // 3. Handle the Sign In
-        // NOTE: You need to know which provider called this.
-        // If you have separate callback routes (e.g., /auth/callback/github and /auth/callback/google), 
-        // this is easier. If it's the same route, you need to pass the provider in the URL state.
-        
-        // Example for GitHub (based on your code):
-        githubSignIn(code).then((ok) => {
+        // 3. Added types (: boolean and : any)
+        githubSignIn(code).then((ok: boolean) => {
             if (ok) {
-                router.replace("/app"); // Redirect to dashboard
+                // If login is successful, go to dashboard
+                router.replace("/app"); 
             } else {
                 router.replace("/welcome");
             }
-        }).catch((err) => {
-            console.error(err);
+        }).catch((err: any) => {
+            console.error("Auth error:", err);
             router.replace("/welcome");
         });
 
