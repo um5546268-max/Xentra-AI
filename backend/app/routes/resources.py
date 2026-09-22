@@ -169,9 +169,15 @@ def get_resources(
     payload: ResourceQuery,
     current_user: User = Depends(get_current_user),
 ):
-    class_hint = (
-        f" for {payload.class_name.replace('_', ' ')}" if payload.class_name else ""
-    )
+    class_hint = ""
+    if payload.class_name:
+        level = payload.class_name.replace("_", " ")
+        class_hint = (
+            f"\nTarget audience: {level}. "
+            f"Choose resources appropriate for this level — "
+            f"don't suggest advanced university content for younger students."
+        )
+
     user_msg = (
         f"Topic: {payload.topic}{class_hint}\n\n"
         f"Suggest 6-8 learning resources as JSON."

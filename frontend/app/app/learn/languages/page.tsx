@@ -107,7 +107,7 @@ export default function LanguagesPage() {
     }
   };
 
-  const handleShowResources = async (langId: string, langLabel: string) => {
+    const handleShowResources = async (langId: string, langLabel: string) => {
     setResourcesFor(langLabel);
     setResources(null);
     try {
@@ -122,7 +122,6 @@ export default function LanguagesPage() {
       setResourcesFor(null);
     }
   };
-
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto p-8 space-y-6">

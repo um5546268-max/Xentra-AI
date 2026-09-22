@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
-import { learnFromTopic } from "@/lib/learn";
+import { learnFromTopic, getResources, Resource } from "@/lib/learn";
 import { ClassPicker } from "@/components/learn/ClassPicker";
+import { ResourcesPanel } from "@/components/learn/ResourcesPanel";
 
 const SUBJECTS = [
   { id: "math", label: "Mathematics", emoji: "📐", color: "cyan" },
@@ -33,22 +34,41 @@ export default function SchoolPage() {
   const router = useRouter();
   const [generating, setGenerating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pendingSubject, setPendingSubject] = useState<{ id: string; label: string } | null>(null);
 
-  const handleGenerate = async (subject: string, label: string, className: string) => {
+  // Class picker state — remembers whether we're generating Learn or Resources
+  const [pendingSubject, setPendingSubject] = useState<{
+    id: string;
+    label: string;
+    intent: "learn" | "resources";
+  } | null>(null);
+
+  // Resources state
+  const [resources, setResources] = useState<Resource[] | null>(null);
+  const [resourcesFor, setResourcesFor] = useState<string | null>(null);
+
+  const handleSubjectClick = (subjectId: string, label: string, intent: "learn" | "resources") => {
+    setPendingSubject({ id: subjectId, label, intent });
+  };
+
+  const handleClassPicked = async (className: string) => {
+    if (!pendingSubject) return;
+    const { id, label, intent } = pendingSubject;
     setPendingSubject(null);
-    setGenerating(subject);
+    setGenerating(id);
     setError(null);
     try {
-      const session = await learnFromTopic(
-        label,
-        8,
-        "school",
-        className,
-      );
-      router.push(`/app/learn/${session.id}`);
+      if (intent === "learn") {
+        const session = await learnFromTopic(label, 8, "school", className);
+        router.push(`/app/learn/${session.id}`);
+      } else {
+        // Resources — pass class hint so backend adapts
+        setResourcesFor(`${label} · ${className.replace("_", " ")}`);
+        const data = await getResources(label, className);
+        setResources(data.resources);
+      }
     } catch (e: any) {
-      setError(e?.response?.data?.detail || e.message || "Failed to generate");
+      setError(e?.response?.data?.detail || e.message || "Failed");
+      if (intent === "resources") setResourcesFor(null);
     } finally {
       setGenerating(null);
     }
@@ -58,11 +78,14 @@ export default function SchoolPage() {
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto p-8 space-y-6">
         <button
-          onClick={() => router.push("/app/learn")}
+          onClick={() => {
+            if (resourcesFor) { setResourcesFor(null); setResources(null); }
+            else router.push("/app/learn");
+          }}
           className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-300"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to Learn
+          {resourcesFor ? "Back to subjects" : "Back to Learn"}
         </button>
 
         <div className="flex items-center gap-3">
@@ -70,9 +93,13 @@ export default function SchoolPage() {
             🎓
           </div>
           <div>
-            <h1 className="text-2xl font-semibold">School / College</h1>
+            <h1 className="text-2xl font-semibold">
+              {resourcesFor ? `${resourcesFor} resources` : "School / College"}
+            </h1>
             <p className="text-sm text-slate-500">
-              Pick a subject and class — content is tailored to your level
+              {resourcesFor
+                ? "Curated videos, websites, and PDFs for your class"
+                : "Pick a subject — choose Learn to study, or Resources to browse"}
             </p>
           </div>
         </div>
@@ -83,31 +110,59 @@ export default function SchoolPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-4 gap-3">
-          {SUBJECTS.map((s) => {
-            const style = COLOR_MAP[s.color] ?? COLOR_MAP.cyan;
-            const loading = generating === s.id;
-            return (
-              <button
-                key={s.id}
-                onClick={() => setPendingSubject({ id: s.id, label: s.label })}
-                disabled={loading}
-                className={`rounded-xl border bg-gradient-to-br ${style} p-4 text-center hover:scale-[1.03] transition disabled:opacity-60 space-y-2`}
-              >
-                <div className="text-2xl">{s.emoji}</div>
-                <div className="text-sm font-medium">{s.label}</div>
-                {loading ? (
-                  <Loader2 className="w-3.5 h-3.5 mx-auto animate-spin text-cyan-300" />
-                ) : (
-                  <div className="text-[9px] text-slate-500 flex items-center justify-center gap-1">
-                    <Sparkles className="w-2.5 h-2.5" />
-                    Learn
+        {!resourcesFor && (
+          <div className="grid grid-cols-4 gap-3">
+            {SUBJECTS.map((s) => {
+              const style = COLOR_MAP[s.color] ?? COLOR_MAP.cyan;
+              const loading = generating === s.id;
+              return (
+                <div
+                  key={s.id}
+                  className={`rounded-xl border bg-gradient-to-br ${style} p-4 text-center space-y-2`}
+                >
+                  <div className="text-2xl">{s.emoji}</div>
+                  <div className="text-sm font-medium">{s.label}</div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => handleSubjectClick(s.id, s.label, "learn")}
+                      disabled={loading}
+                      className="flex-1 flex items-center justify-center gap-1 rounded-md bg-violet-600 hover:bg-violet-500 py-1.5 text-[10px] font-medium text-white disabled:opacity-40"
+                    >
+                      {loading ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <>
+                          <Sparkles className="w-2.5 h-2.5" />
+                          Learn
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleSubjectClick(s.id, s.label, "resources")}
+                      className="flex-1 rounded-md border border-slate-700 hover:bg-slate-800 py-1.5 text-[10px] text-slate-400"
+                    >
+                      Resources
+                    </button>
                   </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {resourcesFor && (
+          <>
+            {!resources && (
+              <div className="flex flex-col items-center justify-center py-16 gap-3">
+                <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
+                <div className="text-sm text-slate-500">
+                  Finding the best resources for {resourcesFor}…
+                </div>
+              </div>
+            )}
+            {resources && <ResourcesPanel resources={resources} />}
+          </>
+        )}
       </div>
 
       {pendingSubject && (
@@ -115,9 +170,7 @@ export default function SchoolPage() {
           subject={pendingSubject.label}
           loading={generating === pendingSubject.id}
           onClose={() => setPendingSubject(null)}
-          onPick={(className) =>
-            handleGenerate(pendingSubject.id, pendingSubject.label, className)
-          }
+          onPick={handleClassPicked}
         />
       )}
     </div>

@@ -197,7 +197,7 @@ export const getResources = async (
 ): Promise<{ topic: string; resources: Resource[] }> => {
   const res = await api.post("/api/resources", {
     topic,
-    class_name: className,
+    class_name: className ?? null,
   }, { timeout: 60000 });
   return res.data;
 };
