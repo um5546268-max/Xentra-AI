@@ -12,21 +12,33 @@ const STEPS = [
   { label: "Preparing your sessions", ms: 600 },
 ];
 
+// Timing (seconds)
+const LOGO_APPEAR_AT = 19.2;   // when X logo shows
+const VIDEO_END_AT = 24.0;     // when video finishes
+
 export default function SplashPage() {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const [showLogo, setShowLogo] = useState(false);
   const [videoDone, setVideoDone] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [progress, setProgress] = useState(0);
-  const [done, setDone] = useState(false);
+  const [checklistDone, setChecklistDone] = useState(false);
 
-  // ── Video ends → start loading checklist ──
-  const handleVideoEnd = () => {
-    setVideoDone(true);
-  };
+  // ── Trigger logo + flash at 19.2s ──
+  useEffect(() => {
+    const t = setTimeout(() => setShowLogo(true), LOGO_APPEAR_AT * 1000);
+    return () => clearTimeout(t);
+  }, []);
 
-  // ── Loading checklist (runs AFTER video ends) ──
+  // ── Fallback: if video errors or doesn't reach the end, advance anyway ──
+  useEffect(() => {
+    const t = setTimeout(() => setVideoDone(true), (VIDEO_END_AT + 1) * 1000);
+    return () => clearTimeout(t);
+  }, []);
+
+  // ── Loading checklist runs AFTER video ends ──
   useEffect(() => {
     if (!videoDone) return;
 
@@ -51,7 +63,7 @@ export default function SplashPage() {
         setTimeout(tick, 50);
       } else if (!cancelled) {
         setStepIndex(STEPS.length);
-        setDone(true);
+        setChecklistDone(true);
         setTimeout(() => router.push("/welcome"), 700);
       }
     };
@@ -60,16 +72,8 @@ export default function SplashPage() {
     return () => { cancelled = true; };
   }, [videoDone, router]);
 
-  // ── Autoplay may be blocked → fallback after 1 second if no play ──
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (videoRef.current && videoRef.current.paused && !videoDone) {
-        // Autoplay blocked — skip straight to checklist
-        setVideoDone(true);
-      }
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [videoDone]);
+  // ── Video ended → switch to checklist ──
+  const handleVideoEnd = () => setVideoDone(true);
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden flex items-center justify-center">
@@ -88,19 +92,61 @@ export default function SplashPage() {
         />
       )}
 
-      {/* ── LOADING CHECKLIST (appears after video) ── */}
-      {videoDone && (
-        <div className="relative z-10 flex flex-col items-center gap-8">
-          {/* Your X logo */}
+      {/* ── X LOGO OVERLAY (appears at 19.2s with flash) ── */}
+      {!videoDone && (
+        <div
+          className="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
+          style={{
+            opacity: showLogo ? 1 : 0,
+            transition: "opacity 0.15s ease-out",
+          }}
+        >
+          {/* The flash behind the X */}
+          <div
+            className="absolute rounded-full"
+            style={{
+              width: "60vw",
+              height: "60vw",
+              background:
+                "radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(139,92,246,0.7) 25%, rgba(34,211,238,0.3) 50%, transparent 75%)",
+              animation: showLogo
+                ? "hugeFlash 1.4s cubic-bezier(0.16, 1, 0.3, 1) both"
+                : "none",
+              filter: "blur(40px)",
+            }}
+          />
+
+          {/* The X logo — appears with slow zoom-down */}
           <img
             src="/x-logo.png"
             alt="Xentra"
-            className="w-32 h-32 object-contain drop-shadow-[0_0_40px_rgba(139,92,246,0.9)] animate-[fadeIn_0.6s_ease-out_both]"
+            className="relative z-10"
+            style={{
+              width: "22vw",
+              height: "22vw",
+              objectFit: "contain",
+              filter:
+                "drop-shadow(0 0 60px rgba(139,92,246,1)) drop-shadow(0 0 30px rgba(34,211,238,0.8))",
+              animation: showLogo
+                ? "logoIn 1.8s cubic-bezier(0.16, 1, 0.3, 1) both"
+                : "none",
+            }}
+          />
+        </div>
+      )}
+
+      {/* ── LOADING CHECKLIST (appears after video) ── */}
+      {videoDone && (
+        <div className="relative z-10 flex flex-col items-center gap-8">
+          <img
+            src="/x-logo.png"
+            alt="Xentra"
+            className="w-32 h-32 object-contain drop-shadow-[0_0_40px_rgba(139,92,246,0.9)]"
           />
 
           <div className="w-full max-w-md rounded-2xl border border-violet-500/30 bg-slate-950/70 backdrop-blur-xl p-6 shadow-2xl">
             <div className="flex items-center justify-center gap-2 mb-5">
-              {done ? (
+              {checklistDone ? (
                 <>
                   <Check className="w-4 h-4 text-emerald-400" />
                   <span className="text-sm font-medium text-emerald-300">Ready</span>
@@ -117,8 +163,8 @@ export default function SplashPage() {
 
             <div className="space-y-2.5">
               {STEPS.map((s, i) => {
-                const isDone = i < stepIndex || done;
-                const isCurrent = i === stepIndex && !done;
+                const isDone = i < stepIndex || checklistDone;
+                const isCurrent = i === stepIndex && !checklistDone;
                 return (
                   <div
                     key={i}
@@ -170,7 +216,7 @@ export default function SplashPage() {
               />
             </div>
             <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 font-mono">
-              <span>{done ? "Launching…" : "Initializing"}</span>
+              <span>{checklistDone ? "Launching…" : "Initializing"}</span>
               <span>{Math.round(progress)}%</span>
             </div>
           </div>
@@ -188,9 +234,20 @@ export default function SplashPage() {
       )}
 
       <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: scale(0.9); }
-          to   { opacity: 1; transform: scale(1); }
+        /* Big flash that fires once when the logo appears */
+        @keyframes hugeFlash {
+          0%   { opacity: 0;   transform: scale(0.3); }
+          20%  { opacity: 1;   transform: scale(1.1); }
+          40%  { opacity: 0.5; transform: scale(1.3); }
+          100% { opacity: 0;   transform: scale(1.6); }
+        }
+
+        /* X logo — pops in big, then settles down slowly */
+        @keyframes logoIn {
+          0%   { opacity: 0; transform: scale(2.2); filter: brightness(3) blur(8px); }
+          25%  { opacity: 1; transform: scale(1.6); filter: brightness(2.5) blur(2px); }
+          60%  { transform: scale(1.08); filter: brightness(1.3) blur(0); }
+          100% { transform: scale(1);   filter: brightness(1) blur(0); }
         }
       `}</style>
     </div>
