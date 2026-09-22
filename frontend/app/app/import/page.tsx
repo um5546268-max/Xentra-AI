@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense, } from "react";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
@@ -10,7 +11,7 @@ import { learnFromFile, learnFromText, learnFromTopic } from "@/lib/learn";
 
 type Mode = "file" | "audio" | "text" | "url" | "youtube";
 
-export default function ImportPage() {
+function ImportPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialMode = (searchParams.get("mode") || "file") as Mode;
@@ -282,5 +283,12 @@ function ModeTab({
       {icon}
       {label}
     </button>
+  );
+}
+export default function ImportPage() {
+  return (
+    <Suspense fallback={null}>
+      <ImportPageInner />
+    </Suspense>
   );
 }
