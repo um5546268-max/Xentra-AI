@@ -57,6 +57,7 @@ from app.routes import progress as progress_routes
 from app.routes import practice as practice_routes
 from app.routes import library as library_routes
 from app.routes import resources as resource_routes
+from app.routes import onboarding as onboarding_routes
 
 setup_logging()
 init_sentry()
@@ -141,7 +142,7 @@ app.include_router(progress_routes.router, prefix=settings.API_V1_STR)
 app.include_router(practice_routes.router, prefix=settings.API_V1_STR)
 app.include_router(library_routes.router, prefix=settings.API_V1_STR)
 app.include_router(resource_routes.router, prefix=settings.API_V1_STR)
-
+app.include_router(onboarding_routes.router, prefix=settings.API_V1_STR)
 
 # ==== Health & root ====
 @app.get("/api/health")

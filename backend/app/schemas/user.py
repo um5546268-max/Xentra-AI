@@ -1,7 +1,7 @@
-import uuid
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
-
+import uuid
+from uuid import UUID
 
 class UserBase(BaseModel):
     email: EmailStr
@@ -17,11 +17,21 @@ class UserLogin(BaseModel):
     password: str
 
 
-class UserRead(UserBase):
-    id: uuid.UUID
+class UserRead(BaseModel):
+    email: EmailStr
+    full_name: str | None = None
+    id: UUID
     is_admin: bool = False
     plan: str = "free"
     emergency_stop: bool = False
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    # NEW
+    onboarding_completed: bool = False
+    class_level: str | None = None
+    learning_goal: str | None = None
+    interests: list[str] | None = None
+    display_name: str | None = None
+
+    class Config:
+        from_attributes = True

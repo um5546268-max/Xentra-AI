@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy import String, Boolean, Text, DateTime, Integer, func
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 class User(Base):
     __tablename__ = "users"
@@ -102,6 +103,16 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+
+        # ===== Onboarding =====
+    onboarding_completed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    class_level: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    learning_goal: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    interests: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    display_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
+
         # ===== Gamification =====
     points: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
