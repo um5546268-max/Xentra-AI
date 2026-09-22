@@ -1,57 +1,67 @@
 "use client";
 
-import { useEffect, Suspense, useRef } from "react"; // Added useRef
+import { useEffect, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-// IMPORT THE HOOK, NOT THE FUNCTION
 import { useAuth } from "../../../lib/auth"; 
 
 function CallbackInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const code = searchParams.get("code");
-    const error = searchParams.get("error");
     
-    // Get the function from your Zustand store
+    // Get the params from the URL
+    const code = searchParams.get("code");       // Used by GitHub
+    const error = searchParams.get("error");     // Used by both
+    const state = searchParams.get("state");     // We will use this to pass the provider
+    
+    // Get BOTH functions from your Zustand store
     const githubSignIn = useAuth((state) => state.githubSignIn);
+    const googleSignIn = useAuth((state) => state.googleSignIn);
     
-    // Use a ref to prevent React Strict Mode from running this twice
     const hasAttempted = useRef(false); 
 
     useEffect(() => {
-        // Prevent double execution in development
         if (hasAttempted.current) return;
         hasAttempted.current = true;
 
         if (error) {
-            router.replace("/welcome");
-            return;
-        }
-        if (!code) {
+            console.error("Auth error from provider:", error);
             router.replace("/welcome");
             return;
         }
 
-        // Call the Zustand function
-        githubSignIn(code).then((ok: boolean) => {
-            if (ok) {
-                // Redirect to your actual dashboard route. 
-                // Change "/app" to wherever your dashboard actually is (e.g., "/dashboard")
-                router.replace("/app"); 
-            } else {
+        // Detect the provider. 
+        // If there is a 'code', it's GitHub.
+        // If there is no 'code' but there is a 'credential' (or we set state=google), it's Google.
+        // For Google, the credential usually comes in the hash fragment, but your app seems to be using a 'code' flow for both.
+        
+        if (code) {
+            // It's a GitHub login
+            console.log("Attempting GitHub sign-in...");
+            githubSignIn(code).then((ok: boolean) => {
+                if (ok) {
+                    router.replace("/app"); 
+                } else {
+                    router.replace("/welcome");
+                }
+            }).catch((err: any) => {
+                console.error("GitHub Auth error:", err);
                 router.replace("/welcome");
-            }
-        }).catch((err: any) => {
-            console.error("Auth error:", err);
+            });
+        } else {
+            // It might be a Google login, or the code is missing
+            console.warn("No code found. This might be a Google login that needs a different flow.");
+            // If your Google flow uses a credential in the URL, handle it here.
+            // For now, send back to welcome.
             router.replace("/welcome");
-        });
+        }
 
-    }, [code, error, router, githubSignIn]);
+    }, [code, error, router, githubSignIn, googleSignIn]);
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-950">
             <div className="flex flex-col items-center gap-3">
                 <div className="w-6 h-6 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
-                <span className="text-sm text-slate-400">Signing you in with GitHub...</span>
+                <span className="text-sm text-slate-400">Signing you in...</span>
             </div>
         </div>
     );
