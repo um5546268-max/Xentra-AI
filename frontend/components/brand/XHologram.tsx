@@ -30,13 +30,17 @@ export function XHologram({ size = 180 }: { size?: number }) {
         }}
       />
 
-      {/* The actual logo image */}
       <img
-        src="/x-logo.png"
-        alt="Xentra"
-        className="relative z-10 drop-shadow-[0_0_40px_rgba(139,92,246,0.8)]"
-        style={{ width: size * 0.85, height: size * 0.85, objectFit: "contain" }}
-      />
+  src="/x-logo.png"
+  alt="Xentra"
+  className="relative z-10 drop-shadow-[0_0_40px_rgba(139,92,246,0.8)]"
+  style={{
+    width: size * 0.85,
+    height: size * 0.85,
+    objectFit: "contain",
+    mixBlendMode: "screen",   // ← hides white background on dark
+  }}
+/>
     </div>
   );
 }
