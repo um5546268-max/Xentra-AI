@@ -53,6 +53,7 @@ from app.routes import gamification as gamification_routes
 from app.routes import briefing as briefing_routes
 from app.routes import notes as note_routes
 from app.routes import goals as goal_routes
+from app.routes import progress as progress_routes
 
 setup_logging()
 init_sentry()
@@ -133,6 +134,7 @@ app.include_router(gamification_routes.router, prefix=settings.API_V1_STR)
 app.include_router(briefing_routes.router, prefix=settings.API_V1_STR)
 app.include_router(note_routes.router, prefix=settings.API_V1_STR)
 app.include_router(goal_routes.router, prefix=settings.API_V1_STR)
+app.include_router(progress_routes.router, prefix=settings.API_V1_STR)
 
 # ==== Health & root ====
 @app.get("/api/health")

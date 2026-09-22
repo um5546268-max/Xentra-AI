@@ -118,10 +118,10 @@ const STUDY_TOOLS = [
 ];
 
 const STUDY_MORE = [
-  { path: "/app/goals", label: "Goals", icon: Target },              // ← NEW
+  { path: "/app/goals", label: "Goals", icon: Target },
   { path: "/app/library", label: "My Library", icon: Library },
   { path: "/app/import", label: "Import & Convert", icon: Upload },
-  { path: "/app/progress", label: "Progress & Points", icon: TrendingUp },
+  { path: "/app/progress", label: "Progress & Points", icon: TrendingUp },  // ← this should already be here
   { path: "/app/leaderboard", label: "Leaderboards", icon: Trophy },
 ];
 
