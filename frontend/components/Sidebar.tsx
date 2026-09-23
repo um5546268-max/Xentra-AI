@@ -37,6 +37,7 @@ import {
   PanelLeftOpen,
   Video,
   GraduationCap,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { StickyNote } from "lucide-react";
@@ -403,6 +404,24 @@ const STUDY_MORE = [
             </div>
           </div>
         )}
+      </div>
+
+            {/* Connect */}
+      <div className="border-b border-slate-800 shrink-0">
+        <button
+          onClick={() => router.push("/app/connect")}
+          className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition ${
+            pathname?.startsWith("/app/connect")
+              ? "bg-violet-500/10 text-violet-300 border-l-2 border-violet-500"
+              : "text-slate-300 hover:bg-slate-900"
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span className="flex-1 text-left">Connect</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-600 text-white">
+            3
+          </span>
+        </button>
       </div>
 
             {/* Study (collapsible) */}

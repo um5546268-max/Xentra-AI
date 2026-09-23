@@ -24,6 +24,13 @@ from app.models.note import Note  # noqa: F401
 from app.models.goal import Goal  # noqa: F401
 from app.models.practice import PracticeTest  # noqa: F401
 
+# ─── Connect: friends, chats, messages ───
+from app.models.friendship import Friendship  # noqa: F401
+from app.models.chat import Chat  # noqa: F401
+from app.models.chat_member import ChatMember  # noqa: F401
+from app.models.chat_message import ChatMessage  # noqa: F401
+
+
 __all__ = [
     "User",
     "Conversation",
@@ -41,10 +48,22 @@ __all__ = [
     "PendingAction",
     "Plan",
     "Subscription",
-    "UsageRecord"
+    "UsageRecord",          # ✅ comma added
     "FeatureFlag",
     "Announcement",
-    "BeeTask"
-    "BeeCheckpoint"
-    "BeePermission"
+    "BeeTask",              # ✅ comma added
+    "BeeCheckpoint",        # ✅ comma added
+    "BeePermission",
+    "GeneratedVideo",
+    "LearnSession",
+    "Flashcard",
+    "QuizAttempt",
+    "Note",
+    "Goal",
+    "PracticeTest",
+    # Connect
+    "Friendship",
+    "Chat",
+    "ChatMember",
+    "ChatMessage",
 ]

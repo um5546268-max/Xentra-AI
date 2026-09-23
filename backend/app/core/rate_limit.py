@@ -32,7 +32,8 @@ limiter = Limiter(
     key_func=_key_func,
     default_limits=["300/minute"],  # global default; override per-route
     storage_uri=os.getenv("REDIS_URL", "memory://"),
-    headers_enabled=True,           # adds X-RateLimit-* headers
+    headers_enabled=True,   
+    config_filename=None,        # adds X-RateLimit-* headers
 )
 
 

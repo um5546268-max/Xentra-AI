@@ -58,6 +58,8 @@ from app.routes import practice as practice_routes
 from app.routes import library as library_routes
 from app.routes import resources as resource_routes
 from app.routes import onboarding as onboarding_routes
+from app.routes import friends as friend_routes
+from app.routes import chats as connect_chat_routes
 
 setup_logging()
 init_sentry()
@@ -114,7 +116,7 @@ app.mount("/static", StaticFiles(directory=str(_upload_dir)), name="static")
 # ==== Routers ====
 app.include_router(auth_routes.router, prefix=settings.API_V1_STR)
 app.include_router(conversation_routes.router, prefix=settings.API_V1_STR)
-app.include_router(chat_routes.router, prefix=settings.API_V1_STR)
+app.include_router(connect_chat_routes.router, prefix=settings.API_V1_STR)  # Connect chats
 app.include_router(task_routes.router, prefix=settings.API_V1_STR)
 app.include_router(browser_routes.router, prefix=settings.API_V1_STR)
 app.include_router(integration_routes.router, prefix=settings.API_V1_STR)
@@ -151,6 +153,8 @@ app.include_router(practice_routes.router, prefix=settings.API_V1_STR)
 app.include_router(library_routes.router, prefix=settings.API_V1_STR)
 app.include_router(resource_routes.router, prefix=settings.API_V1_STR)
 app.include_router(onboarding_routes.router, prefix=settings.API_V1_STR)
+app.include_router(friend_routes.router, prefix=settings.API_V1_STR)
+app.include_router(chat_routes.router, prefix=settings.API_V1_STR)         # AI chat
 
 # ==== Health & root ====
 @app.get("/api/health")

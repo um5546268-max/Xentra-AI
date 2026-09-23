@@ -150,4 +150,28 @@ class User(Base):
                     return str(val).lower()
         return "free"
 
+        # ===== Connect: friends & chats =====
+    friend_requests_sent = relationship(
+        "Friendship",
+        foreign_keys="Friendship.requester_id",
+        back_populates="requester",
+        cascade="all, delete-orphan",
+    )
+    friend_requests_received = relationship(
+        "Friendship",
+        foreign_keys="Friendship.addressee_id",
+        back_populates="addressee",
+        cascade="all, delete-orphan",
+    )
+    chat_memberships = relationship(
+        "ChatMember",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    chat_messages = relationship(
+        "ChatMessage",
+        back_populates="sender",
+        cascade="all, delete-orphan",
+    )
+
 
