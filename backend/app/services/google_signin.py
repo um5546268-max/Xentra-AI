@@ -13,9 +13,14 @@ def verify_google_id_token(token: str) -> dict:
     Verify a Google ID token and return its claims (email, name, picture, sub).
     Raises HTTPException if verification fails.
     """
-    client_id = getattr(settings, "GOOGLE_SIGNIN_CLIENT_ID", None)
+    # ✅ FIX: Try both variable names
+    client_id = (
+        getattr(settings, "GOOGLE_SIGNIN_CLIENT_ID", None)
+        or getattr(settings, "GOOGLE_CLIENT_ID", None)
+    )
+    
     if not client_id:
-        raise HTTPException(500, "GOOGLE_SIGNIN_CLIENT_ID not configured")
+        raise HTTPException(500, "GOOGLE_SIGNIN_CLIENT_ID or GOOGLE_CLIENT_ID not configured in .env")
 
     try:
         claims = google_id_token.verify_oauth2_token(
