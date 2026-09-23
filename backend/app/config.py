@@ -19,18 +19,22 @@ class Settings(BaseSettings):
     AI_MAX_TOKENS: int = 2048
     AI_TEMPERATURE: float = 0.7
 
-        # Integrations - GitHub
+    # Integrations - GitHub
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""
     GITHUB_REDIRECT_URI: str = "http://localhost:8000/api/integrations/github/callback"
 
-        # Integrations
+    # Integrations - Google
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/integrations/google/callback"
+    
+    # ✅ ADDED: This is what google_signin.py is looking for
+    GOOGLE_SIGNIN_CLIENT_ID: str = ""
+    
     FRONTEND_URL: str = "http://localhost:3000"
 
-        # Integrations - Spotify
+    # Integrations - Spotify
     SPOTIFY_CLIENT_ID: str = "2f1f4c33ceed468dba381d2f9293c052"
     SPOTIFY_CLIENT_SECRET: str = "88824100c4614486ad9ccaad4d039042"
     SPOTIFY_REDIRECT_URI: str = "http://127.0.0.1:8000/api/integrations/spotify/callback"
@@ -38,16 +42,16 @@ class Settings(BaseSettings):
     # YouTube
     YOUTUBE_API_KEY: str = ""
 
-        # Local media
+    # Local media
     MEDIA_ROOTS: str = ""
 
-        # Shopping
+    # Shopping
     SCRAPERAPI_KEY: str = ""
 
-        # Maps
+    # Maps
     GOOGLE_MAPS_API_KEY: str = ""
 
-        # Code agent
+    # Code agent
     CODE_WORKSPACE: str = ""
     CODE_MAX_FILE_SIZE: int = 1_048_576
     CODE_COMMAND_TIMEOUT: int = 30
@@ -55,11 +59,11 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "C:/Users/um554/Xentra/backend/uploads"
     MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024
 
-        # Automation
+    # Automation
     AUTOMATION_SECRET: str = ""
     AUTOMATION_INTERVAL_MINUTES: int = 5
 
-        # Emergency & rate limits
+    # Emergency & rate limits
     GLOBAL_EMERGENCY_STOP: bool = False
     RATE_LIMIT_PER_MINUTE: int = 120
     RATE_LIMIT_PER_HOUR: int = 3000
@@ -73,9 +77,8 @@ class Settings(BaseSettings):
     DASHSCOPE_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
 
-    UNSPLASH_ACCESS_KEY: str = ""    # optional, get free at unsplash.com/developers
+    UNSPLASH_ACCESS_KEY: str = ""
 
-    # TAVILY API key
     TAVILY_API_KEY: str = ""
 
     model_config = SettingsConfigDict(
