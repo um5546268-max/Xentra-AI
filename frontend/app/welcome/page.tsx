@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, memo } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, LogIn, Sparkles, Shield, Zap } from "lucide-react";
+import { UserPlus, LogIn, Sparkles, Shield, Zap, UserCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
 export default function WelcomePage() {
@@ -11,8 +11,9 @@ export default function WelcomePage() {
   // ✅ FIX 1: Use selectors to prevent re-renders on unrelated state changes
   const user = useAuth((state) => state.user);
   const googleSignIn = useAuth((state) => state.googleSignIn);
+  const continueAsGuest = useAuth((state) => state.continueAsGuest); // ✅ NEW
 
-  const [hovered, setHovered] = useState<"signin" | "signup" | null>(null);
+  const [hovered, setHovered] = useState<"signin" | "signup" | "guest" | null>(null);
   const [gsiReady, setGsiReady] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
 
@@ -72,6 +73,11 @@ export default function WelcomePage() {
     }, 200);
     return () => clearTimeout(id);
   }, [user, router]);
+
+  const handleGuestClick = () => {
+    continueAsGuest();
+    router.push("/app");
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 relative overflow-hidden flex items-center justify-center px-6 py-12">
@@ -204,6 +210,37 @@ export default function WelcomePage() {
                 </div>
                 <div className="text-xs text-slate-400 mt-0.5">
                   Continue with existing account
+                </div>
+              </div>
+            </div>
+          </button>
+
+          {/* ✅ NEW: CONTINUE AS GUEST — tertiary */}
+          <button
+            onClick={handleGuestClick}
+            onMouseEnter={() => setHovered("guest")}
+            onMouseLeave={() => setHovered(null)}
+            className="group relative w-full overflow-hidden rounded-2xl border border-slate-800/60 bg-slate-900/20 p-[1px] transition-transform hover:scale-[1.02]"
+          >
+            <div className="relative rounded-2xl bg-slate-950/40 backdrop-blur px-6 py-4 flex items-center gap-4">
+              <div
+                className={`absolute inset-0 rounded-2xl transition-opacity duration-500 ${
+                  hovered === "guest" ? "opacity-100" : "opacity-0"
+                }`}
+                style={{
+                  background:
+                    "radial-gradient(circle at 50% 50%, rgba(148,163,184,0.15) 0%, transparent 70%)",
+                }}
+              />
+              <div className="relative w-10 h-10 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-center shrink-0">
+                <UserCircle className="w-5 h-5 text-slate-500" />
+              </div>
+              <div className="relative flex-1 text-left">
+                <div className="text-base font-semibold text-slate-300 group-hover:text-white transition">
+                  Continue as Guest
+                </div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  Explore first · Sign in to unlock features
                 </div>
               </div>
             </div>

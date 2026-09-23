@@ -17,6 +17,7 @@ type AuthState = {
   token: string | null;
   loading: boolean;
   error: string | null;
+  isGuest: boolean; // ✅ NEW
 
   signup: (email: string, password: string, fullName: string) => Promise<boolean>;
   login: (email: string, password: string) => Promise<boolean>;
@@ -24,6 +25,7 @@ type AuthState = {
   loadFromStorage: () => void;
   googleSignIn: (credential: string) => Promise<boolean>;
   githubSignIn: (code: string) => Promise<boolean>;
+  continueAsGuest: () => void; // ✅ NEW
 };
 
 export const useAuth = create<AuthState>((set) => ({
@@ -31,19 +33,39 @@ export const useAuth = create<AuthState>((set) => ({
   token: null,
   loading: false,
   error: null,
+  isGuest: false, // ✅ NEW
 
   loadFromStorage: () => {
     if (typeof window === "undefined") return;
     const token = localStorage.getItem("xentra_token");
     const userRaw = localStorage.getItem("xentra_user");
+    const guest = localStorage.getItem("xentra_guest") === "true"; // ✅ NEW
     if (token && userRaw) {
       try {
-        set({ token, user: JSON.parse(userRaw) });
+        set({ token, user: JSON.parse(userRaw), isGuest: guest });
       } catch {
         localStorage.removeItem("xentra_token");
         localStorage.removeItem("xentra_user");
+        localStorage.removeItem("xentra_guest");
       }
     }
+  },
+
+  // ✅ NEW — Guest Mode
+  continueAsGuest: () => {
+    if (typeof window === "undefined") return;
+    const guestUser: User = {
+      id: "guest",
+      email: "guest@xentra.ai",
+      full_name: "Guest User",
+      is_admin: false,
+      plan: "free",
+      created_at: new Date().toISOString(),
+    };
+    localStorage.setItem("xentra_token", "guest-token");
+    localStorage.setItem("xentra_user", JSON.stringify(guestUser));
+    localStorage.setItem("xentra_guest", "true");
+    set({ user: guestUser, token: "guest-token", isGuest: true, error: null });
   },
 
   signup: async (email, password, fullName) => {
@@ -51,9 +73,9 @@ export const useAuth = create<AuthState>((set) => ({
     try {
       const res = await fetch(`${API_URL}/api/auth/signup`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true" // ✅ ADDED
+          "ngrok-skip-browser-warning": "true"
         },
         body: JSON.stringify({ email, password, full_name: fullName }),
       });
@@ -67,7 +89,8 @@ export const useAuth = create<AuthState>((set) => ({
 
       localStorage.setItem("xentra_token", data.access_token);
       localStorage.setItem("xentra_user", JSON.stringify(data.user));
-      set({ user: data.user, token: data.access_token, loading: false, error: null });
+      localStorage.removeItem("xentra_guest"); // ✅ clear guest flag
+      set({ user: data.user, token: data.access_token, loading: false, error: null, isGuest: false });
       return true;
     } catch {
       set({ loading: false, error: "Network error — is the backend running?" });
@@ -80,9 +103,9 @@ export const useAuth = create<AuthState>((set) => ({
     try {
       const res = await fetch(`${API_URL}/api/auth/github`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true" // ✅ ADDED
+          "ngrok-skip-browser-warning": "true"
         },
         body: JSON.stringify({ code }),
       });
@@ -93,7 +116,8 @@ export const useAuth = create<AuthState>((set) => ({
       }
       localStorage.setItem("xentra_token", data.access_token);
       localStorage.setItem("xentra_user", JSON.stringify(data.user));
-      set({ user: data.user, token: data.access_token, loading: false, error: null });
+      localStorage.removeItem("xentra_guest"); // ✅ clear guest flag
+      set({ user: data.user, token: data.access_token, loading: false, error: null, isGuest: false });
       return true;
     } catch {
       set({ loading: false, error: "Network error" });
@@ -106,9 +130,9 @@ export const useAuth = create<AuthState>((set) => ({
     try {
       const res = await fetch(`${API_URL}/api/auth/login`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true" // ✅ ADDED
+          "ngrok-skip-browser-warning": "true"
         },
         body: JSON.stringify({ email, password }),
       });
@@ -122,7 +146,8 @@ export const useAuth = create<AuthState>((set) => ({
 
       localStorage.setItem("xentra_token", data.access_token);
       localStorage.setItem("xentra_user", JSON.stringify(data.user));
-      set({ user: data.user, token: data.access_token, loading: false, error: null });
+      localStorage.removeItem("xentra_guest"); // ✅ clear guest flag
+      set({ user: data.user, token: data.access_token, loading: false, error: null, isGuest: false });
       return true;
     } catch {
       set({ loading: false, error: "Network error — is the backend running?" });
@@ -135,9 +160,9 @@ export const useAuth = create<AuthState>((set) => ({
     try {
       const res = await fetch(`${API_URL}/api/auth/google`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true" // ✅ ADDED
+          "ngrok-skip-browser-warning": "true"
         },
         body: JSON.stringify({ credential }),
       });
@@ -151,7 +176,8 @@ export const useAuth = create<AuthState>((set) => ({
 
       localStorage.setItem("xentra_token", data.access_token);
       localStorage.setItem("xentra_user", JSON.stringify(data.user));
-      set({ user: data.user, token: data.access_token, loading: false, error: null });
+      localStorage.removeItem("xentra_guest"); // ✅ clear guest flag
+      set({ user: data.user, token: data.access_token, loading: false, error: null, isGuest: false });
       return true;
     } catch {
       set({ loading: false, error: "Network error — is the backend running?" });
@@ -162,6 +188,7 @@ export const useAuth = create<AuthState>((set) => ({
   logout: () => {
     localStorage.removeItem("xentra_token");
     localStorage.removeItem("xentra_user");
-    set({ user: null, token: null, error: null });
+    localStorage.removeItem("xentra_guest"); // ✅ clean up
+    set({ user: null, token: null, error: null, isGuest: false });
   },
 }));
