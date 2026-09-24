@@ -48,6 +48,7 @@ export type ChatMessage = {
   created_at: string;
   sender_name: string | null;
   sender_avatar: string | null;
+  pinned_at: string | null;
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -207,5 +208,134 @@ export const updateGroupMemberRole = async (
   const res = await api.patch(`/api/chats/${chatId}/members/${userId}`, {
     role,
   });
+  return res.data;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Public group discovery
+// ═══════════════════════════════════════════════════════════════
+
+export const discoverPublicGroups = async (opts?: {
+  search?: string;
+  category?: string;
+}): Promise<Chat[]> => {
+  const params: Record<string, string> = {};
+  if (opts?.search) params.search = opts.search;
+  if (opts?.category) params.category = opts.category;
+  const res = await api.get("/api/chats/discover/public", { params });
+  return res.data;
+};
+
+export const joinPublicGroup = async (chatId: string): Promise<Chat> => {
+  const res = await api.post(`/api/chats/${chatId}/join`);
+  return res.data;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Ask Xentra (AI in chat)
+// ═══════════════════════════════════════════════════════════════
+
+export type AskXentraAction =
+  | "summarize"
+  | "explain"
+  | "translate"
+  | "quiz"
+  | "action_items"
+  | "custom";
+
+export const askXentra = async (
+  chatId: string,
+  payload: {
+    action: AskXentraAction;
+    message_id?: string;
+    prompt?: string;
+    language?: string;
+  }
+): Promise<ChatMessage> => {
+  const res = await api.post(`/api/chats/${chatId}/ask-xentra`, payload);
+  return res.data;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Private Ask Xentra + Share
+// ═══════════════════════════════════════════════════════════════
+
+export const askXentraPrivate = async (
+  chatId: string,
+  payload: {
+    action: AskXentraAction;
+    message_id?: string;
+    prompt?: string;
+    language?: string;
+  }
+): Promise<{ text: string; action: string }> => {
+  const res = await api.post(`/api/chats/${chatId}/ask-xentra/private`, payload);
+  return res.data;
+};
+
+export const shareAIMessage = async (
+  chatId: string,
+  content: string
+): Promise<ChatMessage> => {
+  const res = await api.post(`/api/chats/${chatId}/ask-xentra`, {
+    action: "share",
+    content,
+  });
+  return res.data;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Search
+// ═══════════════════════════════════════════════════════════════
+
+export const searchMessages = async (
+  chatId: string,
+  query: string,
+  limit = 50
+): Promise<ChatMessage[]> => {
+  const res = await api.get(`/api/chats/${chatId}/search`, {
+    params: { q: query, limit },
+  });
+  return res.data;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Pinned messages
+// ═══════════════════════════════════════════════════════════════
+
+export const pinMessage = async (
+  chatId: string,
+  messageId: string
+): Promise<ChatMessage> => {
+  const res = await api.post(`/api/chats/${chatId}/messages/${messageId}/pin`);
+  return res.data;
+};
+
+export const unpinMessage = async (
+  chatId: string,
+  messageId: string
+): Promise<ChatMessage> => {
+  const res = await api.delete(`/api/chats/${chatId}/messages/${messageId}/pin`);
+  return res.data;
+};
+
+export const listPinnedMessages = async (
+  chatId: string
+): Promise<ChatMessage[]> => {
+  const res = await api.get(`/api/chats/${chatId}/pinned`);
+  return res.data;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Shared media
+// ═══════════════════════════════════════════════════════════════
+
+export const listSharedMedia = async (
+  chatId: string,
+  type?: "image" | "file" | "video" | "voice"
+): Promise<ChatMessage[]> => {
+  const params: Record<string, string> = {};
+  if (type) params.type = type;
+  const res = await api.get(`/api/chats/${chatId}/media`, { params });
   return res.data;
 };

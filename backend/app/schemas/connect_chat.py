@@ -77,6 +77,7 @@ class MessagePublic(BaseModel):
     reactions: dict[str, list[str]] | None = None
     edited_at: datetime | None = None
     deleted_at: datetime | None = None
+    pinned_at: datetime | None = None
     created_at: datetime
 
     # sender info (populated in the route)

@@ -13,8 +13,9 @@ import {
 } from "@/lib/friends-api";
 import AddFriendModal from "./AddFriendModal";
 import CreateGroupModal from "./CreateGroupModal";
+import DiscoverPanel from "./DiscoverPanel";
 
-type Tab = "chats" | "friends" | "groups" | "requests";
+type Tab = "chats" | "friends" | "groups" | "requests" | "discover";
 
 const AVATAR_COLORS = [
   "from-violet-500 to-cyan-500",
@@ -42,7 +43,7 @@ export default function ChatListPanel({
   const [tab, setTab] = useState<Tab>("chats");
   const [search, setSearch] = useState("");
   const [showAddFriend, setShowAddFriend] = useState(false);
-  const [showCreateGroup, setShowCreateGroup] = useState(false);  // ✅ MOVED HERE
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
 
   const [chats, setChats] = useState<Chat[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -99,159 +100,182 @@ export default function ChatListPanel({
   };
 
   const filteredChats = chats.filter((c) => {
-    const name = c.type === "direct"
-      ? c.members.find((m) => m.user_id !== currentUser?.id)?.full_name || ""
-      : c.name || "";
+    const name =
+      c.type === "direct"
+        ? c.members.find((m) => String(m.user_id) !== String(currentUser?.id))?.full_name || ""
+        : c.name || "";
     return name.toLowerCase().includes(search.toLowerCase());
   });
 
   const directChats = filteredChats.filter((c) => c.type === "direct");
   const groupChats = filteredChats.filter((c) => c.type === "group");
 
+  // ✅ Discover panel takes over the whole list area (still keeps the outer container layout)
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b border-slate-800">
-        <h2 className="text-lg font-bold text-white">Connect</h2>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Chat with friends, classmates and Xentra users
-        </p>
-      </div>
-
-      <div className="p-3 border-b border-slate-800">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search people, groups…"
-            className="w-full rounded-lg border border-slate-800 bg-slate-900 pl-9 pr-3 py-2 text-sm placeholder-slate-600 focus:border-violet-500 focus:outline-none"
-          />
-        </div>
-      </div>
-
-      <div className="flex gap-1 p-2 border-b border-slate-800">
-        <TabButton active={tab === "chats"} onClick={() => setTab("chats")} label="Chats" count={directChats.length} />
-        <TabButton active={tab === "friends"} onClick={() => setTab("friends")} label="Friends" count={friends.length} />
-        <TabButton active={tab === "groups"} onClick={() => setTab("groups")} label="Groups" count={groupChats.length} />
-        <TabButton active={tab === "requests"} onClick={() => setTab("requests")} label="Requests" count={requests.length} />
-      </div>
-
-      <div className="p-3 space-y-2">
-        <button
-          onClick={() => setShowAddFriend(true)}
-          className="w-full flex items-center justify-center gap-2 rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-2 text-sm font-medium text-violet-300 hover:bg-violet-500/20 transition"
-        >
-          <UserPlus className="w-4 h-4" />
-          Add Friend
-        </button>
-        <button
-          onClick={() => setShowCreateGroup(true)}
-          className="w-full flex items-center justify-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-sm font-medium text-cyan-300 hover:bg-cyan-500/20 transition"
-        >
-          <Users className="w-4 h-4" />
-          New Group
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-1">
-        {loading ? (
-          <div className="flex items-center justify-center py-10">
-            <Loader2 className="w-5 h-5 text-slate-500 animate-spin" />
-          </div>
-        ) : tab === "chats" ? (
-          directChats.length === 0 ? (
-            <EmptyTab
-              icon={<MessageSquare className="w-5 h-5 text-slate-500" />}
-              text="No chats yet. Go to the Friends tab to start one."
-            />
-          ) : (
-            directChats.map((chat) => (
-              <ChatRow
-                key={chat.id}
-                chat={chat}
-                currentUserId={currentUser?.id || ""}
-                active={selectedChatId === chat.id}
-                unreadCount={unread[chat.id] || 0}
-                onClick={() => onSelectChat(chat.id)}
-              />
-            ))
-          )
-        ) : tab === "friends" ? (
-          friends.length === 0 ? (
-            <EmptyTab
-              icon={<UserPlus className="w-5 h-5 text-slate-500" />}
-              text="No friends yet. Add one to start."
-            />
-          ) : (
-            friends.map((friend) => (
-              <FriendRow
-                key={friend.id}
-                friend={friend}
-                onStartChat={async () => {
-                  try {
-                    const { createDirectChat } = await import("@/lib/chat-api");
-                    const chat = await createDirectChat(friend.user_id);
-                    await refresh();
-                    onSelectChat(chat.id);
-                  } catch (e) {
-                    console.error("Failed to create chat:", e);
-                  }
-                }}
-              />
-            ))
-          )
-        ) : tab === "groups" ? (
-          groupChats.length === 0 ? (
-            <EmptyTab
-              icon={<Users className="w-5 h-5 text-slate-500" />}
-              text="No groups yet. Create one above."
-            />
-          ) : (
-            groupChats.map((chat) => (
-              <ChatRow
-                key={chat.id}
-                chat={chat}
-                currentUserId={currentUser?.id || ""}
-                active={selectedChatId === chat.id}
-                unreadCount={unread[chat.id] || 0}
-                onClick={() => onSelectChat(chat.id)}
-              />
-            ))
-          )
-        ) : requests.length === 0 ? (
-          <EmptyTab
-            icon={<UserPlus className="w-5 h-5 text-slate-500" />}
-            text="No pending requests."
-          />
-        ) : (
-          requests.map((req) => (
-            <RequestRow
-              key={req.id}
-              request={req}
-              onAccept={() => handleAccept(req.id)}
-              onDecline={() => handleDecline(req.id)}
-            />
-          ))
-        )}
-      </div>
-
-      {showAddFriend && (
-        <AddFriendModal
-          onClose={() => {
-            setShowAddFriend(false);
-            refresh();
-          }}
-        />
-      )}
-
-      {showCreateGroup && (
-        <CreateGroupModal
-          onClose={() => setShowCreateGroup(false)}
-          onCreated={async (chatId) => {
+      {/* ── If Discover is active, render the full DiscoverPanel instead of the normal UI ── */}
+      {tab === "discover" ? (
+        <DiscoverPanel
+          onBack={() => setTab("chats")}
+          onJoined={async (chatId) => {
             await refresh();
             onSelectChat(chatId);
+            setTab("chats");
           }}
         />
+      ) : (
+        <>
+          {/* Header */}
+          <div className="p-4 border-b border-slate-800">
+            <h2 className="text-lg font-bold text-white">Connect</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Chat with friends, classmates and Xentra users
+            </p>
+          </div>
+
+          {/* Search */}
+          <div className="p-3 border-b border-slate-800">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search people, groups…"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900 pl-9 pr-3 py-2 text-sm placeholder-slate-600 focus:border-violet-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-1 p-2 border-b border-slate-800">
+            <TabButton active={tab === "chats"} onClick={() => setTab("chats")} label="Chats" count={directChats.length} />
+            <TabButton active={tab === "friends"} onClick={() => setTab("friends")} label="Friends" count={friends.length} />
+            <TabButton active={tab === "groups"} onClick={() => setTab("groups")} label="Groups" count={groupChats.length} />
+            <TabButton active={tab === "discover"} onClick={() => setTab("discover")} label="Discover" count={0} />
+            <TabButton active={tab === "requests"} onClick={() => setTab("requests")} label="Requests" count={requests.length} />
+          </div>
+
+          {/* Action buttons */}
+          <div className="p-3 space-y-2">
+            <button
+              onClick={() => setShowAddFriend(true)}
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-2 text-sm font-medium text-violet-300 hover:bg-violet-500/20 transition"
+            >
+              <UserPlus className="w-4 h-4" />
+              Add Friend
+            </button>
+            <button
+              onClick={() => setShowCreateGroup(true)}
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-sm font-medium text-cyan-300 hover:bg-cyan-500/20 transition"
+            >
+              <Users className="w-4 h-4" />
+              New Group
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-1">
+            {loading ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="w-5 h-5 text-slate-500 animate-spin" />
+              </div>
+            ) : tab === "chats" ? (
+              directChats.length === 0 ? (
+                <EmptyTab
+                  icon={<MessageSquare className="w-5 h-5 text-slate-500" />}
+                  text="No chats yet. Go to the Friends tab to start one."
+                />
+              ) : (
+                directChats.map((chat) => (
+                  <ChatRow
+                    key={chat.id}
+                    chat={chat}
+                    currentUserId={currentUser?.id || ""}
+                    active={selectedChatId === chat.id}
+                    unreadCount={unread[chat.id] || 0}
+                    onClick={() => onSelectChat(chat.id)}
+                  />
+                ))
+              )
+            ) : tab === "friends" ? (
+              friends.length === 0 ? (
+                <EmptyTab
+                  icon={<UserPlus className="w-5 h-5 text-slate-500" />}
+                  text="No friends yet. Add one to start."
+                />
+              ) : (
+                friends.map((friend) => (
+                  <FriendRow
+                    key={friend.id}
+                    friend={friend}
+                    onStartChat={async () => {
+                      try {
+                        const { createDirectChat } = await import("@/lib/chat-api");
+                        const chat = await createDirectChat(friend.user_id);
+                        await refresh();
+                        onSelectChat(chat.id);
+                      } catch (e) {
+                        console.error("Failed to create chat:", e);
+                      }
+                    }}
+                  />
+                ))
+              )
+            ) : tab === "groups" ? (
+              groupChats.length === 0 ? (
+                <EmptyTab
+                  icon={<Users className="w-5 h-5 text-slate-500" />}
+                  text="No groups yet. Create one above."
+                />
+              ) : (
+                groupChats.map((chat) => (
+                  <ChatRow
+                    key={chat.id}
+                    chat={chat}
+                    currentUserId={currentUser?.id || ""}
+                    active={selectedChatId === chat.id}
+                    unreadCount={unread[chat.id] || 0}
+                    onClick={() => onSelectChat(chat.id)}
+                  />
+                ))
+              )
+            ) : requests.length === 0 ? (
+              <EmptyTab
+                icon={<UserPlus className="w-5 h-5 text-slate-500" />}
+                text="No pending requests."
+              />
+            ) : (
+              requests.map((req) => (
+                <RequestRow
+                  key={req.id}
+                  request={req}
+                  onAccept={() => handleAccept(req.id)}
+                  onDecline={() => handleDecline(req.id)}
+                />
+              ))
+            )}
+          </div>
+
+          {/* Modals */}
+          {showAddFriend && (
+            <AddFriendModal
+              onClose={() => {
+                setShowAddFriend(false);
+                refresh();
+              }}
+            />
+          )}
+
+          {showCreateGroup && (
+            <CreateGroupModal
+              onClose={() => setShowCreateGroup(false)}
+              onCreated={async (chatId) => {
+                await refresh();
+                onSelectChat(chatId);
+              }}
+            />
+          )}
+        </>
       )}
     </div>
   );
@@ -304,9 +328,10 @@ function ChatRow({
   const other = chat.members.find(
     (m) => String(m.user_id) !== String(currentUserId)
   );
-  const name = chat.type === "direct"
-    ? other?.full_name || other?.email || "Unknown"
-    : chat.name || "Group";
+  const name =
+    chat.type === "direct"
+      ? other?.full_name || other?.email || "Unknown"
+      : chat.name || "Group";
   const initial = (name[0] || "?").toUpperCase();
   const color = colorFor(chat.id);
 

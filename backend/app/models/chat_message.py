@@ -65,6 +65,11 @@ class ChatMessage(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Pinned message
+    pinned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
     # Reactions: {"👍": [user_id1, user_id2], "❤️": [user_id3]}
     reactions: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True, default=dict

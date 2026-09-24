@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import CommandCenter from "@/components/CommandCenter";
@@ -10,7 +10,6 @@ import { useShoppingStore } from "@/lib/shopping-store";
 import { GlobalYouTubePlayer } from "@/components/hive/GlobalYouTubePlayer";
 import { MiniPlayer } from "@/components/hive/MiniPlayer";
 import { dailyCheckin } from "@/lib/gamification";
-import { useState } from "react";
 import { getOnboardingStatus } from "@/lib/onboarding";
 import { OnboardingTour } from "@/components/OnboardingTour";
 
@@ -38,7 +37,6 @@ export default function AppLayout({
     getOnboardingStatus()
       .then((s) => {
         if (s.completed && !s.tour_completed) {
-          // Small delay so the UI settles
           setTimeout(() => setShowTour(true), 800);
         }
       })
@@ -46,9 +44,14 @@ export default function AppLayout({
   }, []);
 
   return (
-    <div className="flex h-screen bg-slate-950 text-white">
+    <div
+      className="flex bg-slate-950 text-white overflow-hidden"
+      style={{ height: "100vh" }}   // ✅ explicit, no margin for browser quirk
+    >
       <Sidebar />
-      <main className="flex-1 overflow-hidden">{children}</main>
+      <main className="flex-1 overflow-hidden min-w-0 h-full">
+        {children}
+      </main>
       {showCommandCenter && <CommandCenter />}
       <GlobalAudioHost />
       <GlobalYouTubePlayer />

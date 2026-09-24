@@ -1,20 +1,26 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Reply, Pencil, Trash2, SmilePlus } from "lucide-react";
+import {
+  Reply, Pencil, Trash2, Copy, Share2, Sparkles, Pin, PinOff,
+} from "lucide-react";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
-export type MessageAction = "reply" | "edit" | "delete" | "react";
+export type MessageAction = "reply" | "edit" | "delete" | "react" | "copy" | "share" | "pin" | "unpin";
 
 export default function MessageActions({
   isMine,
+  isAI,
+  isPinned,
   onAction,
   onReact,
   onClose,
   position,
 }: {
   isMine: boolean;
+  isAI: boolean;
+  isPinned?: boolean;
   onAction: (action: MessageAction) => void;
   onReact: (emoji: string) => void;
   onClose: () => void;
@@ -38,13 +44,17 @@ export default function MessageActions({
     };
   }, [onClose]);
 
+  // For AI messages, only the requester can edit/delete
+  const canEdit = !isAI ? isMine : isMine;
+  const canDelete = !isAI ? isMine : isMine;
+
   return (
     <div
       ref={ref}
       className="fixed z-50 rounded-xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/60 overflow-hidden"
       style={{
         left: Math.min(position.x, window.innerWidth - 240),
-        top: Math.min(position.y, window.innerHeight - 200),
+        top: Math.min(position.y, window.innerHeight - 280),
       }}
     >
       {/* Reactions row */}
@@ -67,20 +77,48 @@ export default function MessageActions({
           label="Reply"
           onClick={() => onAction("reply")}
         />
-        {isMine && (
-          <>
-            <ActionRow
-              icon={<Pencil className="w-3.5 h-3.5" />}
-              label="Edit"
-              onClick={() => onAction("edit")}
-            />
-            <ActionRow
-              icon={<Trash2 className="w-3.5 h-3.5" />}
-              label="Delete"
-              onClick={() => onAction("delete")}
-              danger
-            />
-          </>
+
+        <ActionRow
+          icon={<Copy className="w-3.5 h-3.5" />}
+          label={isAI ? "Copy AI response" : "Copy text"}
+          onClick={() => onAction("copy")}
+        />
+
+        <ActionRow
+          icon={<Share2 className="w-3.5 h-3.5" />}
+          label="Forward"
+          onClick={() => onAction("share")}
+        />
+
+        {/* ✅ Pin / Unpin */}
+        <ActionRow
+          icon={isPinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+          label={isPinned ? "Unpin" : "Pin message"}
+          onClick={() => onAction(isPinned ? "unpin" : "pin")}
+        />
+
+        {canEdit && (
+          <ActionRow
+            icon={<Pencil className="w-3.5 h-3.5" />}
+            label={isAI ? "Edit AI message" : "Edit"}
+            onClick={() => onAction("edit")}
+          />
+        )}
+
+        {canDelete && (
+          <ActionRow
+            icon={<Trash2 className="w-3.5 h-3.5" />}
+            label={isAI ? "Delete AI message" : "Delete"}
+            onClick={() => onAction("delete")}
+            danger
+          />
+        )}
+
+        {isAI && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 border-t border-slate-800 mt-1 text-[10px] text-violet-400">
+            <Sparkles className="w-3 h-3" />
+            AI-generated
+          </div>
         )}
       </div>
     </div>

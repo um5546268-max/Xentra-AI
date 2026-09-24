@@ -2,30 +2,36 @@
 
 import { useEffect, useState } from "react";
 import {
-  X, Star, Users, FileText, Image as ImageIcon, Video, Pin,
-  Loader2, Crown, Shield, User as UserIcon, LogOut, UserPlus,
+  X, Star, Users, Loader2, Crown, Shield,
+  LogOut, UserPlus, Pin,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
   Chat, ChatMember, getChat, addGroupMember, removeGroupMember,
-  updateGroupMemberRole,
+  updateGroupMemberRole, listPinnedMessages,
 } from "@/lib/chat-api";
 import { Friend, listFriends } from "@/lib/friends-api";
+import SharedMedia from "./SharedMedia";
 
 export default function ProfilePanel({ chatId }: { chatId: string }) {
   const currentUser = useAuth((state) => state.user);
   const [chat, setChat] = useState<Chat | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddMember, setShowAddMember] = useState(false);
+  const [pins, setPins] = useState<Awaited<ReturnType<typeof listPinnedMessages>>>([]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getChat(chatId)
-      .then((c) => {
-        if (!cancelled) setChat(c);
+    Promise.all([
+      getChat(chatId).catch(() => null),
+      listPinnedMessages(chatId).catch(() => []),
+    ])
+      .then(([c, p]) => {
+        if (cancelled) return;
+        setChat(c);
+        setPins(p);
       })
-      .catch(() => {})
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
@@ -61,7 +67,9 @@ export default function ProfilePanel({ chatId }: { chatId: string }) {
   const isModerator = myMembership?.role === "moderator";
   const canManage = isAdmin || isModerator;
 
-  const displayName = isGroup ? chat.name || "Group" : other?.full_name || other?.email || "Unknown";
+  const displayName = isGroup
+    ? chat.name || "Group"
+    : other?.full_name || other?.email || "Unknown";
   const initial = (displayName[0] || "?").toUpperCase();
 
   const handleAddMember = async (userId: string) => {
@@ -85,7 +93,10 @@ export default function ProfilePanel({ chatId }: { chatId: string }) {
     }
   };
 
-  const handlePromote = async (userId: string, role: "admin" | "moderator" | "member") => {
+  const handlePromote = async (
+    userId: string,
+    role: "admin" | "moderator" | "member"
+  ) => {
     try {
       const updated = await updateGroupMemberRole(chatId, userId, role);
       setChat(updated);
@@ -128,7 +139,8 @@ export default function ProfilePanel({ chatId }: { chatId: string }) {
           {isGroup ? (
             <>
               <p className="text-xs text-slate-500">
-                {chat.members.length} member{chat.members.length !== 1 ? "s" : ""}
+                {chat.members.length} member
+                {chat.members.length !== 1 ? "s" : ""}
                 {chat.category && ` · ${chat.category}`}
               </p>
               {chat.description && (
@@ -144,9 +156,7 @@ export default function ProfilePanel({ chatId }: { chatId: string }) {
             </>
           ) : (
             <>
-              <p className="text-xs text-slate-500">
-                {other?.email || "No email"}
-              </p>
+              <p className="text-xs text-slate-500">{other?.email || "No email"}</p>
               <div className="flex items-center gap-1.5 mt-1">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 <span className="text-xs text-emerald-400">Online</span>
@@ -190,40 +200,44 @@ export default function ProfilePanel({ chatId }: { chatId: string }) {
         </div>
       )}
 
-      {/* Direct chat: shared media placeholder */}
-      {!isGroup && (
-        <>
-          <div className="p-5 border-b border-slate-800">
-            <div className="flex items-center justify-between mb-3">
-              <h5 className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                Shared Files & Media
-              </h5>
-              <button className="text-[10px] text-violet-400 hover:text-violet-300">
-                View All
-              </button>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <MediaThumb icon={<FileText className="w-4 h-4" />} label="Files" sub="—" />
-              <MediaThumb icon={<ImageIcon className="w-4 h-4" />} label="Images" sub="—" />
-              <MediaThumb icon={<Video className="w-4 h-4" />} label="Videos" sub="—" />
-            </div>
-          </div>
+      {/* ✅ Shared media */}
+      <SharedMedia chatId={chatId} />
 
-          <div className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h5 className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                Pinned Items
-              </h5>
-              <button className="text-[10px] text-violet-400 hover:text-violet-300">
-                View All
-              </button>
-            </div>
-            <div className="text-xs text-slate-600 text-center py-4">
-              No pinned items yet
-            </div>
+      {/* ✅ Pinned items */}
+      <div className="p-5 border-b border-slate-800">
+        <div className="flex items-center justify-between mb-3">
+          <h5 className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+            Pinned Items
+          </h5>
+          <span className="text-[10px] text-slate-500">
+            {pins.length} pinned
+          </span>
+        </div>
+        {pins.length === 0 ? (
+          <div className="text-xs text-slate-600 text-center py-4">
+            No pinned items yet
           </div>
-        </>
-      )}
+        ) : (
+          <div className="space-y-1.5">
+            {pins.map((pin) => (
+              <div
+                key={pin.id}
+                className="flex items-start gap-2 rounded-lg p-2 hover:bg-slate-900 transition cursor-pointer"
+              >
+                <Pin className="w-3 h-3 text-violet-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-slate-500">
+                    {pin.sender_name || "Them"}
+                  </div>
+                  <div className="text-xs text-slate-300 line-clamp-2">
+                    {pin.content.slice(0, 100)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Leave group button */}
       {isGroup && (
@@ -282,10 +296,14 @@ function MemberRow({
       </div>
 
       {member.role === "admin" && (
-        <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" title="Admin" />
+        <span title="Admin" className="shrink-0">
+          <Crown className="w-3.5 h-3.5 text-amber-400" />
+        </span>
       )}
       {member.role === "moderator" && (
-        <Shield className="w-3.5 h-3.5 text-cyan-400 shrink-0" title="Moderator" />
+        <span title="Moderator" className="shrink-0">
+          <Shield className="w-3.5 h-3.5 text-cyan-400" />
+        </span>
       )}
 
       {canManage && !isMe && (
@@ -321,28 +339,6 @@ function MemberRow({
   );
 }
 
-function MediaThumb({
-  icon,
-  label,
-  sub,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  sub: string;
-}) {
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/50 overflow-hidden hover:border-violet-500/40 transition cursor-pointer">
-      <div className="aspect-square flex items-center justify-center bg-slate-900 text-violet-300">
-        {icon}
-      </div>
-      <div className="p-1.5">
-        <div className="text-[9px] text-slate-300 truncate">{label}</div>
-        <div className="text-[8px] text-slate-600">{sub}</div>
-      </div>
-    </div>
-  );
-}
-
 function AddMemberModal({
   chat,
   currentUserId,
@@ -366,7 +362,9 @@ function AddMemberModal({
 
   const existingIds = new Set(chat.members.map((m) => String(m.user_id)));
   const available = friends.filter(
-    (f) => !existingIds.has(String(f.user_id)) && String(f.user_id) !== currentUserId
+    (f) =>
+      !existingIds.has(String(f.user_id)) &&
+      String(f.user_id) !== currentUserId
   );
 
   return (
@@ -411,7 +409,9 @@ function AddMemberModal({
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-slate-200 truncate">{name}</div>
-                    <div className="text-[10px] text-slate-500 truncate">{f.email}</div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                      {f.email}
+                    </div>
                   </div>
                   <UserPlus className="w-4 h-4 text-violet-400" />
                 </button>

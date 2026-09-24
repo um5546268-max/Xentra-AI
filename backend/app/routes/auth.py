@@ -17,6 +17,9 @@ from app.schemas.auth import GoogleSignInRequest
 from app.services.google_signin import verify_google_id_token
 from app.schemas.auth import GitHubSignInRequest          # add to imports
 from app.services.github_signin import exchange_github_code
+from pydantic import BaseModel
+from fastapi import UploadFile, File
+from app.core import r2 as r2_storage
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -265,3 +268,63 @@ async def github_signin(
     # 4. Issue JWT
     token = create_access_token(subject=user.id)
     return TokenResponse(access_token=token, user=UserRead.model_validate(user))
+
+# ─────────────────────────────────────────────────────────
+# Update profile (avatar)
+# ─────────────────────────────────────────────────────────
+class UpdateProfileRequest(BaseModel):
+    avatar_url: str | None = None
+    full_name: str | None = None
+
+
+@router.patch("/me", response_model=UserRead)
+def update_me(
+    payload: UpdateProfileRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if payload.full_name is not None:
+        current_user.full_name = payload.full_name.strip() or None
+    if payload.avatar_url is not None:
+        current_user.avatar_url = payload.avatar_url.strip() or None
+
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+@router.post("/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload a profile picture. Returns the public URL and saves to user profile."""
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Only images are allowed")
+
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(413, "Image too large (max 5 MB)")
+    if len(contents) == 0:
+        raise HTTPException(400, "Empty file")
+
+    from io import BytesIO
+
+    try:
+        result = r2_storage.upload_file(
+            BytesIO(contents),
+            original_filename=file.filename or "avatar.png",
+            folder=f"avatars/{current_user.id}",
+            content_type=file.content_type,
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Upload failed: {e}")
+
+    # Save directly to user's profile
+    current_user.avatar_url = result["url"]
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+
+    return {"url": result["url"]}

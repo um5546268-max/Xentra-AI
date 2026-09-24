@@ -12,7 +12,7 @@ export default function ConnectPage() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
 
   return (
-    <div className="h-full flex bg-slate-950">
+    <div className="h-full flex bg-slate-950 overflow-hidden">
       <div className="w-80 shrink-0 border-r border-slate-800 overflow-hidden flex flex-col">
         <ChatListPanel
           selectedChatId={selectedChatId}
@@ -20,7 +20,7 @@ export default function ConnectPage() {
         />
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col">
+      <div className="flex-1 overflow-hidden flex flex-col min-w-0">
         {selectedChatId ? (
           <ChatWindowPanel chatId={selectedChatId} />
         ) : (

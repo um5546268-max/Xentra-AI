@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Volume2,
   Play,
@@ -9,9 +9,22 @@ import {
   User as UserIcon,
   Shield,
   Mic,
+  Camera,
+  Bell,
 } from "lucide-react";
 import { useVoice } from "@/lib/voice-store";
 import { useAuth } from "@/lib/auth";
+import Avatar from "@/components/Avatar";
+import AvatarPicker from "@/components/connect/AvatarPicker";
+// ✅ Browser notifications
+import {
+  getBrowserNotifPrefs,
+  setBrowserNotifPrefs,
+  getBrowserNotifPermission,
+  requestBrowserNotifPermission,
+  isBrowserNotifSupported,
+  BrowserNotifPrefs,
+} from "@/lib/browser-notifications";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -27,10 +40,36 @@ export default function SettingsPage() {
     speaking,
   } = useVoice();
 
+  // Avatar picker state
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+
+  // ✅ Browser notification state
+  const [notifPrefs, setNotifPrefs] = useState<BrowserNotifPrefs | null>(null);
+  const [notifPermission, setNotifPermission] =
+    useState<NotificationPermission>("default");
+  const [notifSupported, setNotifSupported] = useState(true);
+
   useEffect(() => {
     loadVoice();
     loadVoices();
   }, [loadVoice, loadVoices]);
+
+  // ✅ Load notification prefs on mount
+  useEffect(() => {
+    setNotifPrefs(getBrowserNotifPrefs());
+    setNotifPermission(getBrowserNotifPermission());
+    setNotifSupported(isBrowserNotifSupported());
+  }, []);
+
+  const updateNotifPref = (patch: Partial<BrowserNotifPrefs>) => {
+    const next = setBrowserNotifPrefs(patch);
+    setNotifPrefs(next);
+  };
+
+  const handleRequestPermission = async () => {
+    const p = await requestBrowserNotifPermission();
+    setNotifPermission(p);
+  };
 
   return (
     <div className="h-full overflow-y-auto">
@@ -48,17 +87,138 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Account */}
+        {/* Account section with avatar */}
         <Section title="Account" icon={<UserIcon className="w-4 h-4" />}>
-          <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 space-y-2">
-            <div className="text-xs text-slate-500">Signed in as</div>
-            <div className="text-sm text-slate-200">
-              {user?.full_name || user?.email || "—"}
+          <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+            <div className="flex items-center gap-4">
+              <div className="relative group shrink-0">
+                <Avatar
+                  src={user?.avatar_url}
+                  name={user?.full_name}
+                  email={user?.email}
+                  size={72}
+                />
+                <button
+                  onClick={() => setShowAvatarPicker(true)}
+                  className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition"
+                  title="Change avatar"
+                >
+                  <Camera className="w-6 h-6 text-white" />
+                </button>
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="text-base font-semibold text-slate-200 truncate">
+                  {user?.full_name || "No name set"}
+                </div>
+                <div className="text-xs text-slate-500 truncate">
+                  {user?.email}
+                </div>
+                <button
+                  onClick={() => setShowAvatarPicker(true)}
+                  className="mt-2 text-xs text-violet-400 hover:text-violet-300 font-medium"
+                >
+                  Change avatar
+                </button>
+              </div>
             </div>
-            {user?.email && (
-              <div className="text-xs text-slate-500">{user.email}</div>
-            )}
           </div>
+        </Section>
+
+        {/* ✅ NEW: Notifications section */}
+        <Section
+          title="Notifications"
+          icon={<Bell className="w-4 h-4" />}
+          subtitle="Desktop alerts for new messages"
+        >
+          {!notifSupported ? (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 text-xs text-slate-500">
+              Notifications aren't supported in this browser.
+            </div>
+          ) : notifPermission === "denied" ? (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-xs text-red-300">
+              Notifications are blocked. Open your browser settings and allow
+              notifications for this site to enable them.
+            </div>
+          ) : notifPermission !== "granted" ? (
+            <div className="rounded-lg border border-violet-500/40 bg-violet-500/10 p-4 space-y-3">
+              <div>
+                <div className="text-sm text-violet-200">
+                  Enable desktop notifications
+                </div>
+                <div className="text-xs text-slate-400 mt-1">
+                  Get notified when someone messages you — even when the tab is
+                  in the background.
+                </div>
+              </div>
+              <button
+                onClick={handleRequestPermission}
+                className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 transition"
+              >
+                Allow notifications
+              </button>
+            </div>
+          ) : notifPrefs ? (
+            <div className="space-y-3">
+              <SettingRow
+                label="Desktop notifications"
+                hint="Show a popup when a new message arrives"
+              >
+                <button
+                  onClick={() => updateNotifPref({ enabled: !notifPrefs.enabled })}
+                  className={`relative w-11 h-6 rounded-full transition ${
+                    notifPrefs.enabled ? "bg-emerald-500" : "bg-slate-700"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                      notifPrefs.enabled ? "translate-x-5" : ""
+                    }`}
+                  />
+                </button>
+              </SettingRow>
+
+              <SettingRow
+                label="Sound"
+                hint="Play a soft chime when a message arrives"
+              >
+                <button
+                  onClick={() => updateNotifPref({ sound: !notifPrefs.sound })}
+                  className={`relative w-11 h-6 rounded-full transition ${
+                    notifPrefs.sound ? "bg-emerald-500" : "bg-slate-700"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                      notifPrefs.sound ? "translate-x-5" : ""
+                    }`}
+                  />
+                </button>
+              </SettingRow>
+
+              <SettingRow
+                label="Show preview"
+                hint="Display message text in the notification"
+              >
+                <button
+                  onClick={() => updateNotifPref({ preview: !notifPrefs.preview })}
+                  className={`relative w-11 h-6 rounded-full transition ${
+                    notifPrefs.preview ? "bg-emerald-500" : "bg-slate-700"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                      notifPrefs.preview ? "translate-x-5" : ""
+                    }`}
+                  />
+                </button>
+              </SettingRow>
+
+              <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-[11px] text-slate-500 leading-relaxed">
+                💡 <span className="text-slate-400">Tip:</span> Notifications only fire when the tab is in the background. If you're actively watching a chat, you won't get a popup — the message just appears.
+              </div>
+            </div>
+          ) : null}
         </Section>
 
         {/* Voice Settings */}
@@ -73,7 +233,6 @@ export default function SettingsPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {/* Voice selection */}
               <SettingRow label="Voice" hint="Which voice Xentra uses">
                 <select
                   value={settings.voice_name || ""}
@@ -89,11 +248,7 @@ export default function SettingsPage() {
                 </select>
               </SettingRow>
 
-              {/* Language */}
-              <SettingRow
-                label="Language"
-                hint="Speech recognition language"
-              >
+              <SettingRow label="Language" hint="Speech recognition language">
                 <select
                   value={settings.language}
                   onChange={(e) => save({ language: e.target.value })}
@@ -110,7 +265,6 @@ export default function SettingsPage() {
                 </select>
               </SettingRow>
 
-              {/* Rate */}
               <SettingRow
                 label={`Speech rate: ${settings.rate.toFixed(2)}×`}
                 hint="How fast Xentra speaks"
@@ -126,7 +280,6 @@ export default function SettingsPage() {
                 />
               </SettingRow>
 
-              {/* Pitch */}
               <SettingRow
                 label={`Pitch: ${settings.pitch.toFixed(2)}`}
                 hint="Higher = higher-pitched voice"
@@ -142,7 +295,6 @@ export default function SettingsPage() {
                 />
               </SettingRow>
 
-              {/* Volume */}
               <SettingRow
                 label={`Volume: ${(settings.volume * 100).toFixed(0)}%`}
                 hint="How loud Xentra speaks"
@@ -158,7 +310,6 @@ export default function SettingsPage() {
                 />
               </SettingRow>
 
-              {/* Auto-speak */}
               <SettingRow
                 label="Auto-speak replies"
                 hint="Speak every AI response automatically"
@@ -177,7 +328,6 @@ export default function SettingsPage() {
                 </button>
               </SettingRow>
 
-              {/* Wake word */}
               <SettingRow
                 label="Wake word: Hey Xentra"
                 hint="Say 'Hey Xentra or Hey Zen' to activate the mic (Chrome/Edge only)"
@@ -214,7 +364,6 @@ export default function SettingsPage() {
                 </div>
               </SettingRow>
 
-              {/* Test voice */}
               <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 space-y-3">
                 <div className="text-sm text-slate-200">Test your voice</div>
                 <div className="text-xs text-slate-500">
@@ -284,6 +433,11 @@ export default function SettingsPage() {
           </div>
         </Section>
       </div>
+
+      {/* Avatar picker modal */}
+      {showAvatarPicker && (
+        <AvatarPicker onClose={() => setShowAvatarPicker(false)} />
+      )}
     </div>
   );
 }
@@ -291,7 +445,7 @@ export default function SettingsPage() {
 // ═══════════════════════════════════════════════════════════════
 // TEST WAKE WORD HELPER
 // ═══════════════════════════════════════════════════════════════
-import { useRef, useState } from "react";
+import { useRef } from "react";
 
 function TestWakeWordHelper() {
   const [listening, setListening] = useState(false);

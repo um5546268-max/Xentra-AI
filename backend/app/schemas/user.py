@@ -26,6 +26,10 @@ class UserRead(BaseModel):
     emergency_stop: bool = False
     created_at: datetime
 
+    avatar_url: str | None = None
+    google_id: str | None = None
+    display_name: str | None = None
+
     onboarding_completed: bool = False
     class_level: str | None = None
     learning_goal: str | None = None

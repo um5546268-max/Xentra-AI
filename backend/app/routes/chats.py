@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, or_, and_, desc
+from sqlalchemy import select, or_, and_, desc, func
 from sqlalchemy.orm import Session
 from fastapi import UploadFile, File, Form
+from pydantic import BaseModel
+
 from app.core import r2 as r2_storage
 from app.schemas.connect_chat import UploadResponse
-from pydantic import BaseModel
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -88,6 +89,7 @@ def _message_to_public(msg: ChatMessage, db: Session) -> MessagePublic:
         reactions=msg.reactions,
         edited_at=msg.edited_at,
         deleted_at=msg.deleted_at,
+        pinned_at=msg.pinned_at,      # ✅ ADDED
         created_at=msg.created_at,
         sender_name=sender.full_name if sender else None,
         sender_avatar=sender.avatar_url if sender else None,
@@ -107,7 +109,7 @@ def _require_membership(chat_id: uuid.UUID, user_id: uuid.UUID, db: Session) -> 
 
 
 # ─────────────────────────────────────────────────────────
-# Create a direct chat
+# Create a chat (direct or group)
 # ─────────────────────────────────────────────────────────
 @router.post("", response_model=ChatPublic, status_code=201)
 def create_chat(
@@ -115,7 +117,6 @@ def create_chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Direct chat
     if isinstance(payload, ChatCreateDirect):
         other = db.get(User, payload.other_user_id)
         if not other:
@@ -123,7 +124,6 @@ def create_chat(
         if other.id == current_user.id:
             raise HTTPException(400, "Can't chat with yourself")
 
-        # Check if a direct chat already exists between these two
         my_chats = db.execute(
             select(ChatMember.chat_id).where(ChatMember.user_id == current_user.id)
         ).scalars().all()
@@ -137,11 +137,7 @@ def create_chat(
             if c and c.type == "direct":
                 return _chat_to_public(c, db)
 
-        # Create new direct chat
-        chat = Chat(
-            type="direct",
-            created_by=current_user.id,
-        )
+        chat = Chat(type="direct", created_by=current_user.id)
         db.add(chat)
         db.flush()
 
@@ -151,7 +147,6 @@ def create_chat(
         db.refresh(chat)
         return _chat_to_public(chat, db)
 
-    # Group chat
     chat = Chat(
         type="group",
         name=payload.name,
@@ -163,10 +158,8 @@ def create_chat(
     db.add(chat)
     db.flush()
 
-    # Creator is admin
     db.add(ChatMember(chat_id=chat.id, user_id=current_user.id, role="admin"))
 
-    # Add members (dedup + skip creator)
     seen = {current_user.id}
     for uid in payload.member_ids:
         if uid in seen:
@@ -245,7 +238,6 @@ def list_messages(
     q = q.order_by(desc(ChatMessage.created_at)).limit(limit)
 
     messages = db.execute(q).scalars().all()
-    # return oldest-first for rendering
     return [_message_to_public(m, db) for m in reversed(messages)]
 
 
@@ -272,7 +264,6 @@ def send_message(
     )
     db.add(msg)
 
-    # Update chat preview
     chat = db.get(Chat, chat_id)
     if chat:
         chat.last_message_at = datetime.now(timezone.utc)
@@ -328,7 +319,7 @@ def delete_message(
         raise HTTPException(403, "Can only delete your own messages")
 
     msg.deleted_at = datetime.now(timezone.utc)
-    msg.content = ""  # clear content
+    msg.content = ""
     db.add(msg)
     db.commit()
     return None
@@ -370,8 +361,9 @@ def toggle_reaction(
     db.refresh(msg)
     return _message_to_public(msg, db)
 
+
 # ─────────────────────────────────────────────────────────
-# Mark chat as read (updates last_read_at for current user)
+# Mark chat as read
 # ─────────────────────────────────────────────────────────
 @router.post("/{chat_id}/read", status_code=204)
 def mark_as_read(
@@ -387,12 +379,9 @@ def mark_as_read(
 
 
 # ─────────────────────────────────────────────────────────
-# Typing indicator (in-memory, per-process)
+# Typing indicator
 # ─────────────────────────────────────────────────────────
-# NOTE: This is a simple in-memory map. For multi-worker production
-# you'd use Redis. For a single-worker setup, this works perfectly.
 _typing_state: dict[str, dict[str, datetime]] = {}
-# structure: { chat_id: { user_id: last_ping_iso } }
 TYPING_TTL_SECONDS = 5
 
 
@@ -433,7 +422,6 @@ def get_typing(
 
     typing_users: list[uuid.UUID] = []
     if chat_key in _typing_state:
-        # Purge stale entries
         stale = []
         for uid_str, ts in _typing_state[chat_key].items():
             if ts.timestamp() < cutoff:
@@ -441,7 +429,6 @@ def get_typing(
         for uid_str in stale:
             _typing_state[chat_key].pop(uid_str, None)
 
-        # Return everyone except the current user
         for uid_str in _typing_state[chat_key].keys():
             if uid_str != str(current_user.id):
                 try:
@@ -463,13 +450,6 @@ def unread_summary(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Return unread counts per chat for the current user.
-    An unread message is one that:
-      - was created after the user's last_read_at (or all, if null)
-      - wasn't sent by the current user
-      - hasn't been deleted
-    """
     my_memberships = db.execute(
         select(ChatMember).where(ChatMember.user_id == current_user.id)
     ).scalars().all()
@@ -484,10 +464,9 @@ def unread_summary(
         if m.last_read_at is not None:
             q = q.where(ChatMessage.created_at > m.last_read_at)
         count = db.execute(q).scalars().all()
-        results.append(
-            UnreadCount(chat_id=m.chat_id, unread=len(count))
-        )
+        results.append(UnreadCount(chat_id=m.chat_id, unread=len(count)))
     return results
+
 
 # ─────────────────────────────────────────────────────────
 # Upload constants
@@ -504,7 +483,6 @@ AUDIO_MIME_PREFIX = "audio/"
 
 
 def _detect_message_type(content_type: str | None, filename: str) -> str:
-    """Classify an upload into our message types."""
     ct = (content_type or "").lower()
     fn = filename.lower()
     if ct.startswith(IMAGE_MIME_PREFIX):
@@ -513,7 +491,6 @@ def _detect_message_type(content_type: str | None, filename: str) -> str:
         return "video"
     if ct.startswith(AUDIO_MIME_PREFIX):
         return "voice"
-    # extension fallback
     if fn.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")):
         return "image"
     if fn.endswith((".mp4", ".webm", ".mov", ".mkv", ".avi")):
@@ -521,6 +498,7 @@ def _detect_message_type(content_type: str | None, filename: str) -> str:
     if fn.endswith((".mp3", ".wav", ".ogg", ".m4a", ".webm")):
         return "voice"
     return "file"
+
 
 # ─────────────────────────────────────────────────────────
 # Upload a file/image/voice/video to a chat
@@ -532,28 +510,22 @@ async def upload_to_chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Verify membership
     _require_membership(chat_id, current_user.id, db)
 
-    # Detect message type
     msg_type = _detect_message_type(file.content_type, file.filename or "")
 
-    # Check size limit
     max_mb = MAX_SIZES_MB.get(msg_type, 25)
     max_bytes = max_mb * 1024 * 1024
 
-    # Read file into memory (sized check)
     contents = await file.read()
     size = len(contents)
     if size > max_bytes:
         raise HTTPException(
-            413,
-            f"File too large. Max for {msg_type}: {max_mb} MB",
+            413, f"File too large. Max for {msg_type}: {max_mb} MB"
         )
     if size == 0:
         raise HTTPException(400, "Empty file")
 
-    # Upload to R2
     from io import BytesIO
     try:
         result = r2_storage.upload_file(
@@ -565,7 +537,6 @@ async def upload_to_chat(
     except Exception as e:
         raise HTTPException(500, f"Upload failed: {e}")
 
-    # Build meta for the message
     meta = {
         "name": file.filename,
         "size": size,
@@ -576,7 +547,6 @@ async def upload_to_chat(
     if msg_type == "image":
         meta["caption"] = None
 
-    # Create the chat message
     msg = ChatMessage(
         chat_id=chat_id,
         sender_id=current_user.id,
@@ -587,7 +557,6 @@ async def upload_to_chat(
     )
     db.add(msg)
 
-    # Update chat preview
     chat = db.get(Chat, chat_id)
     if chat:
         chat.last_message_at = datetime.now(timezone.utc)
@@ -606,7 +575,8 @@ async def upload_to_chat(
         message_id=msg.id,
     )
 
-    # ─────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────
 # Group member management
 # ─────────────────────────────────────────────────────────
 class AddMemberRequest(BaseModel):
@@ -712,3 +682,422 @@ def update_member_role(
 
     chat = db.get(Chat, chat_id)
     return _chat_to_public(chat, db)
+
+
+# ─────────────────────────────────────────────────────────
+# Discover public groups
+# ─────────────────────────────────────────────────────────
+@router.get("/discover/public", response_model=list[ChatPublic])
+def discover_public_groups(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    search: str | None = None,
+    category: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    my_chat_ids = db.execute(
+        select(ChatMember.chat_id).where(ChatMember.user_id == current_user.id)
+    ).scalars().all()
+
+    q = select(Chat).where(Chat.is_public == True, Chat.type == "group")
+
+    if my_chat_ids:
+        q = q.where(~Chat.id.in_(my_chat_ids))
+
+    if search:
+        like = f"%{search.lower()}%"
+        q = q.where(
+            or_(
+                func.lower(Chat.name).like(like),
+                func.lower(Chat.description).like(like),
+            )
+        )
+    if category:
+        q = q.where(Chat.category == category)
+
+    q = q.order_by(desc(Chat.created_at)).limit(limit).offset(offset)
+    chats = db.execute(q).scalars().all()
+
+    return [_chat_to_public(c, db) for c in chats]
+
+
+# ─────────────────────────────────────────────────────────
+# Join a public group
+# ─────────────────────────────────────────────────────────
+@router.post("/{chat_id}/join", response_model=ChatPublic)
+def join_public_group(
+    chat_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    chat = db.get(Chat, chat_id)
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+    if chat.type != "group":
+        raise HTTPException(400, "Can only join groups")
+    if not chat.is_public:
+        raise HTTPException(403, "This group is private")
+
+    existing = db.execute(
+        select(ChatMember).where(
+            ChatMember.chat_id == chat_id,
+            ChatMember.user_id == current_user.id,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        return _chat_to_public(chat, db)
+
+    db.add(ChatMember(chat_id=chat_id, user_id=current_user.id, role="member"))
+    db.commit()
+    db.refresh(chat)
+    return _chat_to_public(chat, db)
+
+
+# ─────────────────────────────────────────────────────────
+# Ask Xentra — AI assistance inside a chat (PRIVATE)
+# ─────────────────────────────────────────────────────────
+from app.services.ai import chat_completion
+
+
+class AskXentraRequest(BaseModel):
+    action: str  # "summarize" | "explain" | "translate" | "quiz" | "action_items" | "custom" | "share"
+    message_id: uuid.UUID | None = None
+    prompt: str | None = None
+    language: str | None = "English"
+    content: str | None = None  # used only for "share"
+
+
+class AskXentraPrivateResponse(BaseModel):
+    text: str
+    action: str
+
+
+PROMPTS = {
+    "summarize": (
+        "You are Xentra, an AI assistant inside a group chat. "
+        "Summarize the following conversation in 3-5 clear bullet points. "
+        "Focus on decisions, questions, and key info. "
+        "Keep it concise."
+    ),
+    "explain": (
+        "You are Xentra, an AI assistant. "
+        "Explain the following message clearly and briefly. "
+        "Add helpful context if relevant."
+    ),
+    "translate": (
+        "You are Xentra, an AI assistant. "
+        "Translate the following messages into {language}. "
+        "Only output the translation, no commentary."
+    ),
+    "quiz": (
+        "You are Xentra, an AI assistant. "
+        "Create 3 multiple-choice quiz questions based on the following conversation. "
+        "Format: Q1: ... A) ... B) ... C) ... D) ... Answer: X. "
+        "Make them educational and clear."
+    ),
+    "action_items": (
+        "You are Xentra, an AI assistant. "
+        "Extract all actionable items (tasks, to-dos, follow-ups) from the following conversation. "
+        "Format as a numbered list. If none found, say 'No action items found.'"
+    ),
+}
+
+
+def _build_prompt(payload: AskXentraRequest, recent: list[ChatMessage], db: Session) -> str:
+    def fmt(m: ChatMessage) -> str:
+        sender = db.get(User, m.sender_id)
+        name = sender.full_name or sender.email if sender else "User"
+        return f"{name}: {m.content}"
+
+    context = "\n".join(fmt(m) for m in recent)
+
+    if payload.action == "explain":
+        if not payload.message_id:
+            raise HTTPException(400, "message_id required for 'explain'")
+        target = next((m for m in recent if m.id == payload.message_id), None)
+        if not target:
+            raise HTTPException(404, "Message not found in recent chat")
+        return PROMPTS["explain"] + "\n\nMessage to explain:\n" + fmt(target)
+
+    if payload.action == "translate":
+        lang = payload.language or "English"
+        return (
+            PROMPTS["translate"].format(language=lang)
+            + "\n\nMessages to translate:\n"
+            + context
+        )
+
+    if payload.action == "custom":
+        if not payload.prompt or not payload.prompt.strip():
+            raise HTTPException(400, "prompt required for 'custom'")
+        return (
+            "You are Xentra, an AI assistant inside a group chat. "
+            "Answer the user's question about this conversation.\n\n"
+            f"Conversation:\n{context}\n\n"
+            f"User asks: {payload.prompt.strip()}"
+        )
+
+    if payload.action in PROMPTS:
+        return PROMPTS[payload.action] + "\n\nConversation:\n" + context
+
+    raise HTTPException(400, f"Unknown action: {payload.action}")
+
+
+# ─────────────────────────────────────────────────────────
+# PRIVATE endpoint — returns AI text, does NOT save
+# ─────────────────────────────────────────────────────────
+@router.post("/{chat_id}/ask-xentra/private", response_model=AskXentraPrivateResponse)
+def ask_xentra_private(
+    chat_id: uuid.UUID,
+    payload: AskXentraRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_membership(chat_id, current_user.id, db)
+
+    recent = db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.chat_id == chat_id, ChatMessage.deleted_at.is_(None))
+        .order_by(desc(ChatMessage.created_at))
+        .limit(20)
+    ).scalars().all()
+    recent = list(reversed(recent))
+
+    if not recent and payload.action != "custom":
+        raise HTTPException(400, "No messages in this chat yet")
+
+    user_prompt = _build_prompt(payload, recent, db)
+
+    try:
+        result = chat_completion(
+            messages=[{"role": "user", "content": user_prompt}],
+            max_tokens=1024,
+            temperature=0.5,
+        )
+    except Exception as e:
+        raise HTTPException(502, f"AI provider error: {e}")
+
+    ai_text = (result.get("content") or "").strip()
+    if not ai_text:
+        raise HTTPException(502, "AI returned empty response")
+
+    return AskXentraPrivateResponse(text=ai_text, action=payload.action)
+
+
+# ─────────────────────────────────────────────────────────
+# PUBLIC endpoint — saves AI message in chat + handles "share" mode
+# ─────────────────────────────────────────────────────────
+@router.post("/{chat_id}/ask-xentra", response_model=MessagePublic)
+def ask_xentra(
+    chat_id: uuid.UUID,
+    payload: AskXentraRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_membership(chat_id, current_user.id, db)
+
+    # ✅ SHARE MODE — user chose to share a private AI response
+    if payload.action == "share":
+        if not payload.content or not payload.content.strip():
+            raise HTTPException(400, "content required for 'share'")
+        msg = ChatMessage(
+            chat_id=chat_id,
+            sender_id=current_user.id,
+            type="text",
+            content=payload.content.strip(),
+            meta={
+                "is_ai": True,
+                "action": "shared",
+                "requested_by": str(current_user.id),
+            },
+            reactions={},
+        )
+        db.add(msg)
+        chat = db.get(Chat, chat_id)
+        if chat:
+            chat.last_message_at = datetime.now(timezone.utc)
+            chat.last_message_preview = f"🤖 Xentra: {payload.content[:100]}"
+        db.commit()
+        db.refresh(msg)
+        return _message_to_public(msg, db)
+
+    # ─── Normal public AI response ───
+    recent = db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.chat_id == chat_id, ChatMessage.deleted_at.is_(None))
+        .order_by(desc(ChatMessage.created_at))
+        .limit(20)
+    ).scalars().all()
+    recent = list(reversed(recent))
+
+    if not recent and payload.action != "custom":
+        raise HTTPException(400, "No messages in this chat yet")
+
+    user_prompt = _build_prompt(payload, recent, db)
+
+    try:
+        result = chat_completion(
+            messages=[{"role": "user", "content": user_prompt}],
+            max_tokens=1024,
+            temperature=0.5,
+        )
+    except Exception as e:
+        raise HTTPException(502, f"AI provider error: {e}")
+
+    ai_text = (result.get("content") or "").strip()
+    if not ai_text:
+        raise HTTPException(502, "AI returned empty response")
+
+    msg = ChatMessage(
+        chat_id=chat_id,
+        sender_id=current_user.id,
+        type="text",
+        content=ai_text,
+        meta={
+            "is_ai": True,
+            "action": payload.action,
+            "requested_by": str(current_user.id),
+        },
+        reactions={},
+    )
+    db.add(msg)
+
+    chat = db.get(Chat, chat_id)
+    if chat:
+        chat.last_message_at = datetime.now(timezone.utc)
+        chat.last_message_preview = f"🤖 Xentra: {ai_text[:100]}"
+
+    db.commit()
+    db.refresh(msg)
+
+    return _message_to_public(msg, db)
+
+# ─────────────────────────────────────────────────────────
+# Search messages in a chat
+# ─────────────────────────────────────────────────────────
+@router.get("/{chat_id}/search")
+def search_messages(
+    chat_id: uuid.UUID,
+    q: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = 50,
+):
+    """
+    Search messages in a chat by text content.
+    Case-insensitive substring match.
+    """
+    _require_membership(chat_id, current_user.id, db)
+
+    query = (q or "").strip()
+    if not query:
+        return []
+
+    like = f"%{query.lower()}%"
+    rows = db.execute(
+        select(ChatMessage)
+        .where(
+            ChatMessage.chat_id == chat_id,
+            ChatMessage.deleted_at.is_(None),
+            func.lower(ChatMessage.content).like(like),
+        )
+        .order_by(desc(ChatMessage.created_at))
+        .limit(limit)
+    ).scalars().all()
+
+    return [_message_to_public(m, db) for m in rows]
+
+# ─────────────────────────────────────────────────────────
+# Pinned messages
+# ─────────────────────────────────────────────────────────
+@router.post("/{chat_id}/messages/{message_id}/pin", response_model=MessagePublic)
+def pin_message(
+    chat_id: uuid.UUID,
+    message_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_membership(chat_id, current_user.id, db)
+    msg = db.get(ChatMessage, message_id)
+    if not msg or msg.chat_id != chat_id:
+        raise HTTPException(404, "Message not found")
+    if msg.deleted_at:
+        raise HTTPException(400, "Can't pin a deleted message")
+
+    msg.pinned_at = datetime.now(timezone.utc)
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return _message_to_public(msg, db)
+
+
+@router.delete("/{chat_id}/messages/{message_id}/pin", response_model=MessagePublic)
+def unpin_message(
+    chat_id: uuid.UUID,
+    message_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_membership(chat_id, current_user.id, db)
+    msg = db.get(ChatMessage, message_id)
+    if not msg or msg.chat_id != chat_id:
+        raise HTTPException(404, "Message not found")
+
+    msg.pinned_at = None
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return _message_to_public(msg, db)
+
+
+@router.get("/{chat_id}/pinned", response_model=list[MessagePublic])
+def list_pinned(
+    chat_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List all pinned messages in a chat (newest pin first)."""
+    _require_membership(chat_id, current_user.id, db)
+
+    rows = db.execute(
+        select(ChatMessage)
+        .where(
+            ChatMessage.chat_id == chat_id,
+            ChatMessage.pinned_at.isnot(None),
+            ChatMessage.deleted_at.is_(None),
+        )
+        .order_by(desc(ChatMessage.pinned_at))
+    ).scalars().all()
+
+    return [_message_to_public(m, db) for m in rows]
+
+    # ─────────────────────────────────────────────────────────
+# Shared media (images, files, videos, voice)
+# ─────────────────────────────────────────────────────────
+@router.get("/{chat_id}/media", response_model=list[MessagePublic])
+def list_media(
+    chat_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    type: str | None = None,   # "image" | "file" | "video" | "voice" | None (all)
+    limit: int = 100,
+):
+    """
+    List media messages (images/files/videos/voice) in a chat.
+    Optionally filter by type.
+    """
+    _require_membership(chat_id, current_user.id, db)
+
+    q = select(ChatMessage).where(
+        ChatMessage.chat_id == chat_id,
+        ChatMessage.deleted_at.is_(None),
+    )
+    if type in ("image", "file", "video", "voice"):
+        q = q.where(ChatMessage.type == type)
+    else:
+        q = q.where(ChatMessage.type.in_(["image", "file", "video", "voice"]))
+
+    q = q.order_by(desc(ChatMessage.created_at)).limit(limit)
+    rows = db.execute(q).scalars().all()
+    return [_message_to_public(m, db) for m in rows]
