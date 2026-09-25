@@ -110,10 +110,9 @@ export default function ChatListPanel({
   const directChats = filteredChats.filter((c) => c.type === "direct");
   const groupChats = filteredChats.filter((c) => c.type === "group");
 
-  // ✅ Discover panel takes over the whole list area (still keeps the outer container layout)
+  // ✅ Discover panel takes over the whole list area
   return (
     <div className="flex flex-col h-full">
-      {/* ── If Discover is active, render the full DiscoverPanel instead of the normal UI ── */}
       {tab === "discover" ? (
         <DiscoverPanel
           onBack={() => setTab("chats")}
@@ -126,32 +125,32 @@ export default function ChatListPanel({
       ) : (
         <>
           {/* Header */}
-                <div className="p-4 border-b border-slate-800">
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <h2 className="text-lg font-bold text-white">Connect</h2>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setShowAddFriend(true)}
-              className="flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-[10px] font-medium text-violet-300 hover:bg-violet-500/20 transition"
-              title="Add Friend"
-            >
-              <UserPlus className="w-3 h-3" />
-              Add Friend
-            </button>
-            <button
-              onClick={() => setShowCreateGroup(true)}
-              className="flex items-center gap-1 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-medium text-cyan-300 hover:bg-cyan-500/20 transition"
-              title="New Group"
-            >
-              <Users className="w-3 h-3" />
-              New Group
-            </button>
+          <div className="p-4 border-b border-slate-800">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <h2 className="text-lg font-bold text-white">Connect</h2>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowAddFriend(true)}
+                  className="flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-[10px] font-medium text-violet-300 hover:bg-violet-500/20 transition"
+                  title="Add Friend"
+                >
+                  <UserPlus className="w-3 h-3" />
+                  Add Friend
+                </button>
+                <button
+                  onClick={() => setShowCreateGroup(true)}
+                  className="flex items-center gap-1 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-medium text-cyan-300 hover:bg-cyan-500/20 transition"
+                  title="New Group"
+                >
+                  <Users className="w-3 h-3" />
+                  New Group
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              Chat with friends, classmates and Xentra users
+            </p>
           </div>
-        </div>
-        <p className="text-xs text-slate-500">
-          Chat with friends, classmates and Xentra users
-        </p>
-      </div>
 
           {/* Search */}
           <div className="p-3 border-b border-slate-800">
@@ -171,77 +170,81 @@ export default function ChatListPanel({
             <TabButton active={tab === "chats"} onClick={() => setTab("chats")} label="Chats" count={directChats.length} />
             <TabButton active={tab === "friends"} onClick={() => setTab("friends")} label="Friends" count={friends.length} />
             <TabButton active={tab === "groups"} onClick={() => setTab("groups")} label="Groups" count={groupChats.length} />
-            <TabButton active={tab === "discover"} onClick={() => setTab("discover")} label="Discover" count={0} />
+            <TabButton
+              active={(tab as Tab) === "discover"}
+              onClick={() => setTab("discover")}
+              label="Discover"
+              count={0}
+            />
             <TabButton active={tab === "requests"} onClick={() => setTab("requests")} label="Requests" count={requests.length} />
           </div>
 
-                {/* Friends row */}
-      <div className="border-b border-slate-800">
-        <div className="flex items-center justify-between px-4 pt-3 pb-2">
-          <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-            Friends
-          </h3>
-        </div>
+          {/* Friends row */}
+          <div className="border-b border-slate-800">
+            <div className="flex items-center justify-between px-4 pt-3 pb-2">
+              <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                Friends
+              </h3>
+            </div>
 
-        {friends.length === 0 ? (
-          <div className="px-4 pb-3 text-[11px] text-slate-600">
-            No friends yet — click Add Friend
-          </div>
-        ) : (
-          <div className="flex gap-3 overflow-x-auto px-4 pb-3 scrollbar-thin">
-            {friends.slice(0, 12).map((f) => {
-              const name = f.full_name || f.email || "Friend";
-              const firstName = name.split(" ")[0];
-              const initial = name[0].toUpperCase();
-              const color = colorFor(f.id);
+            {friends.length === 0 ? (
+              <div className="px-4 pb-3 text-[11px] text-slate-600">
+                No friends yet — click Add Friend
+              </div>
+            ) : (
+              <div className="flex gap-3 overflow-x-auto px-4 pb-3 scrollbar-thin">
+                {friends.slice(0, 12).map((f) => {
+                  const name = f.full_name || f.email || "Friend";
+                  const firstName = name.split(" ")[0];
+                  const initial = name[0].toUpperCase();
+                  const color = colorFor(f.id);
 
-              return (
-                <button
-                  key={f.id}
-                  onClick={async () => {
-                    try {
-                      const { createDirectChat } = await import("@/lib/chat-api");
-                      const chat = await createDirectChat(f.user_id);
-                      await refresh();
-                      onSelectChat(chat.id);
-                    } catch (e) {
-                      console.error("Failed to open chat:", e);
-                    }
-                  }}
-                  className="flex flex-col items-center gap-1.5 shrink-0 group"
-                  title={name}
-                >
-                  <div className="relative">
-                    <div
-                      className={`w-12 h-12 rounded-full bg-gradient-to-br ${color} flex items-center justify-center text-white font-semibold text-sm ring-2 ring-slate-900 group-hover:ring-violet-500/50 transition`}
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={async () => {
+                        try {
+                          const { createDirectChat } = await import("@/lib/chat-api");
+                          const chat = await createDirectChat(f.user_id);
+                          await refresh();
+                          onSelectChat(chat.id);
+                        } catch (e) {
+                          console.error("Failed to open chat:", e);
+                        }
+                      }}
+                      className="flex flex-col items-center gap-1.5 shrink-0 group"
+                      title={name}
                     >
-                      {initial}
-                    </div>
-                    {/* online dot */}
-                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950" />
-                  </div>
-                  <span className="text-[10px] text-slate-400 max-w-[56px] truncate group-hover:text-slate-200 transition">
-                    {firstName}
-                  </span>
-                </button>
-              );
-            })}
+                      <div className="relative">
+                        <div
+                          className={`w-12 h-12 rounded-full bg-gradient-to-br ${color} flex items-center justify-center text-white font-semibold text-sm ring-2 ring-slate-900 group-hover:ring-violet-500/50 transition`}
+                        >
+                          {initial}
+                        </div>
+                        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950" />
+                      </div>
+                      <span className="text-[10px] text-slate-400 max-w-[56px] truncate group-hover:text-slate-200 transition">
+                        {firstName}
+                      </span>
+                    </button>
+                  );
+                })}
 
-            {friends.length > 12 && (
-              <button
-                onClick={() => setTab("friends")}
-                className="flex flex-col items-center gap-1.5 shrink-0 group"
-                title="View all friends"
-              >
-                <div className="w-12 h-12 rounded-full bg-slate-900 border-2 border-dashed border-slate-700 flex items-center justify-center text-slate-500 text-xs font-medium group-hover:border-violet-500/50 group-hover:text-violet-300 transition">
-                  +{friends.length - 12}
-                </div>
-                <span className="text-[10px] text-slate-500">more</span>
-              </button>
+                {friends.length > 12 && (
+                  <button
+                    onClick={() => setTab("friends")}
+                    className="flex flex-col items-center gap-1.5 shrink-0 group"
+                    title="View all friends"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-slate-900 border-2 border-dashed border-slate-700 flex items-center justify-center text-slate-500 text-xs font-medium group-hover:border-violet-500/50 group-hover:text-violet-300 transition">
+                      +{friends.length - 12}
+                    </div>
+                    <span className="text-[10px] text-slate-500">more</span>
+                  </button>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-1">
@@ -351,7 +354,18 @@ export default function ChatListPanel({
   );
 }
 
-function TabButton({ active, onClick, label, count }: any) {
+// ── TabButton (properly typed) ──
+function TabButton({
+  active,
+  onClick,
+  label,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+}) {
   return (
     <button
       onClick={onClick}
@@ -486,8 +500,16 @@ function FriendRow({
   );
 }
 
-function RequestRow({ request, onAccept, onDecline }: any) {
-  const name = request.other_user_name || request.other_user_email || "Unknown";
+function RequestRow({
+  request,
+  onAccept,
+  onDecline,
+}: {
+  request: FriendRequest;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  const name = (request as any).other_user_name || (request as any).other_user_email || "Unknown";
   const initial = (name[0] || "?").toUpperCase();
   const color = colorFor(request.id);
 
