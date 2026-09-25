@@ -5,7 +5,7 @@ import {
   Video, Phone, Search, MoreVertical, Sparkles, Send,
   Paperclip, Smile, Mic, Image as ImageIcon, Plus, FileText,
   Loader2, Reply as ReplyIcon, Share2, AtSign, UserPlus, Users,
-  Languages, ChevronLeft,
+  Languages, ChevronLeft, Camera,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useGuestGuard } from "@/lib/useGuestGuard";
@@ -27,6 +27,10 @@ import PinnedBar from "./PinnedBar";
 import ReadReceipts from "./ReadReceipts";
 import ForwardModal from "./ForwardModal";
 import TranslateModal from "./TranslateModal";
+import EmojiPicker from "./EmojiPicker";
+import ChatHeaderMenu, { HeaderMenuAction } from "./ChatHeaderMenu";
+import CallModal from "./CallModal";
+import { loadConnectSettings } from "./ConnectSettings";
 import {
   showBrowserNotification,
   requestBrowserNotifPermission,
@@ -34,9 +38,7 @@ import {
   getBrowserNotifPrefs,
   setTabTitleUnread,
 } from "@/lib/browser-notifications";
-import ChatHeaderMenu, { HeaderMenuAction } from "./ChatHeaderMenu";
-import CallModal from "./CallModal";
-import EmojiPicker from "./EmojiPicker";
+import { playSendPop, playReceiveChime, getSoundPrefs } from "@/lib/sounds";
 
 const MESSAGES_POLL_MS = 3000;
 const TYPING_POLL_MS = 2000;
@@ -47,6 +49,16 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
   const isGuest = useAuth((state) => state.isGuest);
   const loadFromStorage = useAuth((state) => state.loadFromStorage);
   const { requireAuth } = useGuestGuard();
+
+  // Wallpaper re-render trigger
+  const [wallpaperTick, setWallpaperTick] = useState(0);
+
+  useEffect(() => {
+    const handler = () => setWallpaperTick((t) => t + 1);
+    window.addEventListener("xentra:connect-settings-changed", handler);
+    return () =>
+      window.removeEventListener("xentra:connect-settings-changed", handler);
+  }, []);
 
   useEffect(() => {
     if (!currentUser) loadFromStorage();
@@ -190,6 +202,14 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
           const isHidden =
             typeof document !== "undefined" &&
             document.visibilityState === "hidden";
+
+          // ✅ Play chime independently of notification state
+          const soundPrefs = getSoundPrefs();
+          if (soundPrefs.enabled && soundPrefs.receiveChime) {
+            playReceiveChime();
+          }
+
+          // Fire browser notification if enabled
           const prefs = getBrowserNotifPrefs();
           const enabled =
             prefs.enabled && getBrowserNotifPermission() === "granted";
@@ -292,6 +312,9 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
         setMentionStart(null);
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         sendTyping(chatId, false).catch(() => {});
+
+        // ✅ Play send sound AFTER success
+        playSendPop();
       } catch (err) {
         console.error("Send failed:", err);
       } finally {
@@ -516,7 +539,6 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
     }
   };
 
-  // ✅ Header three-dots menu handler
   const handleHeaderMenuAction = async (action: HeaderMenuAction) => {
     setShowHeaderMenu(false);
     switch (action) {
@@ -535,7 +557,6 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
         setIsMuted((m) => !m);
         break;
       case "chat_info":
-        // Right panel already shows this info — no-op
         break;
       case "add_friend":
       case "new_group":
@@ -688,7 +709,14 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
       <div
         className="flex-1 overflow-y-auto p-6 space-y-4 bg-cover bg-center bg-no-repeat"
         style={{
-          backgroundImage: "url('/chat-wallpaper.svg')",
+          backgroundImage: (() => {
+            const s = loadConnectSettings();
+            if (s.customWallpaperUrl) return `url('${s.customWallpaperUrl}')`;
+            if (s.wallpaper === "none") return "none";
+            if (s.wallpaper === "minimal")
+              return "linear-gradient(135deg, #0a0a1f 0%, #0d0827 100%)";
+            return "url('/chat-wallpaper.svg')";
+          })(),
           backgroundAttachment: "local",
         }}
       >
@@ -815,6 +843,21 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
             icon={<ImageIcon className="w-4 h-4" />}
             label="Image"
             onClick={() => imageInputRef.current?.click()}
+          />
+
+          {/* ✅ Screenshot button */}
+          <IconButton
+            icon={<Camera className="w-4 h-4" />}
+            label="Screenshot (paste with Ctrl+V)"
+            onClick={() => {
+              alert(
+                "Take a screenshot with:\n\n" +
+                "• Windows: Win + Shift + S\n" +
+                "• Mac: Cmd + Shift + 4\n" +
+                "• Linux: Print Screen\n\n" +
+                "Then click here and press Ctrl+V to paste it into the chat."
+              );
+            }}
           />
 
           <input
@@ -1061,7 +1104,7 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
         />
       )}
 
-            {/* Emoji picker (composer) */}
+      {/* Emoji picker (composer) */}
       {showEmojiPicker && (
         <div
           style={{
@@ -1081,7 +1124,7 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
         </div>
       )}
 
-      {/* ✅ Header three-dots menu */}
+      {/* Header three-dots menu */}
       {showHeaderMenu && (
         <ChatHeaderMenu
           chatType={chat.type === "group" ? "group" : "direct"}
@@ -1092,7 +1135,7 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
         />
       )}
 
-      {/* ✅ Call modal */}
+      {/* Call modal */}
       {callModal && (
         <CallModal
           callType={callModal}

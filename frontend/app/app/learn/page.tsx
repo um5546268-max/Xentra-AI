@@ -1,10 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   BookOpen, Sparkles, Loader2, AlertCircle, Trash2, ChevronRight,
-  GraduationCap, FileText, Upload, Music,
+  FileText, Upload, Music,
 } from "lucide-react";
 import {
   LearnSession, StudyStats,
@@ -18,7 +19,6 @@ import { ImportRow } from "@/components/home/ImportRow";
 import { SubjectGrid } from "@/components/home/SubjectGrid";
 import { RightRail } from "@/components/home/RightRail";
 import { BottomRow } from "@/components/home/BottomRow";
-import { useSearchParams } from "next/navigation";
 
 type Mode = "topic" | "text" | "upload";
 type SubjectFilter = "all" | "languages" | "school" | "programming" | "science" | "personal";
@@ -36,6 +36,8 @@ function LearnPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // ✅ FILTER: derived directly from URL — no state, no sync, no bugs
+  const filter = (searchParams.get("subject") || "all") as SubjectFilter;
 
   // ── Generation state ──
   const [mode, setMode] = useState<Mode>("topic");
@@ -46,10 +48,6 @@ function LearnPageInner() {
   const [numConcepts, setNumConcepts] = useState(8);
   const [subject, setSubject] = useState<SubjectFilter>("all");
 
-  // ← Now this can safely use searchParams
-  const initialSubject = (searchParams.get("subject") || "all") as SubjectFilter;
-  const [filter, setFilter] = useState<SubjectFilter>(initialSubject);
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,29 +57,32 @@ function LearnPageInner() {
   const [stats, setStats] = useState<StudyStats | null>(null);
   const [gamStats, setGamStats] = useState<GamificationStats | null>(null);
 
-  const loadAll = async () => {
-    try {
-      const [s, st] = await Promise.all([
-        listLearnSessions(filter === "all" ? undefined : filter),
-        getLearnStats(),
-      ]);
-      setSessions(s);
-      setStats(st);
-    } catch {}
-  };
-
+  // Reload sessions when filter changes
   useEffect(() => {
-    loadAll();
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [s, st] = await Promise.all([
+          listLearnSessions(filter === "all" ? undefined : filter),
+          getLearnStats(),
+        ]);
+        if (!cancelled) {
+          setSessions(s);
+          setStats(st);
+        }
+      } catch (e) {
+        console.error("Failed to load sessions:", e);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [filter]);
 
   useEffect(() => {
     getGamificationStats().then(setGamStats).catch(() => {});
   }, []);
-
-  useEffect(() => {
-  const sub = (searchParams.get("subject") || "all") as SubjectFilter;
-  setFilter(sub);
-  }, [searchParams]);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,21 +127,13 @@ function LearnPageInner() {
 
   return (
     <div className="h-full flex flex-col bg-slate-950">
-      {/* Top bar */}
       <TopBar />
 
-      {/* Main grid */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left: main content */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-6 space-y-5">
-            {/* Hero with greeting + stats */}
             <HeroSection stats={gamStats} studyMinutesToday={60} />
-
-            {/* Import buttons (jump to Import page) */}
             <ImportRow />
-
-            {/* Subject cards */}
             <SubjectGrid />
 
             {/* Create session panel */}
@@ -182,7 +175,6 @@ function LearnPageInner() {
               </div>
 
               <form onSubmit={handleGenerate} className="space-y-3">
-                {/* Subject picker */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs text-slate-500">Subject:</span>
                   {SUBJECTS.map((s) => (
@@ -325,7 +317,6 @@ function LearnPageInner() {
               )}
             </div>
 
-            {/* Filter + sessions */}
             {stats && (
               <div className="grid grid-cols-4 gap-3">
                 <SmallStat label="Sessions" value={stats.total_sessions} />
@@ -335,20 +326,21 @@ function LearnPageInner() {
               </div>
             )}
 
+            {/* Filter pills — using <Link>, active state derived from URL */}
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-slate-500 mr-1">Filter:</span>
               {SUBJECTS.map((s) => (
-                <button
+                <Link
                   key={s.id}
-                  onClick={() => setFilter(s.id)}
-                  className={`text-xs rounded-md px-2.5 py-1.5 border transition ${
+                  href={s.id === "all" ? "/app/learn" : `/app/learn?subject=${s.id}`}
+                  className={`text-xs rounded-md px-2.5 py-1.5 border transition inline-block ${
                     filter === s.id
                       ? "border-violet-500 bg-violet-500/20 text-violet-300"
                       : "border-slate-800 text-slate-500 hover:text-slate-300"
                   }`}
                 >
                   {s.emoji} {s.label}
-                </button>
+                </Link>
               ))}
             </div>
 
@@ -400,12 +392,10 @@ function LearnPageInner() {
               </div>
             )}
 
-            {/* Bottom row: Progress + Tools + Analytics */}
             <BottomRow />
           </div>
         </div>
 
-        {/* Right rail */}
         <RightRail stats={gamStats} />
       </div>
     </div>
@@ -428,6 +418,7 @@ function SmallStat({
     </div>
   );
 }
+
 export default function LearnPage() {
   return (
     <Suspense fallback={null}>

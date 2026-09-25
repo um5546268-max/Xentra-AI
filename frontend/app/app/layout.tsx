@@ -13,6 +13,8 @@ import { dailyCheckin } from "@/lib/gamification";
 import { getOnboardingStatus } from "@/lib/onboarding";
 import { OnboardingTour } from "@/components/OnboardingTour";
 import SystemStatsWidget from "@/components/SystemStatsWidget";
+import { useTheme } from "@/lib/theme-store";
+import KeyboardShortcutsModal from "@/components/KeyboardShortcutsModal";
 
 export default function AppLayout({
   children,
@@ -44,6 +46,25 @@ export default function AppLayout({
       .catch(() => {});
   }, []);
 
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+useEffect(() => {
+  const onKey = (e: KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "/") {
+      e.preventDefault();
+      setShowShortcuts((v) => !v);
+    }
+  };
+  window.addEventListener("keydown", onKey);
+  return () => window.removeEventListener("keydown", onKey);
+}, []);
+
+  const loadTheme = useTheme((state) => state.loadTheme);
+
+useEffect(() => {
+  loadTheme();
+}, [loadTheme]);
+
   return (
     <div
       className="flex flex-col bg-slate-950 text-white overflow-hidden"
@@ -59,6 +80,9 @@ export default function AppLayout({
         <GlobalAudioHost />
         <GlobalYouTubePlayer />
         {showTour && <OnboardingTour onComplete={() => setShowTour(false)} />}
+        {showShortcuts && (
+        <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />
+      )}
       </div>
 
       {/* Bottom status bar */}

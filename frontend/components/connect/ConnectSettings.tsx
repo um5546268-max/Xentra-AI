@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   X, Bell, Volume2, Eye, Languages, Type, Image as ImageIcon,
-  ShieldOff, Trash2, Check,
+  ShieldOff, Trash2, Upload, Loader2,
 } from "lucide-react";
 import {
   getBrowserNotifPrefs,
@@ -21,26 +21,26 @@ export type ConnectSettingsState = {
   wallpaper: WallpaperChoice;
   fontSize: "sm" | "base" | "lg";
   defaultLang: string;
+  customWallpaperUrl: string | null;
 };
 
 const SETTINGS_KEY = "xentra_connect_settings";
 
+const DEFAULT_SETTINGS: ConnectSettingsState = {
+  wallpaper: "nebula",
+  fontSize: "sm",
+  defaultLang: "English",
+  customWallpaperUrl: null,
+};
+
 export function loadConnectSettings(): ConnectSettingsState {
-  if (typeof window === "undefined") {
-    return { wallpaper: "nebula", fontSize: "sm", defaultLang: "English" };
-  }
+  if (typeof window === "undefined") return DEFAULT_SETTINGS;
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw)
-      return { wallpaper: "nebula", fontSize: "sm", defaultLang: "English" };
-    return {
-      wallpaper: "nebula",
-      fontSize: "sm",
-      defaultLang: "English",
-      ...JSON.parse(raw),
-    };
+    if (!raw) return DEFAULT_SETTINGS;
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
   } catch {
-    return { wallpaper: "nebula", fontSize: "sm", defaultLang: "English" };
+    return DEFAULT_SETTINGS;
   }
 }
 
@@ -67,6 +67,9 @@ export default function ConnectSettings({
   const [notifSupported, setNotifSupported] = useState(true);
   const [blocked, setBlocked] = useState<BlockedUser[]>([]);
   const [loadingBlocked, setLoadingBlocked] = useState(true);
+  const [customWallpaperUploading, setCustomWallpaperUploading] =
+    useState(false);
+  const customWallpaperRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setNotifPrefs(getBrowserNotifPrefs());
@@ -84,7 +87,6 @@ export default function ConnectSettings({
   ) => {
     const next = saveConnectSettings({ [key]: value } as any);
     setSettings(next);
-    // Dispatch custom event so ChatWindowPanel can react (wallpaper/font)
     window.dispatchEvent(
       new CustomEvent("xentra:connect-settings-changed", { detail: next })
     );
@@ -106,6 +108,43 @@ export default function ConnectSettings({
       setBlocked((prev) => prev.filter((b) => b.user_id !== userId));
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleWallpaperUpload = async (file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be under 5 MB");
+      return;
+    }
+
+    setCustomWallpaperUploading(true);
+    try {
+      const token = localStorage.getItem("xentra_token");
+      const API_URL =
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const form = new FormData();
+      form.append("file", file);
+
+      const res = await fetch(`${API_URL}/api/auth/avatar`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Upload failed");
+
+      updateSetting("customWallpaperUrl", data.url);
+      // Ensure wallpaper mode is set so the custom one shows
+      if (settings.wallpaper === "none") {
+        updateSetting("wallpaper", "nebula");
+      }
+    } catch (err: any) {
+      alert("Failed to upload wallpaper: " + (err?.message || "unknown"));
+    } finally {
+      setCustomWallpaperUploading(false);
     }
   };
 
@@ -172,21 +211,27 @@ export default function ConnectSettings({
                   label="Desktop notifications"
                   hint="Popup when a message arrives"
                   value={notifPrefs.enabled}
-                  onChange={(v) => updateNotifPref(v ? { enabled: true } : { enabled: false })}
+                  onChange={(v) =>
+                    updateNotifPref(v ? { enabled: true } : { enabled: false })
+                  }
                 />
                 <ToggleRow
                   icon={<Volume2 className="w-3.5 h-3.5" />}
                   label="Sound"
                   hint="Play a chime"
                   value={notifPrefs.sound}
-                  onChange={(v) => updateNotifPref(v ? { sound: true } : { sound: false })}
+                  onChange={(v) =>
+                    updateNotifPref(v ? { sound: true } : { sound: false })
+                  }
                 />
                 <ToggleRow
                   icon={<Eye className="w-3.5 h-3.5" />}
                   label="Show preview"
                   hint="Message text in popup"
                   value={notifPrefs.preview}
-                  onChange={(v) => updateNotifPref(v ? { preview: true } : { preview: false })}
+                  onChange={(v) =>
+                    updateNotifPref(v ? { preview: true } : { preview: false })
+                  }
                 />
               </div>
             ) : null}
@@ -209,13 +254,22 @@ export default function ConnectSettings({
                 onChange={(e) => updateSetting("defaultLang", e.target.value)}
                 className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
               >
-                {["Urdu", "Hindi", "English", "Arabic", "Spanish", "French", "German", "Chinese", "Japanese", "Russian"].map(
-                  (l) => (
-                    <option key={l} value={l}>
-                      {l}
-                    </option>
-                  )
-                )}
+                {[
+                  "Urdu",
+                  "Hindi",
+                  "English",
+                  "Arabic",
+                  "Spanish",
+                  "French",
+                  "German",
+                  "Chinese",
+                  "Japanese",
+                  "Russian",
+                ].map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
               </select>
             </div>
           </section>
@@ -232,19 +286,85 @@ export default function ConnectSettings({
             <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 mb-2">
               <div className="text-xs text-slate-300 mb-2">Wallpaper</div>
               <div className="grid grid-cols-3 gap-2">
-                {(["nebula", "minimal", "none"] as WallpaperChoice[]).map((w) => (
+                {(["nebula", "minimal", "none"] as WallpaperChoice[]).map(
+                  (w) => (
+                    <button
+                      key={w}
+                      onClick={() => updateSetting("wallpaper", w)}
+                      className={`rounded-lg border py-2 text-xs font-medium transition ${
+                        settings.wallpaper === w
+                          ? "border-violet-500 bg-violet-500/20 text-violet-200"
+                          : "border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-800"
+                      }`}
+                    >
+                      {w === "nebula"
+                        ? "🌌 Nebula"
+                        : w === "minimal"
+                        ? "⬛ Minimal"
+                        : "🚫 None"}
+                    </button>
+                  )
+                )}
+              </div>
+
+              {/* Custom wallpaper upload */}
+              <div className="mt-3 pt-3 border-t border-slate-800">
+                <div className="text-xs text-slate-300 mb-2">
+                  Or use a custom image
+                </div>
+
+                {/* Preview of custom wallpaper */}
+                {settings.customWallpaperUrl && (
+                  <div className="mb-2 rounded-lg overflow-hidden border border-violet-500/40">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={settings.customWallpaperUrl}
+                      alt="Custom wallpaper"
+                      className="w-full h-20 object-cover"
+                    />
+                  </div>
+                )}
+
+                <input
+                  ref={customWallpaperRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleWallpaperUpload(f);
+                    e.target.value = "";
+                  }}
+                />
+
+                <button
+                  onClick={() => customWallpaperRef.current?.click()}
+                  disabled={customWallpaperUploading}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg border border-dashed border-violet-500/40 bg-violet-500/5 py-2 text-xs font-medium text-violet-300 hover:bg-violet-500/10 transition disabled:opacity-40"
+                >
+                  {customWallpaperUploading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Uploading…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-3.5 h-3.5" />
+                      {settings.customWallpaperUrl
+                        ? "Replace custom wallpaper"
+                        : "Upload custom wallpaper"}
+                    </>
+                  )}
+                </button>
+
+                {settings.customWallpaperUrl && (
                   <button
-                    key={w}
-                    onClick={() => updateSetting("wallpaper", w)}
-                    className={`rounded-lg border py-2 text-xs font-medium transition ${
-                      settings.wallpaper === w
-                        ? "border-violet-500 bg-violet-500/20 text-violet-200"
-                        : "border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-800"
-                    }`}
+                    onClick={() => updateSetting("customWallpaperUrl", null)}
+                    className="mt-1.5 w-full text-[10px] text-slate-500 hover:text-red-400 transition"
                   >
-                    {w === "nebula" ? "🌌 Nebula" : w === "minimal" ? "⬛ Minimal" : "🚫 None"}
+                    Remove custom wallpaper
                   </button>
-                ))}
+                )}
               </div>
             </div>
 

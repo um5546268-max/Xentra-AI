@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { ChevronRight } from "lucide-react";
+import Link from "next/link";
 
 const SUBJECTS = [
   {
@@ -52,8 +51,6 @@ const SUBJECTS = [
 ];
 
 export function SubjectGrid() {
-  const router = useRouter();
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -63,24 +60,17 @@ export function SubjectGrid() {
           </span>
           Choose What You Want to Learn
         </div>
-        <div className="flex items-center gap-1">
-          <PillBtn label="All" active />
-          <PillBtn label="Languages" />
-          <PillBtn label="School / College" />
-          <PillBtn label="Skills" />
-          <PillBtn label="Other" />
-          <button className="text-xs text-violet-400 hover:text-violet-300 ml-2">
-            View All →
-          </button>
-        </div>
+        <button className="text-xs text-violet-400 hover:text-violet-300">
+          View All →
+        </button>
       </div>
 
       <div className="grid grid-cols-5 gap-3">
         {SUBJECTS.map((s) => (
-          <button
+          <Link
             key={s.id}
-            onClick={() => router.push(`/app/learn?subject=${s.id}`)}
-            className={`group rounded-2xl border ${s.border} bg-gradient-to-br ${s.gradient} p-4 text-left hover:scale-[1.02] transition space-y-3`}
+            href={`/app/learn/${s.id}`}
+            className={`group block rounded-2xl border ${s.border} bg-gradient-to-br ${s.gradient} p-4 text-left hover:scale-[1.02] transition space-y-3 cursor-pointer`}
           >
             <div className="text-2xl">{s.emoji}</div>
             <div>
@@ -99,23 +89,9 @@ export function SubjectGrid() {
                 </span>
               ))}
             </div>
-          </button>
+          </Link>
         ))}
       </div>
     </div>
-  );
-}
-
-function PillBtn({ label, active }: { label: string; active?: boolean }) {
-  return (
-    <button
-      className={`text-[11px] rounded-full px-3 py-1 border transition ${
-        active
-          ? "border-violet-500 bg-violet-500/20 text-violet-300"
-          : "border-slate-800 text-slate-500 hover:text-slate-300"
-      }`}
-    >
-      {label}
-    </button>
   );
 }

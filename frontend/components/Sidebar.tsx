@@ -7,7 +7,7 @@ import {
   Check, AlertCircle, Loader2, Sparkles, Image as ImageIcon,
   FolderOpen, ChevronDown, ChevronRight, Wrench, Settings,
   ShieldCheck, Activity, PanelLeftClose, PanelLeftOpen,
-  GraduationCap, Users, Home, Code as CodeIcon,
+  GraduationCap, Users, Home, Code as CodeIcon, CreditCard,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
@@ -22,11 +22,21 @@ import NewTaskModal from "./NewTaskModal";
 import NotificationsBell from "./NotificationsBell";
 import Avatar from "@/components/Avatar";
 import NotificationToggle from "@/components/connect/NotificationToggle";
+import { Sun, Moon } from "lucide-react";
+import { useTheme } from "@/lib/theme-store";
 
 // ─────────────────────────────────────────────────────────────
-// MAIN NAV — matches mockup
+// MAIN NAV
 // ─────────────────────────────────────────────────────────────
-const MAIN_NAV = [
+type NavItem = {
+  path: string;
+  label: string;
+  icon: any;
+  badge?: number;
+  premium?: boolean;
+};
+
+const MAIN_NAV: NavItem[] = [
   { path: "/app", label: "Home", icon: Home },
   { path: "/app/c", label: "AI Chat", icon: MessageSquare },
   { path: "/app/connect", label: "Connect", icon: Users, badge: 3 },
@@ -36,6 +46,7 @@ const MAIN_NAV = [
   { path: "/app/files", label: "Files", icon: FolderOpen },
   { path: "/app/tasks", label: "Tasks", icon: ListTodo },
   { path: "/app/tools", label: "Tools", icon: Wrench },
+  { path: "/app/billing", label: "Billing", icon: CreditCard, premium: true },
   { path: "/app/system-health", label: "System Health", icon: Activity },
   { path: "/app/permissions", label: "Security", icon: ShieldCheck },
   { path: "/app/settings", label: "Settings", icon: Settings },
@@ -56,6 +67,8 @@ export default function Sidebar() {
   const [loading, setLoading] = useState(true);
   const [showNewTask, setShowNewTask] = useState(false);
   const [showTasks, setShowTasks] = useState(true);
+  const theme = useTheme((state) => state.theme);
+  const toggleTheme = useTheme((state) => state.toggleTheme);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -163,6 +176,9 @@ export default function Sidebar() {
                   {item.badge}
                 </span>
               ) : null}
+              {item.premium ? (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400" />
+              ) : null}
             </button>
           );
         })}
@@ -212,6 +228,21 @@ export default function Sidebar() {
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={toggleTheme}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-800 hover:text-slate-200 transition"
+            title={
+              theme === "dark"
+                ? "Switch to light mode"
+                : "Switch to dark mode"
+            }
+          >
+            {theme === "dark" ? (
+              <Sun className="w-4 h-4" />
+            ) : (
+              <Moon className="w-4 h-4" />
+            )}
+          </button>
           <NotificationToggle />
           <NotificationsBell />
           <button
@@ -270,10 +301,23 @@ export default function Sidebar() {
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 <span className="flex-1 text-left truncate">{item.label}</span>
+                {item.premium ? (
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold ${
+                      active
+                        ? "bg-white/25 text-white"
+                        : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                    }`}
+                  >
+                    Premium
+                  </span>
+                ) : null}
                 {item.badge ? (
                   <span
                     className={`text-[10px] min-w-[20px] h-5 px-1.5 rounded-full font-semibold flex items-center justify-center ${
-                      active ? "bg-white/25 text-white" : "bg-violet-600 text-white"
+                      active
+                        ? "bg-white/25 text-white"
+                        : "bg-violet-600 text-white"
                     }`}
                   >
                     {item.badge}
@@ -293,7 +337,8 @@ export default function Sidebar() {
             >
               <ListTodo className="w-3.5 h-3.5" />
               <span className="flex-1 text-left">
-                Running tasks ({tasks.filter((t) => t.status === "running").length})
+                Running tasks (
+                {tasks.filter((t) => t.status === "running").length})
               </span>
               {showTasks ? (
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -375,8 +420,31 @@ export default function Sidebar() {
 
       {/* ── Bottom ── */}
       <div className="shrink-0 border-t border-slate-800">
-        {/* ✅ More together card with X logo — clickable → System Health */}
+        {/* ✅ Upgrade to Ultimate promo card */}
         <div className="p-3">
+          <button
+            onClick={() => router.push("/app/billing")}
+            className="w-full relative rounded-xl border border-violet-500/40 bg-gradient-to-br from-violet-600/20 via-slate-900 to-cyan-600/10 p-3 overflow-hidden text-left hover:border-violet-500/70 transition"
+          >
+            <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full bg-violet-500/30 blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-8 -left-8 w-24 h-24 rounded-full bg-cyan-500/20 blur-2xl pointer-events-none" />
+            <div className="relative space-y-1.5">
+              <div className="text-[11px] font-bold text-transparent bg-gradient-to-r from-violet-300 to-cyan-300 bg-clip-text">
+                Upgrade to Ultimate
+              </div>
+              <div className="text-[10px] text-slate-400 leading-relaxed">
+                Unlock the full power of Xentra AI with advanced features,
+                agents, and more!
+              </div>
+              <div className="inline-block mt-1 rounded-md bg-violet-600 hover:bg-violet-500 px-2.5 py-1 text-[10px] font-semibold text-white transition">
+                View Plans →
+              </div>
+            </div>
+          </button>
+        </div>
+
+        {/* ✅ More together card with X logo — clickable → System Health */}
+        <div className="px-3 pb-3">
           <button
             onClick={() => router.push("/app/system-health")}
             className="w-full relative rounded-xl border border-violet-500/30 bg-gradient-to-br from-violet-500/10 via-slate-900 to-cyan-500/5 p-3 overflow-hidden hover:border-violet-500/60 transition text-center"
@@ -385,7 +453,6 @@ export default function Sidebar() {
             <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full bg-violet-500/30 blur-2xl pointer-events-none" />
             <div className="absolute -bottom-8 -left-8 w-24 h-24 rounded-full bg-cyan-500/20 blur-2xl pointer-events-none" />
             <div className="relative flex flex-col items-center">
-              {/* ✅ X logo instead of sparkle */}
               <img
                 src="/x-logo.png"
                 alt="Xentra"
@@ -436,10 +503,14 @@ export default function Sidebar() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────
 function StatusDot({ status }: { status: string }) {
   if (status === "running")
     return <Loader2 className="w-3 h-3 text-violet-400 animate-spin" />;
-  if (status === "done") return <Check className="w-3 h-3 text-emerald-400" />;
+  if (status === "done")
+    return <Check className="w-3 h-3 text-emerald-400" />;
   if (status === "failed")
     return <AlertCircle className="w-3 h-3 text-red-400" />;
   if (status === "paused")
