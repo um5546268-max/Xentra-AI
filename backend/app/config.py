@@ -88,6 +88,16 @@ class Settings(BaseSettings):
     R2_ENDPOINT_URL: str = ""
     R2_PUBLIC_URL: str = ""
 
+        # ── Paddle (payments) ──
+    PADDLE_ENV: str = "sandbox"                       # "sandbox" | "production"
+    PADDLE_VENDOR_ID: str = ""
+    PADDLE_API_KEY: str = ""
+    PADDLE_WEBHOOK_SECRET: str = ""
+    PADDLE_CLIENT_TOKEN: str = ""
+    PADDLE_PRICE_BASIC: str = ""
+    PADDLE_PRICE_PREMIUM: str = ""
+    PADDLE_PRICE_ULTIMATE: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
