@@ -17,6 +17,10 @@ export type ChatMember = {
   email: string | null;
   avatar_url: string | null;
   is_online?: boolean;
+  points?: number;
+  streak_days?: number;
+  level?: number;
+  interests?: string[];
 };
 
 export type Chat = {
@@ -133,9 +137,12 @@ export const editMessage = async (
 
 export const deleteMessage = async (
   chatId: string,
-  messageId: string
+  messageId: string,
+  scope: "me" | "everyone" = "everyone"
 ): Promise<void> => {
-  await api.delete(`/api/chats/${chatId}/messages/${messageId}`);
+  await api.delete(`/api/chats/${chatId}/messages/${messageId}`, {
+    params: { scope },
+  });
 };
 
 export const toggleReaction = async (
@@ -337,5 +344,96 @@ export const listSharedMedia = async (
   const params: Record<string, string> = {};
   if (type) params.type = type;
   const res = await api.get(`/api/chats/${chatId}/media`, { params });
+  return res.data;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Read receipts (who read a specific message)
+// ═══════════════════════════════════════════════════════════════
+
+export type ReadByInfo = {
+  user_id: string;
+  full_name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  read_at: string | null;
+};
+
+export type ReadStatus = {
+  message_id: string;
+  total_members: number;
+  read_count: number;
+  readers: ReadByInfo[];
+};
+
+export const getMessageReaders = async (
+  chatId: string,
+  messageId: string
+): Promise<ReadStatus> => {
+  const res = await api.get(
+    `/api/chats/${chatId}/messages/${messageId}/readers`
+  );
+  return res.data;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Forward messages
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Forwards a message to another chat.
+ * Returns the newly-created message in the target chat.
+ */
+export const forwardMessage = async (
+  targetChatId: string,
+  original: ChatMessage
+): Promise<ChatMessage> => {
+  const res = await api.post(`/api/chats/${targetChatId}/messages`, {
+    type: original.type,
+    content: original.content,
+    meta: original.meta,
+    forwarded_from_id: original.id,
+  });
+  return res.data;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Block / Report
+// ═══════════════════════════════════════════════════════════════
+
+export const blockUser = async (
+  userId: string,
+  reason?: string
+): Promise<void> => {
+  await api.post("/api/chats/block", { user_id: userId, reason });
+};
+
+export const unblockUser = async (userId: string): Promise<void> => {
+  await api.post("/api/chats/unblock", { user_id: userId });
+};
+
+export const reportUser = async (
+  userId: string,
+  reason?: string
+): Promise<void> => {
+  await api.post("/api/chats/report", { user_id: userId, reason });
+};
+
+// ═══════════════════════════════════════════════════════════════
+// List my blocked users
+// ═══════════════════════════════════════════════════════════════
+
+export type BlockedUser = {
+  id: string;
+  user_id: string;
+  full_name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  reason: string | null;
+  blocked_at: string;
+};
+
+export const listMyBlocks = async (): Promise<BlockedUser[]> => {
+  const res = await api.get("/api/chats/blocks/list");
   return res.data;
 };

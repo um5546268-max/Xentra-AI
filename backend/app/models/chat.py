@@ -66,3 +66,7 @@ class Chat(Base):
         cascade="all, delete-orphan",
         order_by="ChatMessage.created_at",
     )
+
+    pinned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )

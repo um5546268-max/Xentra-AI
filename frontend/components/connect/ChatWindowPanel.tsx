@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Video, Phone, Search, MoreVertical, Sparkles, Send,
   Paperclip, Smile, Mic, Image as ImageIcon, Plus, FileText,
-  Loader2, Reply as ReplyIcon,
+  Loader2, Reply as ReplyIcon, Share2, AtSign, UserPlus, Users,
+  Languages, ChevronLeft,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useGuestGuard } from "@/lib/useGuestGuard";
@@ -23,6 +24,9 @@ import VoiceRecorder from "./VoiceRecorder";
 import AskXentraModal from "./AskXentraModal";
 import SearchPanel from "./SearchPanel";
 import PinnedBar from "./PinnedBar";
+import ReadReceipts from "./ReadReceipts";
+import ForwardModal from "./ForwardModal";
+import TranslateModal from "./TranslateModal";
 import {
   showBrowserNotification,
   requestBrowserNotifPermission,
@@ -30,6 +34,9 @@ import {
   getBrowserNotifPrefs,
   setTabTitleUnread,
 } from "@/lib/browser-notifications";
+import ChatHeaderMenu, { HeaderMenuAction } from "./ChatHeaderMenu";
+import CallModal from "./CallModal";
+import EmojiPicker from "./EmojiPicker";
 
 const MESSAGES_POLL_MS = 3000;
 const TYPING_POLL_MS = 2000;
@@ -80,13 +87,27 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
   const [showSearch, setShowSearch] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [showAskXentra, setShowAskXentra] = useState(false);
+  const [showTranslate, setShowTranslate] = useState(false);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const [forwardingMessage, setForwardingMessage] = useState<ChatMessage | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const [headerMenuPos, setHeaderMenuPos] = useState({ x: 0, y: 0 });
+  const [callModal, setCallModal] = useState<"voice" | "video" | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [emojiPos, setEmojiPos] = useState({ x: 0, y: 0 });
+
+  // Mentions
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionStart, setMentionStart] = useState<number | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
 
   const [menu, setMenu] = useState<{
     x: number;
@@ -130,7 +151,7 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
       if (cancelled) return;
       setChat(c);
       setMessages(m);
-      setPins(p);       // ✅ Use the actual pinned list
+      setPins(p);
       setLoading(false);
       markAsRead(chatId).catch(() => {});
       if (m.length > 0) {
@@ -138,7 +159,9 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
       }
     });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [chatId]);
 
   // Poll messages
@@ -265,6 +288,8 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
           setReplyTo(null);
         }
         setMessage("");
+        setMentionQuery(null);
+        setMentionStart(null);
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         sendTyping(chatId, false).catch(() => {});
       } catch (err) {
@@ -278,6 +303,58 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
   const handleCancelEdit = () => {
     setEditing(null);
     setMessage("");
+  };
+
+  // Mentions
+  const chatMembersForMentions =
+    chat?.members.filter((m) => String(m.user_id) !== String(currentUser?.id)) ||
+    [];
+
+  const filteredMembersForMentions =
+    mentionQuery === null
+      ? []
+      : chatMembersForMentions
+          .filter((m) => {
+            const name = (m.full_name || m.email || "").toLowerCase();
+            return name.includes(mentionQuery.toLowerCase());
+          })
+          .slice(0, 6);
+
+  const handleMentionInput = (value: string, cursorPos: number) => {
+    const before = value.slice(0, cursorPos);
+    const lastAt = before.lastIndexOf("@");
+    if (lastAt === -1) {
+      setMentionQuery(null);
+      setMentionStart(null);
+      return;
+    }
+    const charBefore = lastAt > 0 ? value[lastAt - 1] : " ";
+    if (charBefore !== " " && charBefore !== "\n" && lastAt !== 0) {
+      setMentionQuery(null);
+      setMentionStart(null);
+      return;
+    }
+    const after = before.slice(lastAt + 1);
+    if (after.includes(" ") || after.length > 20) {
+      setMentionQuery(null);
+      setMentionStart(null);
+      return;
+    }
+    setMentionQuery(after);
+    setMentionStart(lastAt);
+    setMentionIndex(0);
+  };
+
+  const handleMentionSelect = (member: any) => {
+    if (mentionStart === null) return;
+    const name = (member.full_name || member.email || "").split(" ")[0];
+    const before = message.slice(0, mentionStart);
+    const after = message.slice(mentionStart + 1 + (mentionQuery?.length || 0));
+    const next = `${before}@${name} ${after}`;
+    setMessage(next);
+    setMentionQuery(null);
+    setMentionStart(null);
+    inputRef.current?.focus();
   };
 
   const handleFiles = async (files: FileList | File[]) => {
@@ -344,16 +421,29 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
       setMessage(msg.content);
       setReplyTo(null);
     } else if (action === "delete") {
-      if (!confirm("Delete this message?")) return;
-      try {
-        await deleteMessage(chatId, msg.id);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === msg.id
-              ? { ...m, deleted_at: new Date().toISOString(), content: "" }
-              : m
-          )
+      const isMine = String(msg.sender_id) === String(currentUser?.id);
+      let scope: "me" | "everyone" = "me";
+
+      if (isMine) {
+        const choice = window.confirm(
+          "Delete for everyone?\n\nOK = Delete for everyone\nCancel = Delete for me only"
         );
+        scope = choice ? "everyone" : "me";
+      }
+
+      try {
+        await deleteMessage(chatId, msg.id, scope);
+        if (scope === "everyone") {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msg.id
+                ? { ...m, deleted_at: new Date().toISOString(), content: "" }
+                : m
+            )
+          );
+        } else {
+          setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+        }
       } catch (e) {
         console.error("Delete failed:", e);
       }
@@ -364,12 +454,7 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
         console.error("Copy failed:", e);
       }
     } else if (action === "share") {
-      try {
-        await navigator.clipboard.writeText(msg.content);
-        alert("Message copied. Paste it in another chat to forward.");
-      } catch (e) {
-        console.error("Share failed:", e);
-      }
+      setForwardingMessage(msg);
     } else if (action === "pin" || action === "unpin") {
       await handlePinToggle(msg);
     }
@@ -431,10 +516,63 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
     }
   };
 
+  // ✅ Header three-dots menu handler
+  const handleHeaderMenuAction = async (action: HeaderMenuAction) => {
+    setShowHeaderMenu(false);
+    switch (action) {
+      case "search":
+        setShowSearch(true);
+        break;
+      case "view_media":
+        window.dispatchEvent(new CustomEvent("xentra:scroll-to-media"));
+        break;
+      case "view_pinned":
+        if (pins.length > 0) {
+          handleJumpToMessage(pins[0].id);
+        }
+        break;
+      case "mute":
+        setIsMuted((m) => !m);
+        break;
+      case "chat_info":
+        // Right panel already shows this info — no-op
+        break;
+      case "add_friend":
+      case "new_group":
+        window.location.href = "/app/connect";
+        break;
+      case "clear_history":
+        if (confirm("Clear this chat's local view? (Messages stay on the server)"))
+          setMessages([]);
+        break;
+      case "leave_group":
+        if (!confirm("Leave this group?")) return;
+        try {
+          const { removeGroupMember } = await import("@/lib/chat-api");
+          await removeGroupMember(chatId, currentUser?.id || "");
+          window.location.href = "/app/connect";
+        } catch (e) {
+          alert("Failed to leave group");
+        }
+        break;
+    }
+  };
+
+  // Loading skeleton
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <Loader2 className="w-6 h-6 text-slate-500 animate-spin" />
+      <div className="flex-1 flex flex-col p-6 space-y-4">
+        {[...Array(5)].map((_, i) => (
+          <div
+            key={i}
+            className={`flex ${i % 2 === 0 ? "justify-start" : "justify-end"}`}
+          >
+            <div
+              className="h-12 rounded-2xl bg-slate-800/50 animate-pulse"
+              style={{ width: `${(i * 7) % 30 + 40}%` }}
+            />
+          </div>
+        ))}
       </div>
     );
   }
@@ -476,6 +614,16 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
     >
       {/* Header */}
       <div className="flex items-center gap-3 p-4 border-b border-slate-800">
+        <button
+          onClick={() => {
+            window.location.href = "/app/connect";
+          }}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition shrink-0"
+          title="Back"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+
         <div className="relative shrink-0">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center text-white font-semibold">
             {initial}
@@ -487,8 +635,17 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
           <div className="text-xs text-emerald-400">{statusText}</div>
         </div>
         <div className="flex items-center gap-1">
-          <IconButton icon={<Video className="w-4 h-4" />} label="Video call" />
-          <IconButton icon={<Phone className="w-4 h-4" />} label="Call" />
+          <IconButton
+            icon={<Video className="w-4 h-4" />}
+            label="Video call"
+            onClick={() => setCallModal("video")}
+          />
+          <IconButton
+            icon={<Phone className="w-4 h-4" />}
+            label="Voice call"
+            onClick={() => setCallModal("voice")}
+          />
+
           <button
             onClick={() => setShowAskXentra(true)}
             className="flex items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-300 hover:bg-violet-500/20 transition"
@@ -496,24 +653,45 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
             <Sparkles className="w-3.5 h-3.5" />
             Ask Xentra
           </button>
+
           <IconButton
             icon={<Search className="w-4 h-4" />}
             label="Search (Ctrl+F)"
             onClick={() => setShowSearch(true)}
           />
-          <IconButton icon={<MoreVertical className="w-4 h-4" />} label="More" />
+
+          <IconButton
+            icon={<MoreVertical className="w-4 h-4" />}
+            label="More"
+            onClick={(e) => {
+              const rect = (e?.currentTarget as HTMLElement)?.getBoundingClientRect();
+              if (rect) {
+                setHeaderMenuPos({
+                  x: rect.right - 224,
+                  y: rect.bottom + 4,
+                });
+              }
+              setShowHeaderMenu((v) => !v);
+            }}
+          />
         </div>
       </div>
 
-      {/* ✅ Pinned bar */}
+      {/* Pinned bar */}
       <PinnedBar
         pins={pins}
         onJumpTo={handleJumpToMessage}
         onUnpin={handleUnpinFromBar}
       />
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      {/* Messages with wallpaper */}
+      <div
+        className="flex-1 overflow-y-auto p-6 space-y-4 bg-cover bg-center bg-no-repeat"
+        style={{
+          backgroundImage: "url('/chat-wallpaper.svg')",
+          backgroundAttachment: "local",
+        }}
+      >
         {messages.length === 0 ? (
           <div className="text-center text-slate-500 text-sm py-10">
             No messages yet. Say hi! 👋
@@ -535,10 +713,16 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
                   currentUserId={String(currentUser?.id || "")}
                   repliedTo={repliedTo}
                   isHighlighted={highlightedId === msg.id}
+                  chatId={chatId}
+                  isGroup={chat.type === "group"}
                   onContextMenu={(e) => handleContextMenu(e, msg)}
                   onReact={async (emoji) => {
                     try {
-                      const updated = await toggleReaction(chatId, msg.id, emoji);
+                      const updated = await toggleReaction(
+                        chatId,
+                        msg.id,
+                        emoji
+                      );
                       setMessages((prev) =>
                         prev.map((m) => (m.id === updated.id ? updated : m))
                       );
@@ -561,9 +745,18 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
                   {typingUsers.length === 1 ? "is" : "are"} typing
                 </span>
                 <div className="flex gap-0.5">
-                  <span className="w-1 h-1 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <span className="w-1 h-1 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <span className="w-1 h-1 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+                  <span
+                    className="w-1 h-1 rounded-full bg-slate-400 animate-bounce"
+                    style={{ animationDelay: "0ms" }}
+                  />
+                  <span
+                    className="w-1 h-1 rounded-full bg-slate-400 animate-bounce"
+                    style={{ animationDelay: "150ms" }}
+                  />
+                  <span
+                    className="w-1 h-1 rounded-full bg-slate-400 animate-bounce"
+                    style={{ animationDelay: "300ms" }}
+                  />
                 </div>
               </div>
             </div>
@@ -574,7 +767,7 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
       </div>
 
       {/* Composer */}
-      <div className="border-t border-slate-800 p-4">
+      <div className="border-t border-slate-800 p-4 bg-slate-950">
         {replyTo && (
           <ReplyPreview message={replyTo} onCancel={() => setReplyTo(null)} />
         )}
@@ -655,11 +848,94 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
           />
 
           <div className="flex-1 relative">
+            {mentionQuery !== null && filteredMembersForMentions.length > 0 && (
+              <div className="absolute bottom-full left-0 mb-2 w-72 rounded-xl border border-slate-700 bg-slate-900 shadow-2xl overflow-hidden z-30">
+                <div className="px-3 py-1.5 border-b border-slate-800 flex items-center gap-2">
+                  <AtSign className="w-3 h-3 text-violet-400" />
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500">
+                    Mention
+                  </span>
+                </div>
+                <div className="max-h-56 overflow-y-auto p-1">
+                  {filteredMembersForMentions.map((m, i) => {
+                    const name = m.full_name || m.email || "Unknown";
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onMouseEnter={() => setMentionIndex(i)}
+                        onClick={() => handleMentionSelect(m)}
+                        className={`w-full flex items-center gap-2 rounded-lg p-1.5 transition text-left ${
+                          i === mentionIndex
+                            ? "bg-violet-500/20"
+                            : "hover:bg-slate-800"
+                        }`}
+                      >
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center text-white text-xs font-semibold shrink-0">
+                          {name[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs text-slate-200 truncate">
+                            {name}
+                          </div>
+                          <div className="text-[10px] text-slate-500 truncate">
+                            {m.email}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <input
+              ref={inputRef}
               value={message}
-              onChange={(e) => handleTypingChange(e.target.value)}
+              onChange={(e) => {
+                handleTypingChange(e.target.value);
+                handleMentionInput(
+                  e.target.value,
+                  e.target.selectionStart || 0
+                );
+              }}
               onPaste={handlePaste}
               onKeyDown={(e) => {
+                if (
+                  mentionQuery !== null &&
+                  filteredMembersForMentions.length > 0
+                ) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setMentionIndex(
+                      (i) => (i + 1) % filteredMembersForMentions.length
+                    );
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setMentionIndex(
+                      (i) =>
+                        (i - 1 + filteredMembersForMentions.length) %
+                        filteredMembersForMentions.length
+                    );
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    handleMentionSelect(
+                      filteredMembersForMentions[mentionIndex]
+                    );
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setMentionQuery(null);
+                    setMentionStart(null);
+                    return;
+                  }
+                }
+
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   handleSend();
@@ -679,7 +955,25 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
             />
           </div>
 
-          <IconButton icon={<Smile className="w-4 h-4" />} label="Emoji" />
+          <div className="relative">
+            <IconButton
+              icon={<Smile className="w-4 h-4" />}
+              label="Emoji"
+              onClick={(e) => {
+                const rect = (e?.currentTarget as HTMLElement)?.getBoundingClientRect();
+                if (rect) {
+                  setEmojiPos({ x: rect.left - 300, y: rect.top - 400 });
+                }
+                setShowEmojiPicker((v) => !v);
+              }}
+            />
+          </div>
+
+          <IconButton
+            icon={<Languages className="w-4 h-4" />}
+            label="Translate"
+            onClick={() => setShowTranslate(true)}
+          />
 
           <VoiceRecorder
             chatId={chatId}
@@ -695,12 +989,20 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
             disabled={!message.trim() || sending}
             className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-600 to-cyan-600 flex items-center justify-center text-white disabled:opacity-40 hover:opacity-90 transition shrink-0"
           >
-            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {sending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
           </button>
         </div>
         <div className="flex items-center justify-between mt-2 px-1">
-          <span className="text-[10px] text-slate-500 flex items-center gap-1">🔒 End-to-end encrypted</span>
-          <span className="text-[10px] text-slate-500 flex items-center gap-1">● Private conversation</span>
+          <span className="text-[10px] text-slate-500 flex items-center gap-1">
+            🔒 End-to-end encrypted
+          </span>
+          <span className="text-[10px] text-slate-500 flex items-center gap-1">
+            ● Private conversation
+          </span>
         </div>
       </div>
 
@@ -737,6 +1039,67 @@ export default function ChatWindowPanel({ chatId }: { chatId: string }) {
           onJumpTo={handleJumpToMessage}
         />
       )}
+
+      {/* Forward modal */}
+      {forwardingMessage && (
+        <ForwardModal
+          message={forwardingMessage}
+          onClose={() => setForwardingMessage(null)}
+          onForwarded={(targetChatId) => {
+            if (targetChatId === chatId) {
+              listMessages(chatId, { limit: 50 }).then(setMessages);
+            }
+          }}
+        />
+      )}
+
+      {/* Translate modal */}
+      {showTranslate && (
+        <TranslateModal
+          chatId={chatId}
+          onClose={() => setShowTranslate(false)}
+        />
+      )}
+
+            {/* Emoji picker (composer) */}
+      {showEmojiPicker && (
+        <div
+          style={{
+            position: "fixed",
+            left: Math.max(10, emojiPos.x),
+            top: Math.max(10, emojiPos.y),
+            zIndex: 60,
+          }}
+        >
+          <EmojiPicker
+            onSelect={(emoji) => {
+              setMessage((prev) => prev + emoji);
+              setShowEmojiPicker(false);
+            }}
+            onClose={() => setShowEmojiPicker(false)}
+          />
+        </div>
+      )}
+
+      {/* ✅ Header three-dots menu */}
+      {showHeaderMenu && (
+        <ChatHeaderMenu
+          chatType={chat.type === "group" ? "group" : "direct"}
+          isMuted={isMuted}
+          onAction={handleHeaderMenuAction}
+          onClose={() => setShowHeaderMenu(false)}
+          position={headerMenuPos}
+        />
+      )}
+
+      {/* ✅ Call modal */}
+      {callModal && (
+        <CallModal
+          callType={callModal}
+          peerName={title}
+          onClose={() => setCallModal(null)}
+        />
+      )}
     </div>
   );
 }
@@ -748,7 +1111,7 @@ function IconButton({
 }: {
   icon: React.ReactNode;
   label: string;
-  onClick?: () => void;
+  onClick?: (e?: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   return (
     <button
@@ -762,12 +1125,34 @@ function IconButton({
   );
 }
 
+function renderContentWithMentions(
+  content: string,
+  _currentUserId: string
+): React.ReactNode {
+  const parts = content.split(/(@[\w\.\-]+)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("@")) {
+      return (
+        <span
+          key={i}
+          className="text-violet-300 bg-violet-500/20 rounded px-0.5 font-medium"
+        >
+          {part}
+        </span>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 function MessageBubble({
   msg,
   isMine,
   currentUserId,
   repliedTo,
   isHighlighted,
+  chatId,
+  isGroup,
   onContextMenu,
   onReact,
 }: {
@@ -776,6 +1161,8 @@ function MessageBubble({
   currentUserId: string;
   repliedTo: ChatMessage | null;
   isHighlighted?: boolean;
+  chatId: string;
+  isGroup: boolean;
   onContextMenu: (e: React.MouseEvent) => void;
   onReact: (emoji: string) => void;
 }) {
@@ -789,7 +1176,8 @@ function MessageBubble({
 
   const isAI = !!msg.meta?.is_ai;
   const time = new Date(msg.created_at).toLocaleTimeString([], {
-    hour: "2-digit", minute: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 
   const reactions = msg.reactions || {};
@@ -797,7 +1185,7 @@ function MessageBubble({
 
   return (
     <div
-      className={`flex ${isMine ? "justify-end" : "justify-start"} transition-all ${
+      className={`flex ${isMine ? "justify-end" : "justify-start"} transition-all message-appear ${
         isHighlighted ? "bg-violet-500/10 rounded-lg p-1 -m-1" : ""
       }`}
     >
@@ -808,12 +1196,19 @@ function MessageBubble({
             isAI ? "cursor-default" : "cursor-context-menu"
           } ${
             isAI
-              ? "bg-gradient-to-br from-violet-900/60 to-slate-900 border border-violet-500/40 text-slate-100 rounded-bl-md"
+              ? "bg-gradient-to-br from-violet-950/90 via-slate-900/90 to-slate-950/90 border border-violet-500/50 text-slate-100 rounded-bl-md backdrop-blur-md shadow-[0_0_20px_-5px_rgba(139,92,246,0.3)]"
               : isMine
               ? "bg-violet-600 text-white rounded-br-md"
-              : "bg-slate-800 text-slate-100 rounded-bl-md"
+              : "bg-slate-800/90 text-slate-100 rounded-bl-md backdrop-blur-sm"
           }`}
         >
+          {msg.forwarded_from_id && (
+            <div className="flex items-center gap-1 mb-1.5 text-[10px] opacity-70 italic">
+              <Share2 className="w-3 h-3" />
+              Forwarded
+            </div>
+          )}
+
           {repliedTo && (
             <div className="mb-1.5 pl-2 border-l-2 border-white/40">
               <div className="text-[10px] opacity-75 font-medium">
@@ -834,21 +1229,31 @@ function MessageBubble({
           ) : msg.type === "video" && msg.meta?.url ? (
             <VideoMedia meta={msg.meta as any} />
           ) : isAI ? (
-            <div className="flex items-start gap-2">
-              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center shrink-0 mt-0.5">
-                <Sparkles className="w-3 h-3 text-white" />
+            <div className="flex items-start gap-3">
+              <div className="relative shrink-0 mt-0.5">
+                <div className="absolute inset-0 rounded-full bg-violet-500 blur-md opacity-60" />
+                <div className="relative w-8 h-8 rounded-full bg-gradient-to-br from-violet-400 via-fuchsia-500 to-cyan-400 flex items-center justify-center ring-2 ring-violet-300/40">
+                  <Sparkles className="w-4 h-4 text-white drop-shadow" />
+                </div>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[10px] font-bold text-violet-300 mb-0.5 tracking-wider">
-                  XENTRA AI
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-bold bg-gradient-to-r from-violet-300 via-fuchsia-300 to-cyan-300 bg-clip-text text-transparent tracking-widest">
+                    XENTRA AI
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-400/30">
+                    AI
+                  </span>
                 </div>
-                <p className="text-sm whitespace-pre-wrap break-words">
+                <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
                   {msg.content}
                 </p>
               </div>
             </div>
           ) : (
-            <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+            <p className="text-sm whitespace-pre-wrap break-words">
+              {renderContentWithMentions(msg.content, currentUserId)}
+            </p>
           )}
 
           <div
@@ -863,6 +1268,15 @@ function MessageBubble({
             {time}
             {msg.edited_at && <span>· edited</span>}
           </div>
+
+          {!isAI && isGroup && isMine && (
+            <ReadReceipts
+              chatId={chatId}
+              messageId={msg.id}
+              isGroup={isGroup}
+              isMine={isMine}
+            />
+          )}
         </div>
 
         {hasReactions && (

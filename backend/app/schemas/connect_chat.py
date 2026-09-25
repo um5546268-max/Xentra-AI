@@ -26,6 +26,12 @@ class ChatMemberPublic(BaseModel):
     avatar_url: str | None = None
     is_online: bool = False
 
+    #Points field
+    points: int = 0
+    streak_days: int = 0
+    level: int = 1
+    interests: list[str] = []
+
 
 class ChatPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -90,6 +96,7 @@ class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=10_000)
     meta: dict[str, Any] | None = None
     reply_to_id: uuid.UUID | None = None
+    forwarded_from_id: uuid.UUID | None = None   # ✅ NEW
 
 
 class MessageEdit(BaseModel):

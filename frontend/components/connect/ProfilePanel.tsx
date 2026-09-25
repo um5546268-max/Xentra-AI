@@ -3,15 +3,21 @@
 import { useEffect, useState } from "react";
 import {
   X, Star, Users, Loader2, Crown, Shield,
-  LogOut, UserPlus, Pin,
+  LogOut, UserPlus, Pin, MoreVertical, Settings,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
-  Chat, ChatMember, getChat, addGroupMember, removeGroupMember,
-  updateGroupMemberRole, listPinnedMessages,
+  Chat,
+  ChatMember,
+  getChat,
+  addGroupMember,
+  removeGroupMember,
+  updateGroupMemberRole,
+  listPinnedMessages,
 } from "@/lib/chat-api";
 import { Friend, listFriends } from "@/lib/friends-api";
 import SharedMedia from "./SharedMedia";
+import ConnectSettings from "./ConnectSettings";
 
 export default function ProfilePanel({ chatId }: { chatId: string }) {
   const currentUser = useAuth((state) => state.user);
@@ -19,6 +25,7 @@ export default function ProfilePanel({ chatId }: { chatId: string }) {
   const [loading, setLoading] = useState(true);
   const [showAddMember, setShowAddMember] = useState(false);
   const [pins, setPins] = useState<Awaited<ReturnType<typeof listPinnedMessages>>>([]);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,9 +129,18 @@ export default function ProfilePanel({ chatId }: { chatId: string }) {
         <h3 className="text-sm font-semibold text-white">
           {isGroup ? "Group Info" : "Connection Panel"}
         </h3>
-        <button className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-800 hover:text-white transition">
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-800 hover:text-white transition"
+            title="Connect settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          <button className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-800 hover:text-white transition">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Profile card */}
@@ -156,15 +172,90 @@ export default function ProfilePanel({ chatId }: { chatId: string }) {
             </>
           ) : (
             <>
-              <p className="text-xs text-slate-500">{other?.email || "No email"}</p>
+              <p className="text-xs text-slate-500">
+                {other?.email || "No email"}
+              </p>
               <div className="flex items-center gap-1.5 mt-1">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 <span className="text-xs text-emerald-400">Online</span>
+              </div>
+
+              {/* Stats cards: Points + Level */}
+              <div className="grid grid-cols-2 gap-2 w-full mt-4">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5">
+                  <div className="flex items-center gap-1.5 text-[10px] text-amber-400 mb-1">
+                    <Star className="w-3 h-3" />
+                    Learning Points
+                  </div>
+                  <div className="text-lg font-bold text-white tabular-nums">
+                    {(other?.points ?? 0).toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5">
+                  <div className="flex items-center gap-1.5 text-[10px] text-violet-400 mb-1">
+                    <Shield className="w-3 h-3" />
+                    Level
+                  </div>
+                  <div className="text-lg font-bold text-white tabular-nums">
+                    {other?.level ?? 1}
+                  </div>
+                </div>
               </div>
             </>
           )}
         </div>
       </div>
+
+      {/* Learning Interests (direct chat only) */}
+      {!isGroup && other && (
+        <div className="p-5 border-b border-slate-800">
+          <div className="flex items-center justify-between mb-3">
+            <h5 className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Learning Interests
+            </h5>
+            <span className="text-[10px] text-slate-500">
+              {(other?.interests?.length ?? 0)} areas
+            </span>
+          </div>
+          {!other.interests || other.interests.length === 0 ? (
+            <div className="text-xs text-slate-600 text-center py-3">
+              No interests set yet
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {other.interests.map((interest: string, i: number) => {
+                const lower = interest.toLowerCase();
+                const emoji = lower.includes("python")
+                  ? "🐍"
+                  : lower.includes("ai") || lower.includes("ml")
+                  ? "🤖"
+                  : lower.includes("math")
+                  ? "📐"
+                  : lower.includes("physic")
+                  ? "⚛️"
+                  : lower.includes("web")
+                  ? "🌐"
+                  : lower.includes("english")
+                  ? "📖"
+                  : lower.includes("design")
+                  ? "🎨"
+                  : lower.includes("code") || lower.includes("program")
+                  ? "💻"
+                  : "📚";
+                return (
+                  <span
+                    key={i}
+                    className="flex items-center gap-1 rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-[10px] text-slate-300 hover:border-violet-500/40 transition"
+                  >
+                    <span>{emoji}</span>
+                    {interest}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Group members list */}
       {isGroup && (
@@ -200,10 +291,10 @@ export default function ProfilePanel({ chatId }: { chatId: string }) {
         </div>
       )}
 
-      {/* ✅ Shared media */}
+      {/* Shared media */}
       <SharedMedia chatId={chatId} />
 
-      {/* ✅ Pinned items */}
+      {/* Pinned items */}
       <div className="p-5 border-b border-slate-800">
         <div className="flex items-center justify-between mb-3">
           <h5 className="text-xs font-medium text-slate-400 uppercase tracking-wider">
@@ -261,10 +352,19 @@ export default function ProfilePanel({ chatId }: { chatId: string }) {
           onAdd={handleAddMember}
         />
       )}
+
+      {/* Connect Settings modal */}
+      {showSettings && (
+        <ConnectSettings onClose={() => setShowSettings(false)} />
+      )}
     </div>
   );
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+// MEMBER ROW
+// ═══════════════════════════════════════════════════════════════
 function MemberRow({
   member,
   isMe,
@@ -282,9 +382,35 @@ function MemberRow({
 }) {
   const name = member.full_name || member.email || "Unknown";
   const initial = (name[0] || "?").toUpperCase();
+  const [showActions, setShowActions] = useState(false);
+
+  const handleBlock = async () => {
+    if (!confirm(`Block ${name}?\n\nYou won't see their messages anymore.`)) return;
+    try {
+      const { blockUser } = await import("@/lib/chat-api");
+      await blockUser(member.user_id);
+      alert(`${name} has been blocked. Reload to see the effect.`);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to block");
+    }
+  };
+
+  const handleReport = async () => {
+    const reason = prompt("Report reason (optional):");
+    if (reason === null) return;
+    try {
+      const { reportUser } = await import("@/lib/chat-api");
+      await reportUser(member.user_id, reason || undefined);
+      alert("Reported. Thank you.");
+    } catch (e) {
+      console.error(e);
+      alert("Failed to report");
+    }
+  };
 
   return (
-    <div className="flex items-center gap-2 rounded-lg p-1.5 hover:bg-slate-900 transition group">
+    <div className="flex items-center gap-2 rounded-lg p-1.5 hover:bg-slate-900 transition">
       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center text-white text-xs font-semibold shrink-0">
         {initial}
       </div>
@@ -306,39 +432,88 @@ function MemberRow({
         </span>
       )}
 
-      {canManage && !isMe && (
-        <div className="opacity-0 group-hover:opacity-100 transition flex items-center gap-1">
-          {isAdmin && member.role === "member" && (
-            <button
-              onClick={() => onPromote("moderator")}
-              className="text-[9px] text-cyan-400 hover:text-cyan-300 px-1"
-              title="Promote to moderator"
-            >
-              Mod
-            </button>
-          )}
-          {isAdmin && member.role === "moderator" && (
-            <button
-              onClick={() => onPromote("admin")}
-              className="text-[9px] text-amber-400 hover:text-amber-300 px-1"
-              title="Promote to admin"
-            >
-              Admin
-            </button>
-          )}
+      {!isMe && (
+        <div className="relative shrink-0">
           <button
-            onClick={onKick}
-            className="text-[9px] text-red-400 hover:text-red-300 px-1"
-            title="Remove"
+            onClick={() => setShowActions((s: boolean) => !s)}
+            className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:bg-slate-800 hover:text-slate-200 transition"
+            title="More actions"
           >
-            Kick
+            <MoreVertical className="w-3.5 h-3.5" />
           </button>
+
+          {showActions && (
+            <>
+              <div
+                className="fixed inset-0 z-30"
+                onClick={() => setShowActions(false)}
+              />
+              <div className="absolute right-0 top-full mt-1 w-44 rounded-lg border border-slate-700 bg-slate-900 shadow-xl z-40 overflow-hidden">
+                {canManage && (
+                  <>
+                    {isAdmin && member.role === "member" && (
+                      <button
+                        onClick={() => {
+                          setShowActions(false);
+                          onPromote("moderator");
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-cyan-400 hover:bg-cyan-500/10 transition text-left"
+                      >
+                        Promote to moderator
+                      </button>
+                    )}
+                    {isAdmin && member.role === "moderator" && (
+                      <button
+                        onClick={() => {
+                          setShowActions(false);
+                          onPromote("admin");
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-amber-400 hover:bg-amber-500/10 transition text-left"
+                      >
+                        Promote to admin
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setShowActions(false);
+                        onKick();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-orange-400 hover:bg-orange-500/10 transition text-left border-t border-slate-800"
+                    >
+                      Kick from group
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => {
+                    setShowActions(false);
+                    handleBlock();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-400 hover:bg-red-500/10 transition text-left border-t border-slate-800"
+                >
+                  Block user
+                </button>
+                <button
+                  onClick={() => {
+                    setShowActions(false);
+                    handleReport();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-yellow-400 hover:bg-yellow-500/10 transition text-left border-t border-slate-800"
+                >
+                  Report user
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
   );
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ADD MEMBER MODAL
+// ═══════════════════════════════════════════════════════════════
 function AddMemberModal({
   chat,
   currentUserId,

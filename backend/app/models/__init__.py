@@ -29,6 +29,8 @@ from app.models.friendship import Friendship  # noqa: F401
 from app.models.chat import Chat  # noqa: F401
 from app.models.chat_member import ChatMember  # noqa: F401
 from app.models.chat_message import ChatMessage  # noqa: F401
+from app.models.chat_block import ChatBlock  # noqa: F401
+# Add "ChatBlock" to __all__
 
 
 __all__ = [
@@ -66,4 +68,5 @@ __all__ = [
     "Chat",
     "ChatMember",
     "ChatMessage",
+    "ChatBlock",
 ]

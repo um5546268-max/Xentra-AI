@@ -4,7 +4,7 @@ from sqlalchemy import String, DateTime, ForeignKey, func, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
-
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 class ChatMessage(Base):
     """
@@ -63,6 +63,11 @@ class ChatMessage(Base):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+        # List of user_ids who have "deleted for me" — message remains visible to others
+    deleted_for: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True, default=list
     )
 
     # Pinned message

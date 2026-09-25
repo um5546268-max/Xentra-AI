@@ -1,4 +1,5 @@
 import uuid
+import re
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select, or_, and_, desc, func
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 
 from app.core import r2 as r2_storage
 from app.schemas.connect_chat import UploadResponse
+from app.models.chat_block import ChatBlock
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -47,6 +49,12 @@ def _chat_to_public(chat: Chat, db: Session) -> ChatPublic:
         u = db.get(User, m.user_id)
         if not u:
             continue
+        # Compute level from points (1000 points = 1 level)
+        points = getattr(u, "points", 0) or 0
+        level = max(1, points // 1000 + 1)
+        streak = getattr(u, "streak_days", 0) or 0
+        interests = getattr(u, "interests", None) or []
+
         member_list.append(
             ChatMemberPublic(
                 id=m.id,
@@ -57,6 +65,10 @@ def _chat_to_public(chat: Chat, db: Session) -> ChatPublic:
                 full_name=u.full_name,
                 email=u.email,
                 avatar_url=u.avatar_url,
+                points=points,
+                streak_days=streak,
+                level=level,
+                interests=list(interests) if isinstance(interests, list) else [],
             )
         )
 
@@ -89,7 +101,7 @@ def _message_to_public(msg: ChatMessage, db: Session) -> MessagePublic:
         reactions=msg.reactions,
         edited_at=msg.edited_at,
         deleted_at=msg.deleted_at,
-        pinned_at=msg.pinned_at,      # ✅ ADDED
+        pinned_at=msg.pinned_at,
         created_at=msg.created_at,
         sender_name=sender.full_name if sender else None,
         sender_avatar=sender.avatar_url if sender else None,
@@ -106,6 +118,123 @@ def _require_membership(chat_id: uuid.UUID, user_id: uuid.UUID, db: Session) -> 
     if not m:
         raise HTTPException(403, "You're not a member of this chat")
     return m
+
+
+def _get_blocked_user_ids(user_id: uuid.UUID, db: Session) -> set[uuid.UUID]:
+    """Return the set of user_ids this user has blocked."""
+    rows = db.execute(
+        select(ChatBlock.blocked_id).where(ChatBlock.blocker_id == user_id)
+    ).scalars().all()
+    return set(rows)
+
+
+# ═══════════════════════════════════════════════════════════
+# BLOCK / UNBLOCK / REPORT
+# NOTE: These MUST come before /{chat_id} routes,
+# otherwise FastAPI will treat "block" as a chat_id UUID.
+# ═══════════════════════════════════════════════════════════
+class BlockRequest(BaseModel):
+    user_id: uuid.UUID
+    reason: str | None = None
+
+
+@router.post("/block")
+def block_user(
+    payload: BlockRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if payload.user_id == current_user.id:
+        raise HTTPException(400, "Can't block yourself")
+
+    target = db.get(User, payload.user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    existing = db.execute(
+        select(ChatBlock).where(
+            ChatBlock.blocker_id == current_user.id,
+            ChatBlock.blocked_id == payload.user_id,
+        )
+    ).scalar_one_or_none()
+
+    if existing:
+        return {"status": "already_blocked"}
+
+    db.add(ChatBlock(
+        blocker_id=current_user.id,
+        blocked_id=payload.user_id,
+        reason=payload.reason,
+    ))
+    db.commit()
+    return {"status": "blocked"}
+
+
+@router.post("/unblock")
+def unblock_user(
+    payload: BlockRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    existing = db.execute(
+        select(ChatBlock).where(
+            ChatBlock.blocker_id == current_user.id,
+            ChatBlock.blocked_id == payload.user_id,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        db.delete(existing)
+        db.commit()
+    return {"status": "unblocked"}
+
+
+@router.post("/report")
+def report_user(
+    payload: BlockRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    target = db.get(User, payload.user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    from app.models.audit_log import AuditLog
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action="report_user",
+        target_type="user",
+        target_id=str(payload.user_id),
+        details={"reason": payload.reason or ""},
+    ))
+    db.commit()
+    return {"status": "reported"}
+
+
+@router.get("/blocks/list")
+def list_my_blocks(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List all users I've blocked."""
+    rows = db.execute(
+        select(ChatBlock).where(ChatBlock.blocker_id == current_user.id)
+    ).scalars().all()
+
+    results = []
+    for b in rows:
+        u = db.get(User, b.blocked_id)
+        if not u:
+            continue
+        results.append({
+            "id": str(b.id),
+            "user_id": str(u.id),
+            "full_name": u.full_name,
+            "email": u.email,
+            "avatar_url": u.avatar_url,
+            "reason": b.reason,
+            "blocked_at": b.created_at.isoformat(),
+        })
+    return results
 
 
 # ─────────────────────────────────────────────────────────
@@ -238,7 +367,20 @@ def list_messages(
     q = q.order_by(desc(ChatMessage.created_at)).limit(limit)
 
     messages = db.execute(q).scalars().all()
-    return [_message_to_public(m, db) for m in reversed(messages)]
+
+    # Filter out messages this user has "deleted for me"
+    uid = str(current_user.id)
+    filtered = [
+        m for m in messages
+        if not m.deleted_for or uid not in m.deleted_for
+    ]
+
+    # Filter out messages from blocked users
+    blocked_ids = _get_blocked_user_ids(current_user.id, db)
+    if blocked_ids:
+        filtered = [m for m in filtered if m.sender_id not in blocked_ids]
+
+    return [_message_to_public(m, db) for m in reversed(filtered)]
 
 
 # ─────────────────────────────────────────────────────────
@@ -253,22 +395,78 @@ def send_message(
 ):
     _require_membership(chat_id, current_user.id, db)
 
+    # Prevent DMs between blocked users
+    chat_obj = db.get(Chat, chat_id)
+    if chat_obj and chat_obj.type == "direct":
+        other_member = db.execute(
+            select(ChatMember).where(
+                ChatMember.chat_id == chat_id,
+                ChatMember.user_id != current_user.id,
+            )
+        ).scalar_one_or_none()
+        if other_member:
+            blk = db.execute(
+                select(ChatBlock).where(
+                    or_(
+                        and_(
+                            ChatBlock.blocker_id == current_user.id,
+                            ChatBlock.blocked_id == other_member.user_id,
+                        ),
+                        and_(
+                            ChatBlock.blocker_id == other_member.user_id,
+                            ChatBlock.blocked_id == current_user.id,
+                        ),
+                    )
+                )
+            ).scalar_one_or_none()
+            if blk:
+                raise HTTPException(403, "Cannot send — user is blocked")
+
+    # Build meta + extract mentions
+    meta = dict(payload.meta or {})
+    mention_names = re.findall(r"@([\w\.\-]+)", payload.content)
+    if mention_names:
+        member_users = []
+        for m in db.execute(
+            select(ChatMember).where(ChatMember.chat_id == chat_id)
+        ).scalars().all():
+            u = db.get(User, m.user_id)
+            if u:
+                member_users.append(u)
+
+        mentioned_ids = []
+        for u in member_users:
+            first_name = (u.full_name or "").split(" ")[0].lower()
+            email_prefix = (u.email or "").split("@")[0].lower()
+            for name in mention_names:
+                n = name.lower()
+                if n == first_name or n == email_prefix:
+                    mentioned_ids.append(str(u.id))
+                    break
+
+        if mentioned_ids:
+            meta["mentions"] = mentioned_ids
+
     msg = ChatMessage(
         chat_id=chat_id,
         sender_id=current_user.id,
         type=payload.type,
         content=payload.content,
-        meta=payload.meta,
+        meta=meta,
         reply_to_id=payload.reply_to_id,
+        forwarded_from_id=payload.forwarded_from_id,
         reactions={},
     )
     db.add(msg)
 
-    chat = db.get(Chat, chat_id)
-    if chat:
-        chat.last_message_at = datetime.now(timezone.utc)
-        preview = payload.content[:120] if payload.type == "text" else f"[{payload.type}]"
-        chat.last_message_preview = preview
+    if chat_obj:
+        chat_obj.last_message_at = datetime.now(timezone.utc)
+        preview = (
+            payload.content[:120]
+            if payload.type == "text"
+            else f"[{payload.type}]"
+        )
+        chat_obj.last_message_preview = preview
 
     db.commit()
     db.refresh(msg)
@@ -302,7 +500,7 @@ def edit_message(
 
 
 # ─────────────────────────────────────────────────────────
-# Delete a message (soft delete)
+# Delete a message (soft delete, with me/everyone scope)
 # ─────────────────────────────────────────────────────────
 @router.delete("/{chat_id}/messages/{message_id}", status_code=204)
 def delete_message(
@@ -310,13 +508,25 @@ def delete_message(
     message_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    scope: str = "everyone",
 ):
     _require_membership(chat_id, current_user.id, db)
     msg = db.get(ChatMessage, message_id)
     if not msg or msg.chat_id != chat_id:
         raise HTTPException(404, "Message not found")
+
+    if scope == "me":
+        current = list(msg.deleted_for or [])
+        uid = str(current_user.id)
+        if uid not in current:
+            current.append(uid)
+        msg.deleted_for = current
+        db.add(msg)
+        db.commit()
+        return None
+
     if msg.sender_id != current_user.id:
-        raise HTTPException(403, "Can only delete your own messages")
+        raise HTTPException(403, "Can only delete your own messages for everyone")
 
     msg.deleted_at = datetime.now(timezone.utc)
     msg.content = ""
@@ -547,6 +757,7 @@ async def upload_to_chat(
     if msg_type == "image":
         meta["caption"] = None
 
+    # ✅ This block is now correctly OUTSIDE the image if-statement
     msg = ChatMessage(
         chat_id=chat_id,
         sender_id=current_user.id,
@@ -755,17 +966,17 @@ def join_public_group(
 
 
 # ─────────────────────────────────────────────────────────
-# Ask Xentra — AI assistance inside a chat (PRIVATE)
+# Ask Xentra — AI assistance inside a chat
 # ─────────────────────────────────────────────────────────
 from app.services.ai import chat_completion
 
 
 class AskXentraRequest(BaseModel):
-    action: str  # "summarize" | "explain" | "translate" | "quiz" | "action_items" | "custom" | "share"
+    action: str
     message_id: uuid.UUID | None = None
     prompt: str | None = None
     language: str | None = "English"
-    content: str | None = None  # used only for "share"
+    content: str | None = None
 
 
 class AskXentraPrivateResponse(BaseModel):
@@ -777,13 +988,11 @@ PROMPTS = {
     "summarize": (
         "You are Xentra, an AI assistant inside a group chat. "
         "Summarize the following conversation in 3-5 clear bullet points. "
-        "Focus on decisions, questions, and key info. "
-        "Keep it concise."
+        "Focus on decisions, questions, and key info. Keep it concise."
     ),
     "explain": (
         "You are Xentra, an AI assistant. "
-        "Explain the following message clearly and briefly. "
-        "Add helpful context if relevant."
+        "Explain the following message clearly and briefly."
     ),
     "translate": (
         "You are Xentra, an AI assistant. "
@@ -793,13 +1002,12 @@ PROMPTS = {
     "quiz": (
         "You are Xentra, an AI assistant. "
         "Create 3 multiple-choice quiz questions based on the following conversation. "
-        "Format: Q1: ... A) ... B) ... C) ... D) ... Answer: X. "
-        "Make them educational and clear."
+        "Format: Q1: ... A) ... B) ... C) ... D) ... Answer: X."
     ),
     "action_items": (
         "You are Xentra, an AI assistant. "
-        "Extract all actionable items (tasks, to-dos, follow-ups) from the following conversation. "
-        "Format as a numbered list. If none found, say 'No action items found.'"
+        "Extract all actionable items (tasks, to-dos) from the following conversation. "
+        "Format as a numbered list."
     ),
 }
 
@@ -839,12 +1047,9 @@ def _build_prompt(payload: AskXentraRequest, recent: list[ChatMessage], db: Sess
         )
 
     if payload.action in PROMPTS:
-        return PROMPTS[payload.action] + "\n\nConversation:\n" + context
+        return
 
-    raise HTTPException(400, f"Unknown action: {payload.action}")
-
-
-# ─────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────
 # PRIVATE endpoint — returns AI text, does NOT save
 # ─────────────────────────────────────────────────────────
 @router.post("/{chat_id}/ask-xentra/private", response_model=AskXentraPrivateResponse)
@@ -884,7 +1089,6 @@ def ask_xentra_private(
 
     return AskXentraPrivateResponse(text=ai_text, action=payload.action)
 
-
 # ─────────────────────────────────────────────────────────
 # PUBLIC endpoint — saves AI message in chat + handles "share" mode
 # ─────────────────────────────────────────────────────────
@@ -897,7 +1101,7 @@ def ask_xentra(
 ):
     _require_membership(chat_id, current_user.id, db)
 
-    # ✅ SHARE MODE — user chose to share a private AI response
+    # SHARE MODE — user chose to share a private AI response
     if payload.action == "share":
         if not payload.content or not payload.content.strip():
             raise HTTPException(400, "content required for 'share'")
@@ -922,7 +1126,7 @@ def ask_xentra(
         db.refresh(msg)
         return _message_to_public(msg, db)
 
-    # ─── Normal public AI response ───
+    # Normal public AI response
     recent = db.execute(
         select(ChatMessage)
         .where(ChatMessage.chat_id == chat_id, ChatMessage.deleted_at.is_(None))
@@ -973,44 +1177,9 @@ def ask_xentra(
 
     return _message_to_public(msg, db)
 
-# ─────────────────────────────────────────────────────────
-# Search messages in a chat
-# ─────────────────────────────────────────────────────────
-@router.get("/{chat_id}/search")
-def search_messages(
-    chat_id: uuid.UUID,
-    q: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    limit: int = 50,
-):
-    """
-    Search messages in a chat by text content.
-    Case-insensitive substring match.
-    """
-    _require_membership(chat_id, current_user.id, db)
-
-    query = (q or "").strip()
-    if not query:
-        return []
-
-    like = f"%{query.lower()}%"
-    rows = db.execute(
-        select(ChatMessage)
-        .where(
-            ChatMessage.chat_id == chat_id,
-            ChatMessage.deleted_at.is_(None),
-            func.lower(ChatMessage.content).like(like),
-        )
-        .order_by(desc(ChatMessage.created_at))
-        .limit(limit)
-    ).scalars().all()
-
-    return [_message_to_public(m, db) for m in rows]
-
-# ─────────────────────────────────────────────────────────
-# Pinned messages
-# ─────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════
+# PINNED MESSAGES
+# ═══════════════════════════════════════════════════════════
 @router.post("/{chat_id}/messages/{message_id}/pin", response_model=MessagePublic)
 def pin_message(
     chat_id: uuid.UUID,
@@ -1072,21 +1241,49 @@ def list_pinned(
 
     return [_message_to_public(m, db) for m in rows]
 
-    # ─────────────────────────────────────────────────────────
-# Shared media (images, files, videos, voice)
-# ─────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════
+# SEARCH MESSAGES
+# ═══════════════════════════════════════════════════════════
+@router.get("/{chat_id}/search")
+def search_messages(
+    chat_id: uuid.UUID,
+    q: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = 50,
+):
+    _require_membership(chat_id, current_user.id, db)
+
+    query = (q or "").strip()
+    if not query:
+        return []
+
+    like = f"%{query.lower()}%"
+    rows = db.execute(
+        select(ChatMessage)
+        .where(
+            ChatMessage.chat_id == chat_id,
+            ChatMessage.deleted_at.is_(None),
+            func.lower(ChatMessage.content).like(like),
+        )
+        .order_by(desc(ChatMessage.created_at))
+        .limit(limit)
+    ).scalars().all()
+
+    return [_message_to_public(m, db) for m in rows]
+
+
+# ═══════════════════════════════════════════════════════════
+# SHARED MEDIA
+# ═══════════════════════════════════════════════════════════
 @router.get("/{chat_id}/media", response_model=list[MessagePublic])
 def list_media(
     chat_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    type: str | None = None,   # "image" | "file" | "video" | "voice" | None (all)
+    type: str | None = None,
     limit: int = 100,
 ):
-    """
-    List media messages (images/files/videos/voice) in a chat.
-    Optionally filter by type.
-    """
     _require_membership(chat_id, current_user.id, db)
 
     q = select(ChatMessage).where(
@@ -1101,3 +1298,65 @@ def list_media(
     q = q.order_by(desc(ChatMessage.created_at)).limit(limit)
     rows = db.execute(q).scalars().all()
     return [_message_to_public(m, db) for m in rows]
+
+
+# ═══════════════════════════════════════════════════════════
+# READ RECEIPTS
+# ═══════════════════════════════════════════════════════════
+class ReadByInfo(BaseModel):
+    user_id: uuid.UUID
+    full_name: str | None = None
+    email: str | None = None
+    avatar_url: str | None = None
+    read_at: datetime | None = None
+
+
+class ReadStatusResponse(BaseModel):
+    message_id: uuid.UUID
+    total_members: int
+    read_count: int
+    readers: list[ReadByInfo]
+
+
+@router.get(
+    "/{chat_id}/messages/{message_id}/readers",
+    response_model=ReadStatusResponse,
+)
+def get_message_readers(
+    chat_id: uuid.UUID,
+    message_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_membership(chat_id, current_user.id, db)
+    msg = db.get(ChatMessage, message_id)
+    if not msg or msg.chat_id != chat_id:
+        raise HTTPException(404, "Message not found")
+
+    members = db.execute(
+        select(ChatMember).where(ChatMember.chat_id == chat_id)
+    ).scalars().all()
+
+    readers: list[ReadByInfo] = []
+    for m in members:
+        if m.user_id == msg.sender_id:
+            continue
+        if m.last_read_at is not None and m.last_read_at >= msg.created_at:
+            u = db.get(User, m.user_id)
+            if u:
+                readers.append(
+                    ReadByInfo(
+                        user_id=u.id,
+                        full_name=u.full_name,
+                        email=u.email,
+                        avatar_url=u.avatar_url,
+                        read_at=m.last_read_at,
+                    )
+                )
+
+    return ReadStatusResponse(
+        message_id=msg.id,
+        total_members=len([m for m in members if m.user_id != msg.sender_id]),
+        read_count=len(readers),
+        readers=readers,
+    )

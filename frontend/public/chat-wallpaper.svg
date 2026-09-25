@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <defs>
+    <linearGradient id="base" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#08061a"/>
+      <stop offset="50%" stop-color="#0c0724"/>
+      <stop offset="100%" stop-color="#060420"/>
+    </linearGradient>
+
+    <radialGradient id="nebula1" cx="25%" cy="30%" r="50%">
+      <stop offset="0%" stop-color="#5b21b6" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#4c1d95" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="nebula2" cx="80%" cy="75%" r="55%">
+      <stop offset="0%" stop-color="#0891b2" stop-opacity="0.28"/>
+      <stop offset="55%" stop-color="#0e7490" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="nebula3" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#8b5cf6" stroke-width="0.4" opacity="0.08"/>
+    </pattern>
+
+    <!-- Stars -->
+    <g id="stars">
+      <circle cx="120" cy="80" r="0.8" fill="#ffffff" opacity="0.5"/>
+      <circle cx="340" cy="180" r="0.5" fill="#c4b5fd" opacity="0.7"/>
+      <circle cx="580" cy="90" r="0.6" fill="#ffffff" opacity="0.4"/>
+      <circle cx="820" cy="200" r="0.9" fill="#a5f3fc" opacity="0.5"/>
+      <circle cx="1050" cy="140" r="0.4" fill="#ffffff" opacity="0.6"/>
+      <circle cx="200" cy="380" r="0.6" fill="#c4b5fd" opacity="0.5"/>
+      <circle cx="450" cy="420" r="0.5" fill="#ffffff" opacity="0.4"/>
+      <circle cx="700" cy="350" r="0.8" fill="#a5f3fc" opacity="0.5"/>
+      <circle cx="950" cy="480" r="0.5" fill="#c4b5fd" opacity="0.6"/>
+      <circle cx="1120" cy="400" r="0.6" fill="#ffffff" opacity="0.4"/>
+      <circle cx="100" cy="620" r="0.7" fill="#c4b5fd" opacity="0.5"/>
+      <circle cx="380" cy="700" r="0.5" fill="#ffffff" opacity="0.4"/>
+      <circle cx="620" cy="650" r="0.8" fill="#a5f3fc" opacity="0.5"/>
+      <circle cx="880" cy="720" r="0.6" fill="#ffffff" opacity="0.4"/>
+      <circle cx="1080" cy="780" r="0.5" fill="#c4b5fd" opacity="0.6"/>
+      <circle cx="240" cy="950" r="0.6" fill="#ffffff" opacity="0.4"/>
+      <circle cx="520" cy="1020" r="0.5" fill="#a5f3fc" opacity="0.5"/>
+      <circle cx="800" cy="980" r="0.7" fill="#c4b5fd" opacity="0.5"/>
+      <circle cx="1060" cy="1100" r="0.5" fill="#ffffff" opacity="0.4"/>
+    </g>
+  </defs>
+
+  <!-- Base -->
+  <rect width="1200" height="1200" fill="url(#base)"/>
+
+  <!-- Nebula layers -->
+  <rect width="1200" height="1200" fill="url(#nebula1)"/>
+  <rect width="1200" height="1200" fill="url(#nebula2)"/>
+  <rect width="1200" height="1200" fill="url(#nebula3)"/>
+
+  <!-- Grid pattern -->
+  <rect width="1200" height="1200" fill="url(#grid)"/>
+
+  <!-- Stars -->
+  <use href="#stars"/>
+
+  <!-- Faint concentric rings -->
+  <circle cx="600" cy="600" r="320" fill="none" stroke="#8b5cf6" stroke-width="0.5" opacity="0.06"/>
+  <circle cx="600" cy="600" r="450" fill="none" stroke="#06b6d4" stroke-width="0.5" opacity="0.04"/>
+  <circle cx="600" cy="600" r="580" fill="none" stroke="#8b5cf6" stroke-width="0.5" opacity="0.03"/>
+</svg>

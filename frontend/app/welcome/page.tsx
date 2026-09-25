@@ -20,15 +20,23 @@ export default function WelcomePage() {
   // Load Google Identity Services script once
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    // If the script is already loaded (e.g. React Strict Mode double-mount), skip
+    if (document.getElementById("google-gsi-script")) {
+      setGsiReady(true);
+      return;
+    }
+
     const script = document.createElement("script");
+    script.id = "google-gsi-script";
     script.src = "https://accounts.google.com/gsi/client";
     script.async = true;
     script.defer = true;
     script.onload = () => setGsiReady(true);
     document.body.appendChild(script);
-    return () => {
-      if (document.body.contains(script)) document.body.removeChild(script);
-    };
+
+    // ✅ No cleanup — the script stays in the DOM.
+    // Removing it causes "removeChild: node is not a child" errors in React Strict Mode.
   }, []);
 
   // Render the Google button once the script + ref are ready
