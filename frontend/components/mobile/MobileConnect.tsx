@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, memo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Search, Plus, SlidersHorizontal, Users, MessageSquare,
+  Search, SlidersHorizontal, Users, MessageSquare,
   UserPlus, Pencil,
 } from "lucide-react";
 import {
@@ -14,6 +14,7 @@ import {
 } from "@/lib/friends-api";
 import { useAuth } from "@/lib/auth";
 import { usePolling } from "@/lib/usePolling";
+import { useUnreadStore } from "@/lib/use-unread-store";
 import AddFriendModal from "@/components/connect/AddFriendModal";
 import CreateGroupModal from "@/components/connect/CreateGroupModal";
 
@@ -39,16 +40,25 @@ export default function MobileConnect() {
   const currentUser = useAuth((s) => s.user);
   const [tab, setTab] = useState<Tab>("chats");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
 
   const [chats, setChats] = useState<Chat[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [requests, setRequests] = useState<FriendRequest[]>([]);
-  const [unread, setUnread] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
-  const refresh = async () => {
+  // ✅ Read from the shared store
+  const unread = useUnreadStore((s) => s.byChat);
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 200);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const refresh = useCallback(async () => {
     try {
       const [c, f, r] = await Promise.all([
         listChats().catch(() => []),
@@ -61,36 +71,25 @@ export default function MobileConnect() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const pollUnread = async () => {
-    try {
-      const items = await getUnreadSummary();
-      const map: Record<string, number> = {};
-      for (const item of items) map[item.chat_id] = item.unread;
-      setUnread(map);
-    } catch {}
-  };
+  }, []);
 
   useEffect(() => {
     refresh();
-  }, []);
-
-  usePolling(pollUnread, 5000, true);
+  }, [refresh]);
 
   const directChats = useMemo(
     () =>
       chats
         .filter((c) => c.type === "direct")
         .filter((c) => {
-          if (!search.trim()) return true;
+          if (!debouncedSearch.trim()) return true;
           const name =
             c.members.find(
               (m) => String(m.user_id) !== String(currentUser?.id)
             )?.full_name || "";
-          return name.toLowerCase().includes(search.toLowerCase());
+          return name.toLowerCase().includes(debouncedSearch.toLowerCase());
         }),
-    [chats, search, currentUser?.id]
+    [chats, debouncedSearch, currentUser?.id]
   );
 
   const groupChats = useMemo(
@@ -98,14 +97,52 @@ export default function MobileConnect() {
       chats
         .filter((c) => c.type === "group")
         .filter((c) =>
-          search.trim()
-            ? (c.name || "").toLowerCase().includes(search.toLowerCase())
+          debouncedSearch.trim()
+            ? (c.name || "")
+                .toLowerCase()
+                .includes(debouncedSearch.toLowerCase())
             : true
         ),
-    [chats, search]
+    [chats, debouncedSearch]
   );
 
-  const totalUnread = Object.values(unread).reduce((a, b) => a + b, 0);
+  // Stable callbacks (so memoized rows don't re-render)
+  const handleOpenChat = useCallback(
+    (id: string) => router.push(`/app/connect/${id}`),
+    [router]
+  );
+
+  const handleStartChatWithFriend = useCallback(
+    async (friendUserId: string) => {
+      try {
+        const { createDirectChat } = await import("@/lib/chat-api");
+        const chat = await createDirectChat(friendUserId);
+        await refresh();
+        router.push(`/app/connect/${chat.id}`);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [refresh, router]
+  );
+
+  const handleAccept = useCallback(
+    async (id: string) => {
+      const { acceptFriendRequest } = await import("@/lib/friends-api");
+      await acceptFriendRequest(id);
+      refresh();
+    },
+    [refresh]
+  );
+
+  const handleDecline = useCallback(
+    async (id: string) => {
+      const { declineFriendRequest } = await import("@/lib/friends-api");
+      await declineFriendRequest(id);
+      refresh();
+    },
+    [refresh]
+  );
 
   return (
     <div className="h-full overflow-y-auto bg-slate-950 pb-24">
@@ -181,71 +218,22 @@ export default function MobileConnect() {
         />
       </div>
 
-      {/* Online Now row (only on chats/groups tab) */}
+      {/* Online Now */}
       {tab !== "requests" && friends.length > 0 && (
-        <div className="pb-3">
-          <div className="px-4 pb-2 flex items-center justify-between">
-            <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-              Online Now
-            </div>
-            <button
-              onClick={() => router.push("/app/connect")}
-              className="text-[11px] text-blue-400"
-            >
-              See all →
-            </button>
-          </div>
-          <div className="flex gap-3 overflow-x-auto px-4 scrollbar-thin">
-            {friends.slice(0, 8).map((f) => {
-              const name = f.full_name || f.email || "Friend";
-              const firstName = name.split(" ")[0];
-              const initial = name[0].toUpperCase();
-              const color = colorFor(f.id);
-              return (
-                <button
-                  key={f.id}
-                  onClick={async () => {
-                    try {
-                      const { createDirectChat } = await import(
-                        "@/lib/chat-api"
-                      );
-                      const chat = await createDirectChat(f.user_id);
-                      await refresh();
-                      // ✅ FIXED: full-screen mobile chat view
-                      router.push(`/app/connect/${chat.id}`);
-                    } catch (e) {
-                      console.error(e);
-                    }
-                  }}
-                  className="flex flex-col items-center gap-1.5 shrink-0 group"
-                  title={name}
-                >
-                  <div className="relative">
-                    <div
-                      className={`w-12 h-12 rounded-full bg-gradient-to-br ${color} flex items-center justify-center text-white font-semibold text-sm ring-2 ring-slate-900 group-hover:ring-blue-500/50 transition`}
-                    >
-                      {initial}
-                    </div>
-                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950" />
-                  </div>
-                  <span className="text-[10px] text-slate-400 max-w-[56px] truncate group-hover:text-slate-200 transition">
-                    {firstName}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <OnlineFriendsRow
+          friends={friends}
+          onOpenFriend={handleStartChatWithFriend}
+        />
       )}
 
-      {/* New Group button (only on groups tab) */}
+      {/* New Group button (on Groups tab) */}
       {tab === "groups" && groupChats.length > 0 && (
         <div className="px-4 pb-3">
           <button
             onClick={() => setShowCreateGroup(true)}
             className="w-full flex items-center justify-center gap-2 rounded-2xl border border-dashed border-cyan-500/40 bg-cyan-500/5 py-3 text-xs font-medium text-cyan-300 hover:bg-cyan-500/10 transition active:scale-[0.98]"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Users className="w-3.5 h-3.5" />
             New Group
           </button>
         </div>
@@ -270,8 +258,7 @@ export default function MobileConnect() {
                 chat={chat}
                 currentUserId={currentUser?.id || ""}
                 unreadCount={unread[chat.id] || 0}
-                // ✅ FIXED: full-screen mobile chat view
-                onClick={() => router.push(`/app/connect/${chat.id}`)}
+                onOpen={handleOpenChat}
               />
             ))
           )
@@ -292,7 +279,6 @@ export default function MobileConnect() {
                     "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
                 }}
               >
-                <Users className="w-3.5 h-3.5 inline mr-1.5" />
                 Create Group
               </button>
             </div>
@@ -303,8 +289,7 @@ export default function MobileConnect() {
                 chat={chat}
                 currentUserId={currentUser?.id || ""}
                 unreadCount={unread[chat.id] || 0}
-                // ✅ FIXED: full-screen mobile chat view
-                onClick={() => router.push(`/app/connect/${chat.id}`)}
+                onOpen={handleOpenChat}
               />
             ))
           )
@@ -318,26 +303,14 @@ export default function MobileConnect() {
             <RequestRow
               key={req.id}
               request={req}
-              onAccept={async () => {
-                const { acceptFriendRequest } = await import(
-                  "@/lib/friends-api"
-                );
-                await acceptFriendRequest(req.id);
-                refresh();
-              }}
-              onDecline={async () => {
-                const { declineFriendRequest } = await import(
-                  "@/lib/friends-api"
-                );
-                await declineFriendRequest(req.id);
-                refresh();
-              }}
+              onAccept={handleAccept}
+              onDecline={handleDecline}
             />
           ))
         )}
       </div>
 
-      {/* Floating Action Button — context aware */}
+      {/* FAB */}
       <button
         onClick={() => {
           if (tab === "groups") setShowCreateGroup(true);
@@ -357,7 +330,6 @@ export default function MobileConnect() {
         )}
       </button>
 
-      {/* Modals */}
       {showAddFriend && (
         <AddFriendModal
           onClose={() => {
@@ -378,8 +350,11 @@ export default function MobileConnect() {
   );
 }
 
-// ─── Tab Button ───
-function TabBtn({
+// ═══════════════════════════════════════════════════════════════
+// MEMOIZED SUBCOMPONENTS
+// ═══════════════════════════════════════════════════════════════
+
+const TabBtn = memo(function TabBtn({
   active,
   onClick,
   label,
@@ -419,10 +394,9 @@ function TabBtn({
       </span>
     </button>
   );
-}
+});
 
-// ─── Empty State ───
-function EmptyState({
+const EmptyState = memo(function EmptyState({
   icon,
   text,
 }: {
@@ -437,19 +411,64 @@ function EmptyState({
       <div className="text-xs text-slate-500 max-w-xs">{text}</div>
     </div>
   );
-}
+});
 
-// ─── Chat Row ───
-function ChatRow({
+const OnlineFriendsRow = memo(function OnlineFriendsRow({
+  friends,
+  onOpenFriend,
+}: {
+  friends: Friend[];
+  onOpenFriend: (userId: string) => void;
+}) {
+  return (
+    <div className="pb-3">
+      <div className="px-4 pb-2 flex items-center justify-between">
+        <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+          Online Now
+        </div>
+      </div>
+      <div className="flex gap-3 overflow-x-auto px-4 scrollbar-thin">
+        {friends.slice(0, 8).map((f) => {
+          const name = f.full_name || f.email || "Friend";
+          const firstName = name.split(" ")[0];
+          const initial = name[0].toUpperCase();
+          const color = colorFor(f.id);
+          return (
+            <button
+              key={f.id}
+              onClick={() => onOpenFriend(f.user_id)}
+              className="flex flex-col items-center gap-1.5 shrink-0 group"
+              title={name}
+            >
+              <div className="relative">
+                <div
+                  className={`w-12 h-12 rounded-full bg-gradient-to-br ${color} flex items-center justify-center text-white font-semibold text-sm ring-2 ring-slate-900 group-hover:ring-blue-500/50 transition`}
+                >
+                  {initial}
+                </div>
+                <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950" />
+              </div>
+              <span className="text-[10px] text-slate-400 max-w-[56px] truncate group-hover:text-slate-200 transition">
+                {firstName}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+const ChatRow = memo(function ChatRow({
   chat,
   currentUserId,
   unreadCount,
-  onClick,
+  onOpen,
 }: {
   chat: Chat;
   currentUserId: string;
   unreadCount: number;
-  onClick: () => void;
+  onOpen: (id: string) => void;
 }) {
   const other = chat.members.find(
     (m) => String(m.user_id) !== String(currentUserId)
@@ -474,8 +493,8 @@ function ChatRow({
 
   return (
     <button
-      onClick={onClick}
-      className="w-full flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-3 hover:bg-slate-900 transition text-left"
+      onClick={() => onOpen(chat.id)}
+      className="w-full flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-3 hover:bg-slate-900 transition text-left active:scale-[0.99]"
     >
       <div className="relative shrink-0">
         <div
@@ -511,17 +530,16 @@ function ChatRow({
       </div>
     </button>
   );
-}
+});
 
-// ─── Request Row ───
-function RequestRow({
+const RequestRow = memo(function RequestRow({
   request,
   onAccept,
   onDecline,
 }: {
   request: FriendRequest;
-  onAccept: () => void;
-  onDecline: () => void;
+  onAccept: (id: string) => void;
+  onDecline: (id: string) => void;
 }) {
   const name =
     (request as any).other_user_name ||
@@ -547,14 +565,14 @@ function RequestRow({
       </div>
       <div className="flex gap-1.5 shrink-0">
         <button
-          onClick={onAccept}
+          onClick={() => onAccept(request.id)}
           className="w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-500 flex items-center justify-center text-white transition active:scale-95"
           title="Accept"
         >
           ✓
         </button>
         <button
-          onClick={onDecline}
+          onClick={() => onDecline(request.id)}
           className="w-8 h-8 rounded-full bg-slate-800 hover:bg-red-600 flex items-center justify-center text-slate-400 hover:text-white transition active:scale-95"
           title="Decline"
         >
@@ -563,4 +581,4 @@ function RequestRow({
       </div>
     </div>
   );
-}
+});

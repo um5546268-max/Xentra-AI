@@ -40,14 +40,6 @@ export default function MoreSheet({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const [showFeedback, setShowFeedback] = useState(false);
 
-  // Lock body scroll while sheet is open
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, []);
-
   const handleNav = (href: string) => {
     if (href === "#feedback") {
       setShowFeedback(true);
@@ -60,7 +52,8 @@ export default function MoreSheet({ onClose }: { onClose: () => void }) {
   return (
     <>
       <div
-        className="fixed inset-0 z-50 flex items-end"
+        className="fixed inset-0 z-50 overflow-hidden flex items-end"
+        style={{ touchAction: "none", overscrollBehavior: "contain" }}
         onClick={onClose}
       >
         {/* Backdrop */}

@@ -17,6 +17,13 @@ import KeyboardShortcutsModal from "@/components/KeyboardShortcutsModal";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
 import MobileShell from "@/components/mobile/MobileShell";   // ← NEW
 
+import { startGlobalUnreadPoll, stopGlobalUnreadPoll } from "@/lib/use-unread-store";
+// inside the component, near your other useEffects:
+useEffect(() => {
+  startGlobalUnreadPoll();
+  return () => stopGlobalUnreadPoll();
+}, []);
+
 export default function AppLayout({
   children,
 }: {

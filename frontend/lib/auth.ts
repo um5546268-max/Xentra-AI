@@ -221,9 +221,23 @@ export const useAuth = create<AuthState>((set) => ({
   },
 
   logout: () => {
-    localStorage.removeItem("xentra_token");
-    localStorage.removeItem("xentra_user");
-    localStorage.removeItem("xentra_guest");
-    set({ user: null, token: null, error: null, isGuest: false });
-  },
+  // ✅ Reset all cached stats/mock data so next login starts fresh
+  if (typeof window !== "undefined") {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key === "xentra_token" || key === "xentra_user") continue;
+      if (key.startsWith("xentra-") || key.startsWith("xentra_")) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  }
+
+  localStorage.removeItem("xentra_token");
+  localStorage.removeItem("xentra_user");
+  localStorage.removeItem("xentra_guest");
+  set({ user: null, token: null, error: null, isGuest: false });
+},
 }));

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo, useCallback } from "react";
 import {
   ChevronRight, ChevronDown, Folder, FolderOpen,
   Plus, FolderPlus, Upload, ArrowLeft, RefreshCw, MoreVertical,
@@ -43,10 +43,17 @@ export default function MobileFileExplorer({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [menuEntry, setMenuEntry] = useState<TreeEntry | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const load = async () => {
+  // Debounce
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 200);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await getTree("");
@@ -59,142 +66,160 @@ export default function MobileFileExplorer({
     finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [load, refreshKey]);
 
-  const toggle = (path: string) => {
+  const toggle = useCallback((path: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
       else next.add(path);
       return next;
     });
-  };
+  }, []);
 
-  // ─── Action handlers ───
-  const handleMenuAction = async (action: FileAction) => {
-    if (!menuEntry) return;
-    const entry = menuEntry;
-    setMenuEntry(null);
+  const handleMenuAction = useCallback(
+    async (action: FileAction) => {
+      if (!menuEntry) return;
+      const entry = menuEntry;
+      setMenuEntry(null);
 
-    if (action === "new_file_here") {
-      onNewFile(entry.path);
-      return;
-    }
-
-    if (action === "new_folder_here") {
-      const name = prompt("Folder name:");
-      if (!name) return;
-      try {
-        await createEntry(`${entry.path}/${name}`, "folder", "");
-        await load();
-      } catch {
-        alert("Failed to create folder");
-      }
-      return;
-    }
-
-    if (action === "rename") {
-      const newName = prompt("New name:", entry.name);
-      if (!newName || newName === entry.name) return;
-      const parent = entry.path.includes("/")
-        ? entry.path.slice(0, entry.path.lastIndexOf("/"))
-        : "";
-      const newPath = parent ? `${parent}/${newName}` : newName;
-      try {
-        await renameEntry(entry.path, newPath);
-        await load();
-      } catch (e: any) {
-        alert(e?.response?.data?.detail || "Rename failed");
-      }
-      return;
-    }
-
-    if (action === "delete") {
-      if (!confirm(`Delete "${entry.name}"?`)) return;
-      try {
-        await deleteEntry(entry.path);
-        await load();
-      } catch {
-        alert("Delete failed");
-      }
-      return;
-    }
-
-    if (action === "duplicate") {
-      const ext = entry.name.includes(".")
-        ? entry.name.slice(entry.name.lastIndexOf("."))
-        : "";
-      const base = entry.name.replace(ext, "");
-      const parent = entry.path.includes("/")
-        ? entry.path.slice(0, entry.path.lastIndexOf("/"))
-        : "";
-      const newPath = parent
-        ? `${parent}/${base}_copy${ext}`
-        : `${base}_copy${ext}`;
-      try {
-        const { readFile, writeFile } = await import("@/lib/code");
-        if (entry.type === "file") {
-          const f = await readFile(entry.path);
-          await writeFile(newPath, f.content);
-        } else {
-          await createEntry(newPath, "folder", "");
-        }
-        await load();
-      } catch {
-        alert("Duplicate failed");
-      }
-      return;
-    }
-
-    if (action === "download") {
-      if (entry.type === "directory") {
-        alert("Folder download not supported yet");
+      if (action === "new_file_here") {
+        onNewFile(entry.path);
         return;
       }
-      try {
-        const { readFile } = await import("@/lib/code");
-        const f = await readFile(entry.path);
-        const blob = new Blob([f.content], { type: "text/plain" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = entry.name;
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch {
-        alert("Download failed");
+
+      if (action === "new_folder_here") {
+        const name = prompt("Folder name:");
+        if (!name) return;
+        try {
+          await createEntry(`${entry.path}/${name}`, "folder", "");
+          await load();
+        } catch {
+          alert("Failed to create folder");
+        }
+        return;
       }
-      return;
-    }
-  };
 
-  const handleUpload = () => fileInputRef.current?.click();
+      if (action === "rename") {
+        const newName = prompt("New name:", entry.name);
+        if (!newName || newName === entry.name) return;
+        const parent = entry.path.includes("/")
+          ? entry.path.slice(0, entry.path.lastIndexOf("/"))
+          : "";
+        const newPath = parent ? `${parent}/${newName}` : newName;
+        try {
+          await renameEntry(entry.path, newPath);
+          await load();
+        } catch (e: any) {
+          alert(e?.response?.data?.detail || "Rename failed");
+        }
+        return;
+      }
 
-  const handleFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+      if (action === "delete") {
+        if (!confirm(`Delete "${entry.name}"?`)) return;
+        try {
+          await deleteEntry(entry.path);
+          await load();
+        } catch {
+          alert("Delete failed");
+        }
+        return;
+      }
+
+      if (action === "duplicate") {
+        const ext = entry.name.includes(".")
+          ? entry.name.slice(entry.name.lastIndexOf("."))
+          : "";
+        const base = entry.name.replace(ext, "");
+        const parent = entry.path.includes("/")
+          ? entry.path.slice(0, entry.path.lastIndexOf("/"))
+          : "";
+        const newPath = parent
+          ? `${parent}/${base}_copy${ext}`
+          : `${base}_copy${ext}`;
+        try {
+          const { readFile, writeFile } = await import("@/lib/code");
+          if (entry.type === "file") {
+            const f = await readFile(entry.path);
+            await writeFile(newPath, f.content);
+          } else {
+            await createEntry(newPath, "folder", "");
+          }
+          await load();
+        } catch {
+          alert("Duplicate failed");
+        }
+        return;
+      }
+
+      if (action === "download") {
+        if (entry.type === "directory") {
+          alert("Folder download not supported yet");
+          return;
+        }
+        try {
+          const { readFile } = await import("@/lib/code");
+          const f = await readFile(entry.path);
+          const blob = new Blob([f.content], { type: "text/plain" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = entry.name;
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch {
+          alert("Download failed");
+        }
+        return;
+      }
+    },
+    [menuEntry, load, onNewFile]
+  );
+
+  const handleUpload = useCallback(() => fileInputRef.current?.click(), []);
+
+  const handleFilePicked = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        await uploadFile(file, "");
+        await load();
+      } catch {
+        alert("Upload failed");
+      }
+      e.target.value = "";
+    },
+    [load]
+  );
+
+  const handleNewFolderTopLevel = useCallback(async () => {
+    const name = prompt("Folder name:");
+    if (!name) return;
     try {
-      await uploadFile(file, "");
+      await createEntry(name, "folder", "");
       await load();
     } catch {
-      alert("Upload failed");
+      alert("Failed to create folder");
     }
-    e.target.value = "";
-  };
+  }, [load]);
 
-  // ─── Filter tree by search ───
-  const matchesSearch = (entry: TreeEntry): boolean => {
-    if (!search.trim()) return true;
-    const needle = search.toLowerCase();
-    if (entry.name.toLowerCase().includes(needle)) return true;
-    if (entry.children) return entry.children.some(matchesSearch);
-    return false;
-  };
+  // Filter
+  const matchesSearch = useCallback(
+    (entry: TreeEntry): boolean => {
+      if (!debouncedSearch.trim()) return true;
+      const needle = debouncedSearch.toLowerCase();
+      if (entry.name.toLowerCase().includes(needle)) return true;
+      if (entry.children) return entry.children.some(matchesSearch);
+      return false;
+    },
+    [debouncedSearch]
+  );
 
   const filteredTree = tree.filter(matchesSearch);
 
@@ -221,7 +246,7 @@ export default function MobileFileExplorer({
         </button>
       </div>
 
-      {/* Search bar */}
+      {/* Search */}
       <div className="px-3 py-2 border-b border-slate-800">
         <input
           value={search}
@@ -239,7 +264,7 @@ export default function MobileFileExplorer({
           </div>
         ) : filteredTree.length === 0 ? (
           <div className="text-center py-12 text-slate-500 text-sm">
-            {search.trim()
+            {debouncedSearch.trim()
               ? "No files match your search."
               : "No files yet. Tap + New File to add one."}
           </div>
@@ -252,14 +277,14 @@ export default function MobileFileExplorer({
               expanded={expanded}
               onToggle={toggle}
               onOpenFile={onOpenFile}
-              onMenu={(e) => setMenuEntry(e)}
-              search={search}
+              onMenu={setMenuEntry}
+              search={debouncedSearch}
             />
           ))
         )}
       </div>
 
-      {/* Bottom action bar */}
+      {/* Bottom bar */}
       <div
         className="shrink-0 border-t border-slate-800 bg-slate-950 px-3 py-3 grid grid-cols-3 gap-2"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 4.5rem)" }}
@@ -271,16 +296,7 @@ export default function MobileFileExplorer({
           <Plus className="w-3.5 h-3.5" /> New File
         </button>
         <button
-          onClick={async () => {
-            const name = prompt("Folder name:");
-            if (!name) return;
-            try {
-              await createEntry(name, "folder", "");
-              await load();
-            } catch {
-              alert("Failed to create folder");
-            }
-          }}
+          onClick={handleNewFolderTopLevel}
           className="flex items-center justify-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 py-2.5 text-xs font-medium text-cyan-300 transition active:scale-95"
         >
           <FolderPlus className="w-3.5 h-3.5" /> Folder
@@ -299,7 +315,6 @@ export default function MobileFileExplorer({
         />
       </div>
 
-      {/* Three-dots menu sheet */}
       {menuEntry && (
         <MobileFileActions
           entryName={menuEntry.name}
@@ -312,8 +327,8 @@ export default function MobileFileExplorer({
   );
 }
 
-// ─── Tree Node ───
-function TreeNode({
+// ─── MEMOIZED Tree Node ───
+const TreeNode = memo(function TreeNode({
   entry,
   depth,
   expanded,
@@ -380,7 +395,6 @@ function TreeNode({
           </span>
         </button>
 
-        {/* Three-dots button */}
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -411,4 +425,4 @@ function TreeNode({
       )}
     </>
   );
-}
+});

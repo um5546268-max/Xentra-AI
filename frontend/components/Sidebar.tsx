@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, memo } from "react";
 import { useRouter, useParams, usePathname } from "next/navigation";
 import {
   Plus, Search, Trash2, LogOut, MessageSquare, ListTodo, Play,
@@ -8,6 +8,7 @@ import {
   FolderOpen, ChevronDown, ChevronRight, Wrench, Settings,
   ShieldCheck, Activity, PanelLeftClose, PanelLeftOpen,
   GraduationCap, Users, Home, Code as CodeIcon, CreditCard,
+  Sun, Moon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
@@ -22,9 +23,8 @@ import NewTaskModal from "./NewTaskModal";
 import NotificationsBell from "./NotificationsBell";
 import Avatar from "@/components/Avatar";
 import NotificationToggle from "@/components/connect/NotificationToggle";
-import { Sun, Moon } from "lucide-react";
 import { useTheme } from "@/lib/theme-store";
-import { getUnreadSummary } from "@/lib/chat-api";
+import { useUnreadStore } from "@/lib/use-unread-store";
 
 // ─────────────────────────────────────────────────────────────
 // SIDEBAR
@@ -46,9 +46,11 @@ export default function Sidebar() {
   const [showTasks, setShowTasks] = useState(true);
   const theme = useTheme((state) => state.theme);
   const toggleTheme = useTheme((state) => state.toggleTheme);
-  const [unreadTotal, setUnreadTotal] = useState(0);
 
-  // ─── MAIN_NAV is now INSIDE the component so it can read unreadTotal ───
+  // ✅ Read from the shared unread store — no local polling!
+  const unreadTotal = useUnreadStore((s) => s.total);
+
+  // MAIN_NAV recomputed only when unreadTotal changes
   const MAIN_NAV = useMemo(
     () => [
       { path: "/app", label: "Home", icon: Home },
@@ -73,19 +75,7 @@ export default function Sidebar() {
     [unreadTotal]
   );
 
-  // Poll unread
-  useEffect(() => {
-    const poll = async () => {
-      try {
-        const items = await getUnreadSummary();
-        const total = items.reduce((sum, i) => sum + i.unread, 0);
-        setUnreadTotal(total);
-      } catch {}
-    };
-    poll();
-    const id = setInterval(poll, 8000);
-    return () => clearInterval(id);
-  }, []);
+  // ✅ REMOVED the local poll useEffect — it lives in useUnreadStore now
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -404,34 +394,12 @@ export default function Sidebar() {
 
         {/* Recent chats */}
         {filtered.length > 0 && (
-          <div className="border-t border-slate-800 p-2 space-y-0.5">
-            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-              Recent chats
-            </div>
-            {filtered.slice(0, 5).map((c) => {
-              const active = params.conversationId === c.id;
-              return (
-                <div
-                  key={c.id}
-                  onClick={() => router.push(`/app/c/${c.id}`)}
-                  className={`group flex items-center gap-2 rounded-lg px-3 py-2 text-xs cursor-pointer transition ${
-                    active
-                      ? "bg-slate-800 text-white"
-                      : "text-slate-400 hover:bg-slate-900 hover:text-white"
-                  }`}
-                >
-                  <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate flex-1">{c.title}</span>
-                  <button
-                    onClick={(e) => handleDelete(c.id, e)}
-                    className="opacity-0 group-hover:opacity-100 transition text-slate-500 hover:text-red-400"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+          <RecentChats
+            chats={filtered}
+            activeChatId={params.conversationId || null}
+            onOpen={(id) => router.push(`/app/c/${id}`)}
+            onDelete={handleDelete}
+          />
         )}
       </div>
 
@@ -517,6 +485,52 @@ export default function Sidebar() {
     </aside>
   );
 }
+
+// ─────────────────────────────────────────────────────────────
+// MEMOIZED SUBCOMPONENTS
+// ─────────────────────────────────────────────────────────────
+const RecentChats = memo(function RecentChats({
+  chats,
+  activeChatId,
+  onOpen,
+  onDelete,
+}: {
+  chats: Conversation[];
+  activeChatId: string | null;
+  onOpen: (id: string) => void;
+  onDelete: (id: string, e: React.MouseEvent) => void;
+}) {
+  return (
+    <div className="border-t border-slate-800 p-2 space-y-0.5">
+      <div className="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+        Recent chats
+      </div>
+      {chats.slice(0, 5).map((c) => {
+        const active = activeChatId === c.id;
+        return (
+          <div
+            key={c.id}
+            onClick={() => onOpen(c.id)}
+            className={`group flex items-center gap-2 rounded-lg px-3 py-2 text-xs cursor-pointer transition ${
+              active
+                ? "bg-slate-800 text-white"
+                : "text-slate-400 hover:bg-slate-900 hover:text-white"
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate flex-1">{c.title}</span>
+            <button
+              onClick={(e) => onDelete(c.id, e)}
+              className="opacity-0 group-hover:opacity-100 transition text-slate-500 hover:text-red-400"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS

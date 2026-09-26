@@ -112,7 +112,8 @@ export default function FeedbackModal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
+      className="fixed inset-0 z-[60] overflow-hidden bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
+      style={{ touchAction: "none", overscrollBehavior: "contain" }}
       onClick={onClose}
     >
       <div

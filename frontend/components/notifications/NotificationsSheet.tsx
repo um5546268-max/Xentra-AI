@@ -55,7 +55,8 @@ export default function NotificationsSheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end"
+      className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-sm flex items-end"
+      style={{ touchAction: "none", overscrollBehavior: "contain" }}
       onClick={onClose}
     >
       <div
