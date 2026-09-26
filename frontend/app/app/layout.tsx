@@ -15,14 +15,8 @@ import SystemStatsWidget from "@/components/SystemStatsWidget";
 import { useTheme } from "@/lib/theme-store";
 import KeyboardShortcutsModal from "@/components/KeyboardShortcutsModal";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
-import MobileShell from "@/components/mobile/MobileShell";   // ← NEW
-
-import { startGlobalUnreadPoll, stopGlobalUnreadPoll } from "@/lib/use-unread-store";
-// inside the component, near your other useEffects:
-useEffect(() => {
-  startGlobalUnreadPoll();
-  return () => stopGlobalUnreadPoll();
-}, []);
+import MobileShell from "@/components/mobile/MobileShell";
+import UnreadPoller from "@/components/UnreadPoller";
 
 export default function AppLayout({
   children,
@@ -78,6 +72,9 @@ export default function AppLayout({
       className="flex flex-col bg-slate-950 text-white overflow-hidden"
       style={{ height: "100vh" }}
     >
+      {/* ✅ Global unread poller — mounts once, polls every 30s */}
+      <UnreadPoller />
+
       {/* Main row: sidebar (desktop) + content + bottom nav (mobile) */}
       <div className="flex flex-1 min-h-0">
         {/* Sidebar — hidden on mobile */}
@@ -91,10 +88,10 @@ export default function AppLayout({
         </main>
 
         {showCommandCenter && (
-  <div className="hidden md:block">
-    <CommandCenter />
-  </div>
-)}
+          <div className="hidden md:block">
+            <CommandCenter />
+          </div>
+        )}
         <GlobalAudioHost />
         <GlobalYouTubePlayer />
         {showTour && <OnboardingTour onComplete={() => setShowTour(false)} />}

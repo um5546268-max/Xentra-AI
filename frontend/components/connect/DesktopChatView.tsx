@@ -1,16 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import ChatListPanel from "@/components/connect/ChatListPanel";
-import ChatWindowPanel from "@/components/connect/ChatWindowPanel";
-import ProfilePanel from "@/components/connect/ProfilePanel";
 
 export default function DesktopChatView({ chatId }: { chatId: string }) {
   const router = useRouter();
 
-  // Redirect to /app/connect with the chat preselected (avoids duplicate layout)
   useEffect(() => {
+    // Redirect to the connect page with the chat selected
     router.replace(`/app/connect?chat=${chatId}`);
   }, [chatId, router]);
 

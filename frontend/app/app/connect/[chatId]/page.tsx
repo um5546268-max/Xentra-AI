@@ -8,6 +8,7 @@ const MobileChatView = dynamic(
   () => import("@/components/mobile/MobileChatView"),
   { ssr: false }
 );
+
 const DesktopChatView = dynamic(
   () => import("@/components/connect/DesktopChatView"),
   { ssr: false }
