@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Crown, Check, Sparkles, Zap, Shield, CreditCard, Plus,
@@ -156,9 +159,21 @@ const USAGE_ICONS: Record<string, React.ReactNode> = {
   automations_max: <Bot className="w-4 h-4 text-violet-300" />,
   learning_max: <GraduationCap className="w-4 h-4 text-cyan-300" />,
   ai_agents_max: <Bot className="w-4 h-4 text-amber-300" />,
+  search: <Sparkles className="w-4 h-4 text-cyan-300" />,
+  deep_research: <Sparkles className="w-4 h-4 text-violet-300" />,
+  ai_coding: <Bot className="w-4 h-4 text-emerald-300" />,
+  file_upload: <FolderOpen className="w-4 h-4 text-emerald-300" />,
+  shopping: <Sparkles className="w-4 h-4 text-amber-300" />,
+  browser_tasks: <Sparkles className="w-4 h-4 text-cyan-300" />,
+  save_memory: <Sparkles className="w-4 h-4 text-pink-300" />,
+  connect_ai_minutes: <Bot className="w-4 h-4 text-violet-300" />,
+  learning_minutes: <GraduationCap className="w-4 h-4 text-amber-300" />,
 };
 
-export default function BillingPage() {
+// ─────────────────────────────────────────────────────────────
+// INNER COMPONENT (uses useSearchParams — must be inside <Suspense>)
+// ─────────────────────────────────────────────────────────────
+function BillingPageInner() {
   const searchParams = useSearchParams();
   const user = useAuth((s) => s.user);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -170,7 +185,6 @@ export default function BillingPage() {
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null);
   const [successBanner, setSuccessBanner] = useState(false);
 
-  // Detect ?checkout=success on mount
   useEffect(() => {
     if (searchParams.get("checkout") === "success") {
       setSuccessBanner(true);
@@ -195,7 +209,6 @@ export default function BillingPage() {
     reload();
   }, []);
 
-  // After success, wait 2s then reload status to reflect new plan
   useEffect(() => {
     if (!successBanner) return;
     const t = setTimeout(() => reload(), 2000);
@@ -214,9 +227,7 @@ export default function BillingPage() {
       } else {
         setInfoModal({
           title: "Could not start checkout",
-          message:
-            result.message ||
-            "There was an issue starting the payment. Please try again in a moment.",
+          message: result.message || "There was an issue starting the payment. Please try again in a moment.",
         });
       }
     } finally {
@@ -247,14 +258,11 @@ export default function BillingPage() {
     <div className="h-full overflow-y-auto">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
 
-        {/* Success banner */}
         {successBanner && (
           <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             <div>
-              <div className="font-semibold text-emerald-300">
-                Payment successful!
-              </div>
+              <div className="font-semibold text-emerald-300">Payment successful!</div>
               <div className="text-sm text-emerald-200/80">
                 Your plan is being upgraded. It may take a few seconds to reflect.
               </div>
@@ -268,7 +276,6 @@ export default function BillingPage() {
           </div>
         )}
 
-        {/* Header */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-violet-500/20 border border-violet-500/40 flex items-center justify-center">
             <CreditCard className="w-5 h-5 text-violet-300" />
@@ -281,7 +288,6 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Current Plan Banner */}
         {status && (
           <div className="relative overflow-hidden rounded-2xl border border-violet-500/40 bg-gradient-to-br from-violet-600/20 via-violet-800/10 to-slate-900 p-6">
             <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-violet-500/20 blur-3xl pointer-events-none" />
@@ -292,9 +298,7 @@ export default function BillingPage() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <h2 className="text-xl font-semibold">
-                      Your Plan: {status.plan.name}
-                    </h2>
+                    <h2 className="text-xl font-semibold">Your Plan: {status.plan.name}</h2>
                     <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-500/30 text-violet-200 border border-violet-500/40">
                       {status.subscription.status || "active"}
                     </span>
@@ -316,7 +320,6 @@ export default function BillingPage() {
           </div>
         )}
 
-        {/* Choose Your Plan — 4 cards */}
         <div id="plans" className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
@@ -432,21 +435,15 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Full Feature Comparison Table */}
         <div className="space-y-3">
           <div>
             <h2 className="text-xl font-semibold">Compare All Features</h2>
-            <p className="text-sm text-slate-500">
-              See exactly what's included in each plan.
-            </p>
+            <p className="text-sm text-slate-500">See exactly what's included in each plan.</p>
           </div>
 
           <div className="rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden">
-            {/* Table header */}
             <div className="grid grid-cols-5 border-b border-slate-800 bg-slate-950/60">
-              <div className="p-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Feature
-              </div>
+              <div className="p-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Feature</div>
               <div className="p-3 text-center border-l border-slate-800">
                 <div className="text-sm font-semibold text-slate-300">🆓 Free</div>
                 <div className="text-[10px] text-slate-500 mt-0.5">$0</div>
@@ -465,7 +462,6 @@ export default function BillingPage() {
               </div>
             </div>
 
-            {/* Table rows */}
             {COMPARISON_ROWS.map((row, idx) => (
               <div
                 key={row.label}
@@ -473,9 +469,7 @@ export default function BillingPage() {
                   row.highlight ? "bg-slate-950/40" : idx % 2 === 0 ? "bg-slate-900/20" : ""
                 }`}
               >
-                <div className="p-3 text-xs text-slate-300 font-medium">
-                  {row.label}
-                </div>
+                <div className="p-3 text-xs text-slate-300 font-medium">{row.label}</div>
                 <div className="p-3 text-center text-xs text-slate-400 border-l border-slate-800/60">
                   {renderCell(row.free, row.highlight)}
                 </div>
@@ -499,7 +493,6 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Special offer */}
         <div className="relative overflow-hidden rounded-2xl border border-violet-500/30 bg-gradient-to-r from-violet-600/10 via-slate-900 to-cyan-600/10 p-5 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
             <div className="text-4xl">🎁</div>
@@ -526,7 +519,6 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Two column: Payment + Usage */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
             <div className="flex items-center justify-between">
@@ -609,7 +601,6 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Recent Transactions */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -645,7 +636,6 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Trust badges */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <TrustBadge icon={<Shield className="w-4 h-4 text-emerald-400" />} title="Secure Payments" subtitle="Bank-level encryption." />
           <TrustBadge icon={<Check className="w-4 h-4 text-cyan-400" />} title="Cancel Anytime" subtitle="No hidden fees." />
@@ -654,7 +644,6 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {/* Info modal */}
       {infoModal && (
         <div
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
@@ -684,6 +673,23 @@ export default function BillingPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// DEFAULT EXPORT — wrapped in Suspense (fixes Vercel prerender error)
+// ─────────────────────────────────────────────────────────────
+export default function BillingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="h-full flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-violet-400" />
+        </div>
+      }
+    >
+      <BillingPageInner />
+    </Suspense>
   );
 }
 
