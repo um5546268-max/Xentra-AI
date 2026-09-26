@@ -165,8 +165,8 @@ export default function MobileCodeEditor({
 
       {/* Bottom action bar */}
       <div
-        className="shrink-0 border-t border-slate-800 bg-slate-950 px-3 py-3 flex items-center gap-2"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 4.5rem)" }}
+        className="shrink-0 border-t border-slate-800 bg-slate-950 px-3 py-3 flex items-center gap-2 sticky bottom-0 z-30"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 5.5rem)" }}
       >
         <button
           onClick={onAskAI}
