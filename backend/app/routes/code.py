@@ -90,17 +90,42 @@ class GitCommitRequest(BaseModel):
     message: str
 
 
+class MoveRequest(BaseModel):
+    src: str
+    dest_dir: str
+    new_name: str | None = None
+
+
+class DebugRequest(BaseModel):
+    path: str
+    args: list[str] = []
+    timeout: Optional[int] = 120
+
+
+class TestRequest(BaseModel):
+    path: Optional[str] = None
+    timeout: Optional[int] = 180
+
+
 # ═══════════════════════════════════════════════════════════════
-# HELPERS
+# HELPERS — PER-USER ISOLATION
 # ═══════════════════════════════════════════════════════════════
-def _workspace_root() -> Path:
-    raw = getattr(settings, "CODE_WORKSPACE", "") or "./workspaces/default"
-    root = Path(raw).expanduser().resolve()
+def _workspace_root(user: User) -> Path:
+    """
+    Each user gets their OWN sandboxed workspace.
+    Path: ./workspaces/{user.id}/
+    Files never leak between accounts.
+    """
+    base = Path(
+        getattr(settings, "CODE_WORKSPACE", "") or "./workspaces"
+    ).expanduser().resolve()
+    root = base / str(user.id)
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
 def _safe_join(root: Path, relative: str) -> Path:
+    """Prevent path traversal — path must stay inside root."""
     target = (root / relative).resolve()
     try:
         target.relative_to(root)
@@ -165,7 +190,7 @@ def get_tree(
     path: str = "",
     current_user: User = Depends(get_current_user),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     start = _safe_join(root, path) if path else root
     if not start.exists():
         raise HTTPException(404, "Path not found")
@@ -180,12 +205,15 @@ def read_file(
     path: str,
     current_user: User = Depends(get_current_user),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     target = _safe_join(root, path)
     if not target.exists() or not target.is_file():
         raise HTTPException(404, "File not found")
     try:
-        return {"path": path, "content": target.read_text(encoding="utf-8", errors="replace")}
+        return {
+            "path": path,
+            "content": target.read_text(encoding="utf-8", errors="replace"),
+        }
     except Exception as e:
         raise HTTPException(500, f"Read failed: {e}")
 
@@ -196,7 +224,7 @@ def write_file(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_permission("code.write")),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     target = _safe_join(root, payload.path)
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -215,7 +243,7 @@ def create_entry(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_permission("code.write")),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     target = _safe_join(root, payload.path)
     if target.exists():
         raise HTTPException(409, "Already exists")
@@ -237,7 +265,7 @@ def rename_entry(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_permission("code.write")),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     src = _safe_join(root, payload.old_path)
     dst = _safe_join(root, payload.new_path)
     if not src.exists():
@@ -246,7 +274,11 @@ def rename_entry(
         raise HTTPException(409, "Destination already exists")
     dst.parent.mkdir(parents=True, exist_ok=True)
     src.rename(dst)
-    return {"ok": True, "old_path": payload.old_path, "new_path": payload.new_path}
+    return {
+        "ok": True,
+        "old_path": payload.old_path,
+        "new_path": payload.new_path,
+    }
 
 
 @router.delete("/entry")
@@ -255,7 +287,7 @@ def delete_entry(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_permission("code.write")),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     target = _safe_join(root, path)
     if not target.exists():
         raise HTTPException(404, "Not found")
@@ -279,7 +311,7 @@ async def upload_file(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_permission("code.write")),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     dest_dir = _safe_join(root, dest_path) if dest_path else root
     dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -311,7 +343,7 @@ def make_folder(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_permission("code.write")),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     target = _safe_join(root, path)
     if target.exists():
         raise HTTPException(409, "Already exists")
@@ -331,7 +363,7 @@ def run_file(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_permission("code.run")),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     target = _safe_join(root, payload.path)
     if not target.exists() or not target.is_file():
         raise HTTPException(404, "File not found")
@@ -358,7 +390,10 @@ def run_file(
                 for p in config["compile"]
             ]
             try:
-                c = subprocess.run(compile_cmd, capture_output=True, text=True, timeout=60, cwd=str(target.parent))
+                c = subprocess.run(
+                    compile_cmd, capture_output=True, text=True,
+                    timeout=60, cwd=str(target.parent),
+                )
             except FileNotFoundError:
                 return _missing_tool(config["lang"], compile_cmd[0])
             if c.returncode != 0:
@@ -457,17 +492,27 @@ def check_syntax(
             return {"ok": False, "error": f"{e.msg} (line {e.lineno})"}
 
     if ext in (".js", ".mjs"):
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=ext, delete=False, encoding="utf-8")
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=ext, delete=False, encoding="utf-8"
+        )
         try:
             tmp.write(payload.content)
             tmp.close()
-            r = subprocess.run(["node", "--check", tmp.name], capture_output=True, text=True, timeout=10)
-            return {"ok": r.returncode == 0, "error": r.stderr.strip() if r.returncode else None}
+            r = subprocess.run(
+                ["node", "--check", tmp.name],
+                capture_output=True, text=True, timeout=10,
+            )
+            return {
+                "ok": r.returncode == 0,
+                "error": r.stderr.strip() if r.returncode else None,
+            }
         except FileNotFoundError:
             return {"ok": True, "note": "node not installed"}
         finally:
-            try: os.unlink(tmp.name)
-            except OSError: pass
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
 
     return {"ok": True}
 
@@ -480,7 +525,7 @@ def preview_diff(
     payload: DiffRequest,
     current_user: User = Depends(get_current_user),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     target = _safe_join(root, payload.path)
     if not target.exists() or not target.is_file():
         raise HTTPException(404, "File not found")
@@ -503,9 +548,9 @@ def preview_diff(
 def ask_assistant(
     payload: AskRequest,
     current_user: User = Depends(get_current_user),
-    _limit: None = Depends(enforce_limit("ai_coding")),   # ← ADD
+    _limit: None = Depends(enforce_limit("ai_coding")),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     target = _safe_join(root, payload.path)
     if not target.exists() or not target.is_file():
         raise HTTPException(404, "File not found")
@@ -559,6 +604,7 @@ def get_preview_token(current_user: User = Depends(get_current_user)):
 def preview_file(
     file_path: str,
     token: str = "",
+    db: Session = Depends(get_db),
 ):
     import jwt
     if not token:
@@ -577,7 +623,15 @@ def preview_file(
     if payload.get("purpose") != "preview":
         raise HTTPException(401, "Invalid token purpose")
 
-    root = _workspace_root()
+    # ✅ Fetch the actual user from the JWT sub
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(401, "Invalid token payload")
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(401, "User not found")
+
+    root = _workspace_root(user)
     target = _safe_join(root, file_path)
     if not target.exists() or not target.is_file():
         raise HTTPException(404, "File not found")
@@ -592,9 +646,12 @@ def preview_file(
 # ═══════════════════════════════════════════════════════════════
 @router.get("/git/status")
 def git_status(current_user: User = Depends(get_current_user)):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     if not _is_git_repo(root):
-        return {"is_repo": False, "branch": None, "files": [], "clean": True, "ahead": 0, "behind": 0}
+        return {
+            "is_repo": False, "branch": None, "files": [],
+            "clean": True, "ahead": 0, "behind": 0,
+        }
 
     _, branch_out, _ = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], root)
     branch = branch_out.strip() or "main"
@@ -618,7 +675,7 @@ def git_status(current_user: User = Depends(get_current_user)):
 
 @router.post("/git/init")
 def git_init(current_user: User = Depends(get_current_user)):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     if _is_git_repo(root):
         return {"ok": True, "already": True}
     code, _, err = _run_git(["init"], root)
@@ -627,7 +684,10 @@ def git_init(current_user: User = Depends(get_current_user)):
     _run_git(["checkout", "-b", "main"], root)
     gi = root / ".gitignore"
     if not gi.exists():
-        gi.write_text("__pycache__/\nnode_modules/\n.venv/\nvenv/\n*.pyc\n*.exe\n*.o\n.DS_Store\n", encoding="utf-8")
+        gi.write_text(
+            "__pycache__/\nnode_modules/\n.venv/\nvenv/\n*.pyc\n*.exe\n*.o\n.DS_Store\n",
+            encoding="utf-8",
+        )
     return {"ok": True, "already": False}
 
 
@@ -636,7 +696,7 @@ def git_commit(
     payload: GitCommitRequest,
     current_user: User = Depends(get_current_user),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     if not _is_git_repo(root):
         raise HTTPException(400, "Not a git repository")
 
@@ -649,7 +709,11 @@ def git_commit(
         return {"committed": False, "reason": "No changes to commit"}
 
     code, _, err = _run_git(
-        ["-c", "user.email=xentra@local", "-c", "user.name=Xentra", "commit", "-m", payload.message],
+        [
+            "-c", "user.email=xentra@local",
+            "-c", "user.name=Xentra",
+            "commit", "-m", payload.message,
+        ],
         root,
     )
     if code != 0:
@@ -664,11 +728,14 @@ def git_log(
     limit: int = 20,
     current_user: User = Depends(get_current_user),
 ):
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     if not _is_git_repo(root):
         return {"commits": []}
     code, out, _ = _run_git(
-        ["log", f"-{min(limit, 100)}", "--pretty=format:%H%x09%h%x09%an%x09%ae%x09%at%x09%s"],
+        [
+            "log", f"-{min(limit, 100)}",
+            "--pretty=format:%H%x09%h%x09%an%x09%ae%x09%at%x09%s",
+        ],
         root,
     )
     if code != 0:
@@ -687,23 +754,18 @@ def git_log(
             "subject": parts[5],
         })
     return {"commits": commits}
+
+
 # ═══════════════════════════════════════════════════════════════
 # MOVE
 # ═══════════════════════════════════════════════════════════════
-class MoveRequest(BaseModel):
-    src: str
-    dest_dir: str       # destination folder (relative to workspace root)
-    new_name: str | None = None
-
-
 @router.post("/move")
 def move_entry(
     payload: MoveRequest,
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_permission("code.write")),
 ):
-    """Move a file or folder into another folder (optionally renaming)."""
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     src = _safe_join(root, payload.src)
     dest_dir = _safe_join(root, payload.dest_dir) if payload.dest_dir else root
 
@@ -715,7 +777,6 @@ def move_entry(
     name = payload.new_name or src.name
     dst = dest_dir / name
 
-    # Can't move a folder into itself
     if src.is_dir() and (dst == src or src in dst.parents):
         raise HTTPException(400, "Cannot move a folder into itself")
 
@@ -732,29 +793,18 @@ def move_entry(
         "src": payload.src,
         "new_path": str(dst.relative_to(root)).replace("\\", "/"),
     }
-# ═══════════════════════════════════════════════════════════════
-# DEBUG — launch interpreter with debugger attached
-# ═══════════════════════════════════════════════════════════════
-class DebugRequest(BaseModel):
-    path: str
-    args: list[str] = []
-    timeout: Optional[int] = 120
 
 
+# ═══════════════════════════════════════════════════════════════
+# DEBUG
+# ═══════════════════════════════════════════════════════════════
 @router.post("/debug")
 def debug_file(
     payload: DebugRequest,
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_permission("code.run")),
 ):
-    """
-    Launch the file under a debugger. Returns stdout/stderr.
-    - .py    → python -m pdb file.py
-    - .js    → node --inspect-brk file.js (prints the inspector URL)
-    - .ts    → npx ts-node file.ts (no debugger for ts yet)
-    - others → same as /run
-    """
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     target = _safe_join(root, payload.path)
     if not target.exists() or not target.is_file():
         raise HTTPException(404, "File not found")
@@ -763,7 +813,6 @@ def debug_file(
     args = payload.args or []
     timeout = min(payload.timeout or 120, 300)
 
-    # Build the debug command
     if ext == ".py":
         cmd = ["python", "-m", "pdb", str(target)] + args
     elif ext in (".js", ".mjs"):
@@ -771,7 +820,6 @@ def debug_file(
     elif ext == ".ts":
         cmd = ["npx", "ts-node", str(target)] + args
     else:
-        # Fall back to normal run
         config = _detect_language(payload.path)
         if not config:
             raise HTTPException(400, f"Debug not supported for {ext}")
@@ -779,14 +827,10 @@ def debug_file(
 
     try:
         result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=str(target.parent),
+            cmd, capture_output=True, text=True,
+            timeout=timeout, cwd=str(target.parent),
             stdin=subprocess.DEVNULL,
         )
-
         return {
             "success": result.returncode == 0,
             "exit_code": result.returncode,
@@ -802,7 +846,6 @@ def debug_file(
                 else None
             ),
         }
-
     except subprocess.TimeoutExpired:
         return {
             "success": False,
@@ -827,19 +870,11 @@ def debug_file(
 
 
 # ═══════════════════════════════════════════════════════════════
-# TEST — auto-detect and run test suite
+# TEST
 # ═══════════════════════════════════════════════════════════════
-class TestRequest(BaseModel):
-    path: Optional[str] = None      # optional: test a single file
-    timeout: Optional[int] = 180
-
-
-def _detect_test_command(root: Path, file_path: Optional[str]) -> tuple[list[str], str]:
-    """
-    Return (command, framework_name) based on what's in the workspace.
-    Detection order: python (pytest) → node (jest/vitest/npm test) → go → fallback.
-    """
-    # Explicit file given?
+def _detect_test_command(
+    root: Path, file_path: Optional[str]
+) -> tuple[list[str], str]:
     if file_path:
         target = _safe_join(root, file_path)
         ext = target.suffix.lower()
@@ -851,14 +886,22 @@ def _detect_test_command(root: Path, file_path: Optional[str]) -> tuple[list[str
                 return (["npm", "test", "--", str(target)], "npm-test")
             return (["node", str(target)], "node")
         if ext == ".go":
-            return (["go", "test", "-v", f"./{target.parent.relative_to(root)}"], "go-test")
+            return (
+                ["go", "test", "-v", f"./{target.parent.relative_to(root)}"],
+                "go-test",
+            )
 
-    # Auto-detect by project files
-    if (root / "pyproject.toml").exists() or (root / "pytest.ini").exists() or (root / "setup.py").exists():
+    if (
+        (root / "pyproject.toml").exists()
+        or (root / "pytest.ini").exists()
+        or (root / "setup.py").exists()
+    ):
         return (["python", "-m", "pytest", "-v"], "pytest")
 
     if (root / "package.json").exists():
-        pkg = (root / "package.json").read_text(encoding="utf-8", errors="replace")
+        pkg = (root / "package.json").read_text(
+            encoding="utf-8", errors="replace"
+        )
         if '"vitest"' in pkg:
             return (["npx", "vitest", "run"], "vitest")
         if '"jest"' in pkg:
@@ -868,7 +911,6 @@ def _detect_test_command(root: Path, file_path: Optional[str]) -> tuple[list[str
     if (root / "go.mod").exists():
         return (["go", "test", "-v", "./..."], "go-test")
 
-    # Fallback: find any test_*.py file
     py_tests = list(root.glob("**/test_*.py"))
     if py_tests:
         return (["python", "-m", "pytest", "-v"], "pytest")
@@ -882,8 +924,7 @@ def run_tests(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_permission("code.run")),
 ):
-    """Run the workspace's test suite (auto-detects the framework)."""
-    root = _workspace_root()
+    root = _workspace_root(current_user)
     timeout = min(payload.timeout or 180, 600)
 
     cmd, framework = _detect_test_command(root, payload.path)
@@ -905,17 +946,11 @@ def run_tests(
 
     try:
         result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=str(root),
+            cmd, capture_output=True, text=True,
+            timeout=timeout, cwd=str(root),
             stdin=subprocess.DEVNULL,
         )
-
-        # Parse common pass/fail counts from output
         summary = _parse_test_summary(result.stdout + result.stderr, framework)
-
         return {
             "success": result.returncode == 0,
             "exit_code": result.returncode,
@@ -927,7 +962,6 @@ def run_tests(
             "framework": framework,
             "summary": summary,
         }
-
     except subprocess.TimeoutExpired:
         return {
             "success": False,
@@ -954,12 +988,9 @@ def run_tests(
 
 
 def _parse_test_summary(output: str, framework: str) -> dict:
-    """Extract pass/fail counts from test output."""
     import re
-
     summary = {"passed": 0, "failed": 0, "skipped": 0, "total": 0}
 
-    # pytest: "3 passed, 1 failed, 2 skipped in 0.5s"
     if framework == "pytest":
         m = re.search(r"(\d+) passed", output)
         if m: summary["passed"] = int(m.group(1))
@@ -968,7 +999,6 @@ def _parse_test_summary(output: str, framework: str) -> dict:
         m = re.search(r"(\d+) skipped", output)
         if m: summary["skipped"] = int(m.group(1))
 
-    # jest / vitest: "Tests: 2 failed, 5 passed, 7 total"
     if framework in ("jest", "vitest", "npm-test"):
         m = re.search(r"(\d+) passed", output)
         if m: summary["passed"] = int(m.group(1))
@@ -977,7 +1007,6 @@ def _parse_test_summary(output: str, framework: str) -> dict:
         m = re.search(r"(\d+) skipped", output)
         if m: summary["skipped"] = int(m.group(1))
 
-    # go: "ok ..." per package
     if framework == "go-test":
         passed = len(re.findall(r"^ok\s", output, re.MULTILINE))
         failed = len(re.findall(r"^FAIL\s", output, re.MULTILINE))
