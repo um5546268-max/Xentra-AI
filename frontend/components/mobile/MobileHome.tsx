@@ -12,36 +12,58 @@ import {
   getGamificationStats,
   GamificationStats,
 } from "@/lib/gamification";
+import NotificationsSheet from "@/components/notifications/NotificationsSheet";
 
 const QUICK_ACTIONS = [
-  { id: "subjects",  label: "Subjects",   icon: BookOpen,       color: "violet",  href: "/app/learn" },
-  { id: "notes",     label: "Notes",      icon: FileText,       color: "cyan",    href: "/app/notes" },
-  { id: "flashcards",label: "Flashcards", icon: Layers,         color: "emerald", href: "/app/learn" },
-  { id: "quiz",      label: "Quiz",       icon: HelpCircle,     color: "amber",   href: "/app/learn" },
-  { id: "import",    label: "Import File",icon: Upload,         color: "pink",    href: "/app/files" },
-  { id: "audio",     label: "Audio",      icon: Music,          color: "blue",    href: "/app/media" },
-  { id: "video",     label: "Video",      icon: Video,          color: "red",     href: "/app/media" },
-  { id: "more",      label: "More",       icon: MoreHorizontal, color: "slate",   href: "/app/tools" },
+  { id: "subjects",   label: "Subjects",   icon: BookOpen,       color: "violet",  href: "/app/learn" },
+  { id: "notes",      label: "Notes",      icon: FileText,       color: "cyan",    href: "/app/notes" },
+  { id: "flashcards", label: "Flashcards", icon: Layers,         color: "emerald", href: "/app/learn" },
+  { id: "quiz",       label: "Quiz",       icon: HelpCircle,     color: "amber",   href: "/app/learn" },
+  { id: "import",     label: "Import File",icon: Upload,         color: "pink",    href: "/app/files" },
+  { id: "audio",      label: "Audio",      icon: Music,          color: "blue",    href: "/app/media" },
+  { id: "video",      label: "Video",      icon: Video,          color: "red",     href: "/app/media" },
+  { id: "more",       label: "More",       icon: MoreHorizontal, color: "slate",   href: "/app/tools" },
 ];
 
 const COLOR_MAP: Record<string, { bg: string; text: string }> = {
-  violet:  { bg: "from-violet-600/30 to-violet-900/10 border-violet-500/30",   text: "text-violet-300" },
-  cyan:    { bg: "from-cyan-600/30 to-cyan-900/10 border-cyan-500/30",         text: "text-cyan-300" },
-  emerald: { bg: "from-emerald-600/30 to-emerald-900/10 border-emerald-500/30",text: "text-emerald-300" },
-  amber:   { bg: "from-amber-600/30 to-amber-900/10 border-amber-500/30",      text: "text-amber-300" },
-  pink:    { bg: "from-pink-600/30 to-pink-900/10 border-pink-500/30",         text: "text-pink-300" },
-  blue:    { bg: "from-blue-600/30 to-blue-900/10 border-blue-500/30",         text: "text-blue-300" },
-  red:     { bg: "from-red-600/30 to-red-900/10 border-red-500/30",            text: "text-red-300" },
-  slate:   { bg: "from-slate-600/30 to-slate-900/10 border-slate-500/30",      text: "text-slate-300" },
+  violet:  { bg: "from-violet-600/30 to-violet-900/10 border-violet-500/30",    text: "text-violet-300" },
+  cyan:    { bg: "from-cyan-600/30 to-cyan-900/10 border-cyan-500/30",          text: "text-cyan-300" },
+  emerald: { bg: "from-emerald-600/30 to-emerald-900/10 border-emerald-500/30", text: "text-emerald-300" },
+  amber:   { bg: "from-amber-600/30 to-amber-900/10 border-amber-500/30",       text: "text-amber-300" },
+  pink:    { bg: "from-pink-600/30 to-pink-900/10 border-pink-500/30",          text: "text-pink-300" },
+  blue:    { bg: "from-blue-600/30 to-blue-900/10 border-blue-500/30",          text: "text-blue-300" },
+  red:     { bg: "from-red-600/30 to-red-900/10 border-red-500/30",             text: "text-red-300" },
+  slate:   { bg: "from-slate-600/30 to-slate-900/10 border-slate-500/30",       text: "text-slate-300" },
 };
 
 export default function MobileHome() {
   const router = useRouter();
   const user = useAuth((s) => s.user);
   const [stats, setStats] = useState<GamificationStats | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
 
+  // Load gamification stats
   useEffect(() => {
     getGamificationStats().then(setStats).catch(() => {});
+  }, []);
+
+  // Poll notification unread count
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const mod = await import("@/lib/notifications");
+        if (typeof (mod as any).getUnreadCount === "function") {
+          const count = await (mod as any).getUnreadCount().catch(() => 0);
+          setUnreadCount(Number(count) || 0);
+        }
+      } catch {
+        // Notifications lib not available — silently skip
+      }
+    };
+    poll();
+    const id = setInterval(poll, 15000);
+    return () => clearInterval(id);
   }, []);
 
   const firstName = user?.full_name?.split(" ")[0] || "there";
@@ -51,8 +73,8 @@ export default function MobileHome() {
 
   // Mock learning progress — replace with real API later
   const learningProgress = 72;
-  const minutesToday = 84;   // 1h 24m
-  const minutesGoal = 120;   // 2h
+  const minutesToday = 84;
+  const minutesGoal = 120;
   const currentChapter = {
     subject: "Physics",
     chapter: "Chapter 4: Motion",
@@ -78,9 +100,19 @@ export default function MobileHome() {
             </div>
           </div>
         </div>
-        <button className="relative w-9 h-9 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center">
+
+        {/* ✅ Notification bell — opens sheet */}
+        <button
+          onClick={() => setShowNotifications(true)}
+          className="relative w-9 h-9 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center hover:bg-slate-800 transition active:scale-95"
+          title="Notifications"
+        >
           <Bell className="w-4 h-4 text-slate-300" />
-          <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-violet-500 ring-2 ring-slate-950" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-violet-500 text-white text-[10px] font-bold flex items-center justify-center border-2 border-slate-950">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -243,7 +275,8 @@ export default function MobileHome() {
           <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
             <span className="font-mono">
               {Math.floor(currentChapter.minutesStudied / 60)}h{" "}
-              {currentChapter.minutesStudied % 60}m / {currentChapter.minutesTotal / 60}h
+              {currentChapter.minutesStudied % 60}m /{" "}
+              {currentChapter.minutesTotal / 60}h
             </span>
             <span className="text-violet-300 font-semibold">
               {currentChapter.progress}%
@@ -272,6 +305,11 @@ export default function MobileHome() {
           </div>
         </div>
       </div>
+
+      {/* ✅ Notification sheet */}
+      {showNotifications && (
+        <NotificationsSheet onClose={() => setShowNotifications(false)} />
+      )}
     </div>
   );
 }

@@ -24,34 +24,11 @@ import Avatar from "@/components/Avatar";
 import NotificationToggle from "@/components/connect/NotificationToggle";
 import { Sun, Moon } from "lucide-react";
 import { useTheme } from "@/lib/theme-store";
+import { getUnreadSummary } from "@/lib/chat-api";
 
 // ─────────────────────────────────────────────────────────────
-// MAIN NAV
+// SIDEBAR
 // ─────────────────────────────────────────────────────────────
-type NavItem = {
-  path: string;
-  label: string;
-  icon: any;
-  badge?: number;
-  premium?: boolean;
-};
-
-const MAIN_NAV: NavItem[] = [
-  { path: "/app", label: "Home", icon: Home },
-  { path: "/app/c", label: "AI Chat", icon: MessageSquare },
-  { path: "/app/connect", label: "Connect", icon: Users, badge: 3 },
-  { path: "/app/learn", label: "Learning", icon: GraduationCap },
-  { path: "/app/code", label: "Code", icon: CodeIcon },
-  { path: "/app/media", label: "Media", icon: ImageIcon },
-  { path: "/app/files", label: "Files", icon: FolderOpen },
-  { path: "/app/tasks", label: "Tasks", icon: ListTodo },
-  { path: "/app/tools", label: "Tools", icon: Wrench },
-  { path: "/app/billing", label: "Billing", icon: CreditCard, premium: true },
-  { path: "/app/system-health", label: "System Health", icon: Activity },
-  { path: "/app/permissions", label: "Security", icon: ShieldCheck },
-  { path: "/app/settings", label: "Settings", icon: Settings },
-];
-
 export default function Sidebar() {
   const router = useRouter();
   const params = useParams<{ conversationId?: string }>();
@@ -69,6 +46,46 @@ export default function Sidebar() {
   const [showTasks, setShowTasks] = useState(true);
   const theme = useTheme((state) => state.theme);
   const toggleTheme = useTheme((state) => state.toggleTheme);
+  const [unreadTotal, setUnreadTotal] = useState(0);
+
+  // ─── MAIN_NAV is now INSIDE the component so it can read unreadTotal ───
+  const MAIN_NAV = useMemo(
+    () => [
+      { path: "/app", label: "Home", icon: Home },
+      { path: "/app/c", label: "AI Chat", icon: MessageSquare },
+      {
+        path: "/app/connect",
+        label: "Connect",
+        icon: Users,
+        badge: unreadTotal > 0 ? unreadTotal : undefined,
+      },
+      { path: "/app/learn", label: "Learning", icon: GraduationCap },
+      { path: "/app/code", label: "Code", icon: CodeIcon },
+      { path: "/app/media", label: "Media", icon: ImageIcon },
+      { path: "/app/files", label: "Files", icon: FolderOpen },
+      { path: "/app/tasks", label: "Tasks", icon: ListTodo },
+      { path: "/app/tools", label: "Tools", icon: Wrench },
+      { path: "/app/billing", label: "Billing", icon: CreditCard, premium: true },
+      { path: "/app/system-health", label: "System Health", icon: Activity },
+      { path: "/app/permissions", label: "Security", icon: ShieldCheck },
+      { path: "/app/settings", label: "Settings", icon: Settings },
+    ],
+    [unreadTotal]
+  );
+
+  // Poll unread
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const items = await getUnreadSummary();
+        const total = items.reduce((sum, i) => sum + i.unread, 0);
+        setUnreadTotal(total);
+      } catch {}
+    };
+    poll();
+    const id = setInterval(poll, 8000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -418,9 +435,8 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* ── Bottom ── */}
+      {/* Bottom */}
       <div className="shrink-0 border-t border-slate-800">
-        {/* ✅ Upgrade to Ultimate promo card */}
         <div className="p-3">
           <button
             onClick={() => router.push("/app/billing")}
@@ -443,7 +459,6 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* ✅ More together card with X logo — clickable → System Health */}
         <div className="px-3 pb-3">
           <button
             onClick={() => router.push("/app/system-health")}
