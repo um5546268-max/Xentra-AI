@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.services.memory_decay import apply_decay, auto_deactivate_unused
-
+from app.services.usage_guard import enforce_limit
 from pydantic import BaseModel
 from app.database import get_db
 from app.deps import get_current_user
@@ -56,6 +56,7 @@ def create_memory(
     payload: MemoryCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _limit: None = Depends(enforce_limit("save_memory")),   # ← ADD
 ):
     """Create a new memory. If a memory with the same key exists, update it."""
     normalized = _normalize_key(payload.key)

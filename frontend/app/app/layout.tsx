@@ -15,6 +15,7 @@ import { OnboardingTour } from "@/components/OnboardingTour";
 import SystemStatsWidget from "@/components/SystemStatsWidget";
 import { useTheme } from "@/lib/theme-store";
 import KeyboardShortcutsModal from "@/components/KeyboardShortcutsModal";
+import UpgradeModal from "@/components/upgrade/UpgradeModal";   // ← ADD
 
 export default function AppLayout({
   children,
@@ -48,22 +49,22 @@ export default function AppLayout({
 
   const [showShortcuts, setShowShortcuts] = useState(false);
 
-useEffect(() => {
-  const onKey = (e: KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "/") {
-      e.preventDefault();
-      setShowShortcuts((v) => !v);
-    }
-  };
-  window.addEventListener("keydown", onKey);
-  return () => window.removeEventListener("keydown", onKey);
-}, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "/") {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const loadTheme = useTheme((state) => state.loadTheme);
 
-useEffect(() => {
-  loadTheme();
-}, [loadTheme]);
+  useEffect(() => {
+    loadTheme();
+  }, [loadTheme]);
 
   return (
     <div
@@ -81,8 +82,11 @@ useEffect(() => {
         <GlobalYouTubePlayer />
         {showTour && <OnboardingTour onComplete={() => setShowTour(false)} />}
         {showShortcuts && (
-        <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />
-      )}
+          <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />
+        )}
+
+        {/* ✅ Global upgrade modal — pops up on 402 anywhere in the app */}
+        <UpgradeModal />
       </div>
 
       {/* Bottom status bar */}

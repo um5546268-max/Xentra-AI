@@ -12,6 +12,7 @@ from app.schemas.shopping import (
 from app.core.rate_limit import limiter
 from app.services.plan_limits import clamp_count
 from app.services.shopping import search_products, enrich_and_rank
+from app.services.usage_guard import enforce_limit
 
 
 router = APIRouter(prefix="/shopping", tags=["shopping"])
@@ -25,6 +26,7 @@ def search(
     q: str = Query(min_length=2, max_length=200),
     max_results: int = Query(default=5, ge=1, le=20),
     current_user: User = Depends(get_current_user),
+    _limit: None = Depends(enforce_limit("shopping")),   # ← ADD
 ):
     """Search products with structured intent parsing."""
     limit = clamp_count(current_user, "shopping_results", max_results)
@@ -44,6 +46,7 @@ def compare(
     response: Response,
     payload: ShoppingCompareRequest,
     current_user: User = Depends(get_current_user),
+    _limit: None = Depends(enforce_limit("shopping")),   # ← ADD
 ):
     """
     Search products, extract specs, score against user intent.

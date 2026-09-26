@@ -22,6 +22,7 @@ from app.services.scheduler import compute_next_run
 from app.services.conditions import evaluate_condition
 from app.services.notifications import create_notification
 from app.services.task_runner import run_task, run_browser_task
+from app.services.usage_guard import enforce_limit
 
 
 router = APIRouter(prefix="/automations", tags=["automations"])
@@ -132,6 +133,7 @@ def create_automation(
     payload: AutomationCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _limit: None = Depends(enforce_limit("automations")),   # ← ADD
 ):
     """Create a new automation."""
     _validate_schedule(payload)

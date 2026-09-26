@@ -21,6 +21,7 @@ from app.services.browser_agent import (
     fill_form,
     run_chain,
 )
+from app.services.usage_guard import enforce_limit
 from app.services.chain_generator import generate_chain
 from app.services.audit import log_quick
 from app.services.chain_generator import generate_chain
@@ -57,6 +58,7 @@ async def browser_open(
     payload: BrowserOpenRequest,
     current_user: User = Depends(require_permission("browser.read")),
     db: Session = Depends(get_db),
+    _limit: None = Depends(enforce_limit("browser_tasks")),   # ← ADD
 ):
     _validate_url(payload.url)
     result = await asyncio.to_thread(open_and_read, payload.url)
@@ -201,6 +203,7 @@ async def browser_auto(
 async def browser_auto_run(
     payload: BrowserAutoRequest,
     current_user: User = Depends(get_current_user),
+    _limit: None = Depends(enforce_limit("browser_tasks")),   # ← ADD
 ):
     """Generate a chain AND run it in one shot."""
     gen = await asyncio.to_thread(generate_chain, payload.goal)

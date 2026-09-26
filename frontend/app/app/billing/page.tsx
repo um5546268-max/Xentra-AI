@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Crown, Check, Sparkles, Zap, Shield, CreditCard, Plus,
   TrendingUp, MessageSquare, FolderOpen, Bot, GraduationCap,
-  Copy, CheckCircle2, ChevronRight, Loader2, X, FileText, Minus,
+  Copy, CheckCircle2, ChevronRight, Loader2, X, FileText,
 } from "lucide-react";
 import {
   listPlans, getBillingStatus, startCheckout,
@@ -60,7 +61,7 @@ const CARD_FEATURES: Record<string, string[]> = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// FULL COMPARISON TABLE (rows × 4 plan columns)
+// FULL COMPARISON TABLE
 // ─────────────────────────────────────────────────────────────
 type FeatureRow = {
   label: string;
@@ -158,41 +159,68 @@ const USAGE_ICONS: Record<string, React.ReactNode> = {
 };
 
 export default function BillingPage() {
+  const searchParams = useSearchParams();
   const user = useAuth((s) => s.user);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [cycle, setCycle] = useState<"monthly" | "yearly">("monthly");
   const [copied, setCopied] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null);
+  const [successBanner, setSuccessBanner] = useState(false);
+
+  // Detect ?checkout=success on mount
+  useEffect(() => {
+    if (searchParams.get("checkout") === "success") {
+      setSuccessBanner(true);
+      setTimeout(() => setSuccessBanner(false), 8000);
+    }
+  }, [searchParams]);
+
+  const reload = async () => {
+    try {
+      const [p, s] = await Promise.all([
+        listPlans().catch(() => []),
+        getBillingStatus().catch(() => null),
+      ]);
+      setPlans(mergeWithFallback(p));
+      if (s) setStatus(s);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [p, s] = await Promise.all([
-          listPlans().catch(() => []),
-          getBillingStatus().catch(() => null),
-        ]);
-        setPlans(mergeWithFallback(p));
-        if (s) setStatus(s);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    reload();
   }, []);
+
+  // After success, wait 2s then reload status to reflect new plan
+  useEffect(() => {
+    if (!successBanner) return;
+    const t = setTimeout(() => reload(), 2000);
+    return () => clearTimeout(t);
+  }, [successBanner]);
 
   const currentSlug = status?.plan?.slug || "free";
 
   const handleChoosePlan = async (slug: string) => {
     if (slug === currentSlug) return;
-    const result = await startCheckout(slug);
-    if (result.ok && result.checkout_url) {
-      window.location.href = result.checkout_url;
-    } else {
-      setInfoModal({
-        title: "Payments coming soon",
-        message: result.message || "We're finalizing our payment integration. You'll be able to upgrade very soon!",
-      });
+    setCheckoutLoading(slug);
+    try {
+      const result = await startCheckout(slug);
+      if (result.ok && result.checkout_url) {
+        window.location.href = result.checkout_url;
+      } else {
+        setInfoModal({
+          title: "Could not start checkout",
+          message:
+            result.message ||
+            "There was an issue starting the payment. Please try again in a moment.",
+        });
+      }
+    } finally {
+      setCheckoutLoading(null);
     }
   };
 
@@ -218,6 +246,27 @@ export default function BillingPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
+
+        {/* Success banner */}
+        {successBanner && (
+          <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 flex items-center gap-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div>
+              <div className="font-semibold text-emerald-300">
+                Payment successful!
+              </div>
+              <div className="text-sm text-emerald-200/80">
+                Your plan is being upgraded. It may take a few seconds to reflect.
+              </div>
+            </div>
+            <button
+              onClick={() => setSuccessBanner(false)}
+              className="ml-auto text-emerald-300/60 hover:text-emerald-200"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -247,7 +296,7 @@ export default function BillingPage() {
                       Your Plan: {status.plan.name}
                     </h2>
                     <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-500/30 text-violet-200 border border-violet-500/40">
-                      {status.plan.name}
+                      {status.subscription.status || "active"}
                     </span>
                   </div>
                   <p className="text-sm text-slate-400 max-w-md">
@@ -357,14 +406,25 @@ export default function BillingPage() {
 
                   <button
                     onClick={() => handleChoosePlan(p.slug)}
-                    disabled={isCurrent}
-                    className={`w-full rounded-lg py-2.5 text-sm font-semibold transition ${
+                    disabled={isCurrent || checkoutLoading === p.slug}
+                    className={`w-full rounded-lg py-2.5 text-sm font-semibold transition flex items-center justify-center gap-2 ${
                       isCurrent
                         ? "bg-slate-900/60 text-slate-500 border border-slate-800 cursor-not-allowed"
                         : styles.buttonBg
                     }`}
                   >
-                    {isCurrent ? "Current Plan" : p.price_cents === 0 ? "Downgrade" : "Upgrade Now"}
+                    {checkoutLoading === p.slug ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Opening…
+                      </>
+                    ) : isCurrent ? (
+                      "Current Plan"
+                    ) : p.price_cents === 0 ? (
+                      "Downgrade"
+                    ) : (
+                      "Upgrade Now"
+                    )}
                   </button>
                 </div>
               );
@@ -431,7 +491,6 @@ export default function BillingPage() {
               </div>
             ))}
 
-            {/* Footnote */}
             <div className="p-3 border-t border-slate-800 bg-slate-950/60 text-[11px] text-slate-500 text-center">
               * Unlimited Learning on Ultimate is subject to fair-use limits.
               <span className="mx-2">·</span>
@@ -484,7 +543,7 @@ export default function BillingPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm text-slate-200">Visa •••• 4242</div>
-                <div className="text-xs text-slate-500">Expires 12/2028</div>
+                <div className="text-xs text-slate-500">Managed by Paddle</div>
               </div>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                 Active
@@ -492,18 +551,19 @@ export default function BillingPage() {
             </div>
 
             <button
-              onClick={() => setInfoModal({ title: "Add card", message: "Adding cards will be enabled once Stripe is fully wired up." })}
+              onClick={() => setInfoModal({ title: "Add card", message: "New cards are added during checkout. Click Upgrade Now on any paid plan to manage your payment method through Paddle." })}
               className="w-full rounded-lg border border-dashed border-slate-700 hover:border-violet-500/60 hover:bg-slate-900/60 py-3 text-sm text-slate-400 flex items-center justify-center gap-2 transition"
             >
               <Plus className="w-4 h-4" /> Add New Card
             </button>
 
             <div className="pt-2 border-t border-slate-800/60">
-              <div className="text-[10px] text-slate-500 mb-2 text-center">Alternative Payments</div>
+              <div className="text-[10px] text-slate-500 mb-2 text-center">Powered by Paddle</div>
               <div className="flex items-center justify-center gap-2 flex-wrap">
+                <AltPayBadge label="Visa" color="from-blue-700 to-blue-900" />
+                <AltPayBadge label="Mastercard" color="from-red-700 to-red-900" />
                 <AltPayBadge label="PayPal" color="from-blue-700 to-blue-900" />
-                <AltPayBadge label="JazzCash" color="from-red-700 to-red-900" />
-                <AltPayBadge label="Easypaisa" color="from-emerald-700 to-emerald-900" />
+                <AltPayBadge label="Apple Pay" color="from-slate-700 to-slate-900" />
               </div>
             </div>
           </div>

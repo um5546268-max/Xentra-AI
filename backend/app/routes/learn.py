@@ -23,7 +23,7 @@ from app.services.gamification import record_activity
 from app.services.extract import extract_text
 from fastapi import UploadFile, File, Form
 from fastapi import Query
-
+from app.services.usage_guard import enforce_limit
 
 router = APIRouter(prefix="/learn", tags=["learn"])
 
@@ -36,6 +36,7 @@ def learn_from_topic(
     payload: LearnFromTopicRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+        _limit: None = Depends(enforce_limit("learning_minutes", amount=10)),
 ):
     data = learn_service.extract_concepts(
         topic=payload.topic,
@@ -103,6 +104,7 @@ def learn_from_text(
     payload: LearnFromTextRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _limit: None = Depends(enforce_limit("learning_minutes", amount=10)),
 ):
     data = learn_service.extract_concepts(topic=None, text=payload.text, num=8)
 

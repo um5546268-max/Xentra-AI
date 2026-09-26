@@ -24,6 +24,7 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user, require_permission
 from app.models.user import User
+from app.services.usage_guard import enforce_limit
 
 
 router = APIRouter(prefix="/code", tags=["code"])
@@ -502,6 +503,7 @@ def preview_diff(
 def ask_assistant(
     payload: AskRequest,
     current_user: User = Depends(get_current_user),
+    _limit: None = Depends(enforce_limit("ai_coding")),   # ← ADD
 ):
     root = _workspace_root()
     target = _safe_join(root, payload.path)

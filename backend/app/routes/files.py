@@ -29,6 +29,7 @@ from app.deps import get_current_user, require_permission
 from app.services.audit import log_quick
 from app.services.permissions import requires_confirmation
 from app.services import pending_actions as pa_service
+from app.services.usage_guard import enforce_limit
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -57,6 +58,7 @@ def upload_file(
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("files.write")),
+    _limit: None = Depends(enforce_limit("file_upload")),   # ← ADD
 ):
     """Upload a file, extract its text, and chunk it."""
     # Save file to disk
