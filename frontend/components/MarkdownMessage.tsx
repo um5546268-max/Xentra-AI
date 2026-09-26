@@ -33,28 +33,46 @@ export default function MarkdownMessage({
         components={{
           code({ inline, className, children, ...props }: any) {
             const match = /language-(\w+)/.exec(className || "");
-            return !inline ? (
-              <div className="my-3 rounded-lg overflow-hidden border border-slate-700">
-                <div className="flex items-center justify-between bg-slate-950 px-3 py-1.5 text-xs text-slate-400 border-b border-slate-700">
-                  <span>{match?.[1] || "code"}</span>
-                  <button
-                    onClick={() =>
-                      navigator.clipboard.writeText(
-                        String(children).replace(/\n$/, "")
-                      )
-                    }
-                    className="hover:text-violet-400 transition"
+            const isBlock = !inline;
+
+            if (isBlock) {
+              // ✅ Use <span> with display:block instead of <div>
+              // to avoid "div inside p" hydration errors.
+              return (
+                <span
+                  className="my-3 rounded-lg overflow-hidden border border-slate-700"
+                  style={{ display: "block" }}
+                >
+                  <span
+                    className="flex items-center justify-between bg-slate-950 px-3 py-1.5 text-xs text-slate-400 border-b border-slate-700"
+                    style={{ display: "flex" }}
                   >
-                    Copy
-                  </button>
-                </div>
-                <pre className="!m-0 !rounded-none bg-slate-900 p-3 overflow-x-auto">
-                  <code className={className} {...props}>
-                    {children}
-                  </code>
-                </pre>
-              </div>
-            ) : (
+                    <span>{match?.[1] || "code"}</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigator.clipboard.writeText(
+                          String(children).replace(/\n$/, "")
+                        )
+                      }
+                      className="hover:text-violet-400 transition"
+                    >
+                      Copy
+                    </button>
+                  </span>
+                  <span
+                    className="bg-slate-900 p-3 overflow-x-auto"
+                    style={{ display: "block" }}
+                  >
+                    <code className={className} {...props}>
+                      {children}
+                    </code>
+                  </span>
+                </span>
+              );
+            }
+
+            return (
               <code
                 className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-violet-300"
                 {...props}

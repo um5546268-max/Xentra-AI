@@ -8,14 +8,14 @@ import { GlobalAudioHost } from "@/components/hive/GlobalAudioHost";
 import { useMediaStore } from "@/lib/media-store";
 import { useShoppingStore } from "@/lib/shopping-store";
 import { GlobalYouTubePlayer } from "@/components/hive/GlobalYouTubePlayer";
-import { MiniPlayer } from "@/components/hive/MiniPlayer";
 import { dailyCheckin } from "@/lib/gamification";
 import { getOnboardingStatus } from "@/lib/onboarding";
 import { OnboardingTour } from "@/components/OnboardingTour";
 import SystemStatsWidget from "@/components/SystemStatsWidget";
 import { useTheme } from "@/lib/theme-store";
 import KeyboardShortcutsModal from "@/components/KeyboardShortcutsModal";
-import UpgradeModal from "@/components/upgrade/UpgradeModal";   // ← ADD
+import UpgradeModal from "@/components/upgrade/UpgradeModal";
+import MobileShell from "@/components/mobile/MobileShell";   // ← NEW
 
 export default function AppLayout({
   children,
@@ -71,26 +71,34 @@ export default function AppLayout({
       className="flex flex-col bg-slate-950 text-white overflow-hidden"
       style={{ height: "100vh" }}
     >
-      {/* Main row: sidebar + content */}
+      {/* Main row: sidebar (desktop) + content + bottom nav (mobile) */}
       <div className="flex flex-1 min-h-0">
-        <Sidebar />
+        {/* Sidebar — hidden on mobile */}
+        <div className="hidden md:flex">
+          <Sidebar />
+        </div>
+
+        {/* Main content */}
         <main className="flex-1 overflow-hidden min-w-0 h-full">
-          {children}
+          <MobileShell>{children}</MobileShell>
         </main>
-        {showCommandCenter && <CommandCenter />}
+
+        {showCommandCenter && (
+  <div className="hidden md:block">
+    <CommandCenter />
+  </div>
+)}
         <GlobalAudioHost />
         <GlobalYouTubePlayer />
         {showTour && <OnboardingTour onComplete={() => setShowTour(false)} />}
         {showShortcuts && (
           <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />
         )}
-
-        {/* ✅ Global upgrade modal — pops up on 402 anywhere in the app */}
         <UpgradeModal />
       </div>
 
-      {/* Bottom status bar */}
-      <div className="shrink-0 h-7 border-t border-slate-800 bg-slate-950 flex items-center justify-between px-4 text-[10px] text-slate-500">
+      {/* Bottom status bar — desktop only */}
+      <div className="hidden md:flex shrink-0 h-7 border-t border-slate-800 bg-slate-950 items-center justify-between px-4 text-[10px] text-slate-500">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />

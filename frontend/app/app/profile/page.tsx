@@ -3,10 +3,16 @@
 import dynamic from "next/dynamic";
 import { useIsMobile } from "@/lib/use-is-mobile";
 
-const DesktopTools = dynamic(() => import("@/components/tools/DesktopTools"), { ssr: false });
-const MobileTools = dynamic(() => import("@/components/mobile/MobileTools"), { ssr: false });
+const DesktopProfile = dynamic(
+  () => import("@/components/profile/DesktopProfile"),
+  { ssr: false }
+);
+const MobileProfile = dynamic(
+  () => import("@/components/mobile/MobileProfile"),
+  { ssr: false }
+);
 
-export default function ToolsPage() {
+export default function ProfilePage() {
   const isMobile = useIsMobile();
   if (isMobile === null) {
     return (
@@ -15,5 +21,5 @@ export default function ToolsPage() {
       </div>
     );
   }
-  return isMobile ? <MobileTools /> : <DesktopTools />;
+  return isMobile ? <MobileProfile /> : <DesktopProfile />;
 }

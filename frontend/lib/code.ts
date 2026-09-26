@@ -39,12 +39,17 @@ export const getTree = async (path: string = ""): Promise<WorkspaceTree> => {
 // ═══════════════════════════════════════════════════════════════
 // READ / WRITE
 // ═══════════════════════════════════════════════════════════════
-export const readFile = async (path: string): Promise<{ path: string; content: string }> => {
+export const readFile = async (
+  path: string
+): Promise<{ path: string; content: string }> => {
   const res = await api.get("/api/code/read", { params: { path } });
   return res.data;
 };
 
-export const writeFile = async (path: string, content: string): Promise<void> => {
+export const writeFile = async (
+  path: string,
+  content: string
+): Promise<void> => {
   await api.post("/api/code/write", { path, content });
 };
 
@@ -178,6 +183,9 @@ export const moveEntry = async (
   return res.data;
 };
 
+// ═══════════════════════════════════════════════════════════════
+// DEBUG / TESTS
+// ═══════════════════════════════════════════════════════════════
 export const debugFile = async (
   path: string,
   args: string[] = []
@@ -197,4 +205,51 @@ export const runTests = async (
 > => {
   const res = await api.post("/api/code/test", { path });
   return res.data;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// PREVIEW (live preview via short-lived token)
+// ═══════════════════════════════════════════════════════════════
+export const getPreviewToken = async (): Promise<{
+  token: string;
+  expires_in: number;
+}> => {
+  const res = await api.get("/api/code/preview-token");
+  return res.data;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// LANGUAGE HELPERS (mobile code editor uses these)
+// ═══════════════════════════════════════════════════════════════
+export const LANGUAGE_CONFIG: Record<string, { label: string; emoji: string }> = {
+  py:   { label: "Python",     emoji: "🐍" },
+  js:   { label: "JavaScript", emoji: "🟨" },
+  mjs:  { label: "JavaScript", emoji: "🟨" },
+  ts:   { label: "TypeScript", emoji: "🔵" },
+  tsx:  { label: "TypeScript", emoji: "🔵" },
+  jsx:  { label: "JavaScript", emoji: "🟨" },
+  html: { label: "HTML",       emoji: "🌐" },
+  css:  { label: "CSS",        emoji: "🎨" },
+  json: { label: "JSON",       emoji: "📋" },
+  md:   { label: "Markdown",   emoji: "📝" },
+  txt:  { label: "Text",       emoji: "📄" },
+  sh:   { label: "Shell",      emoji: "🐚" },
+  c:    { label: "C",          emoji: "📘" },
+  cpp:  { label: "C++",        emoji: "📘" },
+  cc:   { label: "C++",        emoji: "📘" },
+  rs:   { label: "Rust",       emoji: "🦀" },
+  go:   { label: "Go",         emoji: "🐹" },
+  java: { label: "Java",       emoji: "☕" },
+  rb:   { label: "Ruby",       emoji: "💎" },
+  php:  { label: "PHP",        emoji: "🐘" },
+};
+
+export const detectLanguage = (filename: string): string => {
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  return LANGUAGE_CONFIG[ext]?.label || "Text";
+};
+
+export const languageEmoji = (filename: string): string => {
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  return LANGUAGE_CONFIG[ext]?.emoji || "📄";
 };

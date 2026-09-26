@@ -1,10 +1,26 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Toaster } from "sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Xentra AI",
   description: "Your AI Operating Assistant",
+  applicationName: "Xentra AI",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Xentra AI",
+  },
+  formatDetection: { telephone: false },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: "#020617",
+  viewportFit: "cover",   // ← important for iPhone notch
 };
 
 export default function RootLayout({
@@ -14,19 +30,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className="bg-slate-950 text-slate-100 antialiased">
+      <body className="bg-slate-950 text-white antialiased">
         {children}
-        <Toaster
-          position="top-right"
-          theme="dark"
-          toastOptions={{
-            style: {
-              background: "#0f172a",
-              border: "1px solid #1e293b",
-              color: "#e2e8f0",
-            },
-          }}
-        />
       </body>
     </html>
   );

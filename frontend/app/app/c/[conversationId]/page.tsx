@@ -19,6 +19,8 @@ import {
   FileText,
   Volume2,
   VolumeX,
+  Paperclip,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import {
   Message,
@@ -36,6 +38,7 @@ import {
 import { resolveImageUrl } from "@/lib/images";
 import { useVoice } from "@/lib/voice-store";
 import { useLiveBees } from "@/lib/live-bees";
+import { useAuth } from "@/lib/auth";
 import MarkdownMessage from "@/components/MarkdownMessage";
 import MicButton from "@/components/MicButton";
 
@@ -67,6 +70,8 @@ export default function ConversationPage({
 }) {
   const { conversationId } = use(params);
   const router = useRouter();
+  const { user } = useAuth();
+  const firstName = user?.full_name?.split(" ")[0] || "there";
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [committedText, setCommittedText] = useState("");
@@ -106,7 +111,6 @@ export default function ConversationPage({
     loadVoice();
   }, [loadVoice]);
 
-  // Load history
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -132,12 +136,10 @@ export default function ConversationPage({
       .finally(() => setLoading(false));
   }, [conversationId]);
 
-  // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Auto-speak
   useEffect(() => {
     if (!voiceSettings?.auto_speak) return;
     const lastMsg = messages[messages.length - 1];
@@ -153,7 +155,6 @@ export default function ConversationPage({
     }
   }, [messages, voiceSettings?.auto_speak, speakText]);
 
-  // Wake word
   useEffect(() => {
     if (!voiceSettings?.wake_word_enabled) {
       stopWakeWordListener();
@@ -203,7 +204,6 @@ export default function ConversationPage({
     return false;
   };
 
-  // 🐝 Shared bee handlers
   const makeBeeHandlers = () => {
     const onBees = (bees: BeeStreamEvent[]) => {
       setBees(bees);
@@ -304,7 +304,6 @@ export default function ConversationPage({
       );
     };
 
-    // 🖼 Topic image handler
     const onTopicImage = (img: TopicImage) => {
       setMessages((prev) =>
         prev.map((m) =>
@@ -535,19 +534,19 @@ export default function ConversationPage({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="border-b border-slate-800 px-6 py-3 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm text-slate-500">Conversation</div>
-          <div className="font-mono text-xs text-slate-400 truncate">
+      {/* Header — responsive */}
+      <div className="border-b border-slate-800 px-3 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-xs md:text-sm text-slate-500">Conversation</div>
+          <div className="font-mono text-[10px] md:text-xs text-slate-400 truncate">
             {conversationId}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           {wakeWordActive && (
             <div
-              className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${
+              className={`hidden sm:flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${
                 wakeWordArmed
                   ? "border-emerald-500 bg-emerald-500/20 text-emerald-300"
                   : "border-slate-700 text-slate-500"
@@ -569,7 +568,7 @@ export default function ConversationPage({
                 auto_speak: !voiceSettings.auto_speak,
               });
             }}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+            className={`flex items-center gap-1.5 rounded-lg border px-2 md:px-3 py-1.5 text-xs font-medium transition ${
               voiceSettings?.auto_speak
                 ? "border-violet-500 bg-violet-500/20 text-violet-300"
                 : "border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
@@ -580,13 +579,13 @@ export default function ConversationPage({
             ) : (
               <VolumeX className="w-3.5 h-3.5" />
             )}
-            Auto-speak
+            <span className="hidden sm:inline">Auto-speak</span>
           </button>
 
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 focus:border-violet-500 focus:outline-none"
+            className="hidden sm:block rounded-lg border border-slate-800 bg-slate-900 px-2 md:px-3 py-1.5 text-xs text-slate-300 focus:border-violet-500 focus:outline-none max-w-[120px] md:max-w-none"
           >
             {MODELS.map((m) => (
               <option key={m.id} value={m.id}>
@@ -598,18 +597,163 @@ export default function ConversationPage({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+      <div className="flex-1 overflow-y-auto px-3 md:px-6 py-4 md:py-6 space-y-4 md:space-y-6">
         {loading ? (
           <div className="text-center text-slate-600 text-sm py-8">
             Loading history…
           </div>
         ) : messages.length === 0 ? (
-          <div className="text-center text-slate-600 py-16 space-y-2">
-            <div className="text-2xl font-semibold text-slate-400">
-              Start the conversation
+          /* ─── Empty state matching mockup ─── */
+          <div className="pt-2 space-y-5">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/40"
+                style={{
+                  background: "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
+                }}
+              >
+                <span
+                  className="text-white font-black text-2xl italic leading-none"
+                  style={{ fontFamily: "Inter, system-ui, sans-serif" }}
+                >
+                  X
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-base font-bold text-slate-100">
+                  AI Chat
+                </div>
+                <div className="text-xs text-slate-400">
+                  Your personal AI assistant.
+                </div>
+              </div>
+              <button
+                onClick={() => router.push("/app/settings")}
+                className="w-9 h-9 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200 transition"
+                title="Settings"
+              >
+                <SettingsIcon className="w-4 h-4" />
+              </button>
             </div>
-            <div className="text-sm">
-              Xentra is ready. Say hi, ask a question, or give a task.
+
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt={firstName}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xs font-semibold text-slate-300">
+                    {firstName[0]?.toUpperCase() || "U"}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 max-w-[85%] rounded-2xl rounded-tl-md border border-blue-500/40 bg-gradient-to-br from-blue-500/15 via-slate-900/70 to-slate-900/50 px-4 py-3">
+                <div className="text-sm text-slate-100 leading-relaxed">
+                  Hey {firstName}! 👋
+                  <br />
+                  How can I help you today?
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: "explain",  label: "Explain this topic",  prompt: "Explain this topic: " },
+                  { id: "program",  label: "Write a program",     prompt: "Write a program that " },
+                  { id: "pdf",      label: "Summarize a PDF",     prompt: "Summarize a PDF about " },
+                  { id: "study",    label: "Help with study",     prompt: "Help me study for " },
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setCommittedText(p.prompt)}
+                    className="flex items-center gap-2 rounded-full border border-blue-500/50 bg-slate-900/80 px-3 py-2.5 text-left hover:border-blue-400 hover:bg-slate-800 transition active:scale-[0.97]"
+                  >
+                    <span
+                      className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                      style={{
+                        background:
+                          "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
+                      }}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="10"
+                        height="10"
+                        fill="none"
+                        stroke="white"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        {p.id === "explain" && (
+                          <>
+                            <circle cx="12" cy="12" r="9" />
+                            <line x1="12" y1="8" x2="12" y2="12" />
+                            <line x1="12" y1="15" x2="12" y2="15.01" />
+                          </>
+                        )}
+                        {p.id === "program" && (
+                          <>
+                            <polyline points="8 6 3 12 8 18" />
+                            <polyline points="16 6 21 12 16 18" />
+                          </>
+                        )}
+                        {p.id === "pdf" && (
+                          <>
+                            <rect x="5" y="4" width="14" height="16" rx="2" />
+                            <line x1="9" y1="9" x2="15" y2="9" />
+                            <line x1="9" y1="13" x2="13" y2="13" />
+                          </>
+                        )}
+                        {p.id === "study" && (
+                          <>
+                            <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+                            <line x1="8" y1="10" x2="16" y2="10" />
+                            <line x1="8" y1="14" x2="14" y2="14" />
+                          </>
+                        )}
+                      </svg>
+                    </span>
+                    <span className="text-xs text-slate-100 leading-tight font-medium">
+                      {p.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setCommittedText("Plan my day: ")}
+                className="flex items-center gap-2 rounded-full border border-blue-500/50 bg-slate-900/80 px-3 py-2.5 hover:border-blue-400 hover:bg-slate-800 transition active:scale-[0.97]"
+              >
+                <span
+                  className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="10"
+                    height="10"
+                    fill="none"
+                    stroke="white"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  >
+                    <rect x="3" y="5" width="18" height="16" rx="2" />
+                    <line x1="8" y1="3" x2="8" y2="7" />
+                    <line x1="16" y1="3" x2="16" y2="7" />
+                    <line x1="3" y1="11" x2="21" y2="11" />
+                  </svg>
+                </span>
+                <span className="text-xs text-slate-100 font-medium">
+                  Plan my day
+                </span>
+              </button>
             </div>
           </div>
         ) : (
@@ -623,17 +767,19 @@ export default function ConversationPage({
             return (
               <div
                 key={m.id}
-                className={`flex gap-3 ${
+                className={`flex gap-2 md:gap-3 ${
                   m.role === "user" ? "justify-end" : ""
                 }`}
               >
                 {m.role === "assistant" && (
-                  <div className="w-8 h-8 rounded-full bg-violet-500/20 border border-violet-500/40 flex items-center justify-center shrink-0">
-                    <span className="text-violet-300 text-sm font-bold">X</span>
+                  <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-violet-500/20 border border-violet-500/40 flex items-center justify-center shrink-0">
+                    <span className="text-violet-300 text-xs md:text-sm font-bold">
+                      X
+                    </span>
                   </div>
                 )}
 
-                <div className="max-w-2xl flex flex-col gap-1">
+                <div className="max-w-[85%] md:max-w-2xl flex flex-col gap-1">
                   {isEditing ? (
                     <div className="rounded-2xl border border-violet-500 bg-slate-900 p-3 space-y-2">
                       <textarea
@@ -660,7 +806,7 @@ export default function ConversationPage({
                   ) : (
                     <>
                       <div
-                        className={`rounded-2xl px-4 py-3 text-sm ${
+                        className={`rounded-2xl px-3.5 md:px-4 py-2.5 md:py-3 text-sm ${
                           m.role === "user"
                             ? "bg-violet-600 text-white whitespace-pre-wrap"
                             : "bg-slate-800 text-slate-100"
@@ -670,46 +816,48 @@ export default function ConversationPage({
                           m.content
                         ) : m.content || m._image || m._topic_image ? (
                           <>
-                            {/* 🖼 Topic image (image-first chat) */}
                             {m._topic_image && (
-  <div className="rounded-xl overflow-hidden mb-3 border border-slate-700 max-w-md">
-    <button
-      onClick={() => setLightbox(m._topic_image!)}
-      className="block w-full cursor-zoom-in"
-      title="Click to enlarge"
-    >
-      <img
-        src={m._topic_image.url}
-        alt={m._topic_image.title}
-        className="w-full max-h-60 object-cover hover:opacity-95 transition"
-        loading="lazy"
-      />
-    </button>
-    <div className="text-[10px] text-slate-500 px-2 py-1 bg-slate-900/60 flex items-center justify-between gap-2">
-      <span className="truncate">
-        {m._topic_image.source} · {m._topic_image.title}
-      </span>
-      <div className="flex items-center gap-2 shrink-0">
-        <button
-          onClick={() => setLightbox(m._topic_image!)}
-          className="text-violet-400 hover:text-violet-300"
-        >
-          Expand
-        </button>
-        {m._topic_image.page_url && (
-          <a
-            href={m._topic_image.page_url}
-            target="_blank"
-            rel="noreferrer"
-            className="text-violet-400 hover:text-violet-300"
-          >
-            Open
-          </a>
-        )}
-      </div>
-    </div>
-  </div>
-)}
+                              <div className="rounded-xl overflow-hidden mb-3 border border-slate-700 max-w-md">
+                                <button
+                                  onClick={() => setLightbox(m._topic_image!)}
+                                  className="block w-full cursor-zoom-in"
+                                  title="Click to enlarge"
+                                >
+                                  <img
+                                    src={m._topic_image.url}
+                                    alt={m._topic_image.title}
+                                    className="w-full max-h-60 object-cover hover:opacity-95 transition"
+                                    loading="lazy"
+                                  />
+                                </button>
+                                <div className="text-[10px] text-slate-500 px-2 py-1 bg-slate-900/60 flex items-center justify-between gap-2">
+                                  <span className="truncate">
+                                    {m._topic_image.source} ·{" "}
+                                    {m._topic_image.title}
+                                  </span>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                      onClick={() =>
+                                        setLightbox(m._topic_image!)
+                                      }
+                                      className="text-violet-400 hover:text-violet-300"
+                                    >
+                                      Expand
+                                    </button>
+                                    {m._topic_image.page_url && (
+                                      <a
+                                        href={m._topic_image.page_url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-violet-400 hover:text-violet-300"
+                                      >
+                                        Open
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
 
                             {m._image && (
                               <img
@@ -782,9 +930,8 @@ export default function ConversationPage({
                         )}
                       </div>
 
-                      {/* Actions */}
                       <div
-                        className={`flex items-center gap-3 text-xs text-slate-400 mt-1 ${
+                        className={`flex items-center gap-2 md:gap-3 text-xs text-slate-400 mt-1 flex-wrap ${
                           m.role === "user" ? "justify-end" : ""
                         }`}
                       >
@@ -861,9 +1008,12 @@ export default function ConversationPage({
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <form onSubmit={handleSend} className="border-t border-slate-800 p-4">
-        <div className="flex items-center gap-1 mb-2">
+      {/* ─── Input bar ─── */}
+      <form
+        onSubmit={handleSend}
+        className="border-t border-slate-800/60 bg-slate-950 px-3 md:px-4 py-3"
+      >
+        <div className="flex items-center gap-1 mb-2 overflow-x-auto scrollbar-thin">
           <ModeButton
             active={mode === "chat"}
             onClick={() => setMode("chat")}
@@ -874,7 +1024,7 @@ export default function ConversationPage({
             active={mode === "web"}
             onClick={() => setMode("web")}
             icon={<Globe className="w-3.5 h-3.5" />}
-            label="Web search"
+            label="Web"
           />
           <ModeButton
             active={mode === "research"}
@@ -884,7 +1034,15 @@ export default function ConversationPage({
           />
         </div>
 
-        <div className="flex gap-2 items-end">
+        <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 pl-2 pr-1.5 py-1.5 focus-within:border-blue-500/60 transition">
+          <button
+            type="button"
+            className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-300 transition"
+            title="Attach file"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+
           <textarea
             value={
               committedText +
@@ -900,51 +1058,66 @@ export default function ConversationPage({
                 handleSend(e as any);
               }
             }}
-            placeholder="Type your message… (Shift+Enter for newline)"
-            rows={2}
-            className="flex-1 resize-none rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-white placeholder-slate-600 focus:border-violet-500 focus:outline-none"
+            placeholder="Type a message…"
+            rows={1}
+            className="flex-1 resize-none bg-transparent px-1 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none max-h-32"
+            style={{ minHeight: "28px" }}
             disabled={sending}
           />
 
-          <MicButton
-            onTranscript={(text, isFinal) => {
-              if (isFinal) {
-                const handled = handleVoiceCommand(text);
-                if (handled) {
+          <div className="shrink-0">
+            <MicButton
+              onTranscript={(text, isFinal) => {
+                if (isFinal) {
+                  const handled = handleVoiceCommand(text);
+                  if (handled) {
+                    setInterimText("");
+                    return;
+                  }
+                  setCommittedText((prev) => {
+                    const base = prev.trim();
+                    return base ? `${base} ${text}` : text;
+                  });
                   setInterimText("");
-                  return;
+                } else {
+                  setInterimText(text);
                 }
-                setCommittedText((prev) => {
-                  const base = prev.trim();
-                  return base ? `${base} ${text}` : text;
-                });
-                setInterimText("");
-              } else {
-                setInterimText(text);
-              }
-            }}
-            disabled={sending}
-          />
+              }}
+              disabled={sending}
+            />
+          </div>
 
           {sending ? (
             <button
               type="button"
               onClick={handleStop}
-              className="rounded-xl bg-red-600 p-3 hover:bg-red-500 transition"
+              className="shrink-0 w-9 h-9 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center text-white transition active:scale-95"
+              title="Stop"
             >
-              <Square className="w-5 h-5" />
+              <Square className="w-4 h-4" />
             </button>
           ) : (
             <button
               type="submit"
               disabled={!committedText.trim()}
-              className="rounded-xl bg-violet-600 p-3 hover:bg-violet-500 disabled:opacity-40 transition"
+              className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-white transition active:scale-95 disabled:opacity-40"
+              style={{
+                background:
+                  "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
+              }}
+              title="Send"
             >
-              <Send className="w-5 h-5" />
+              <Send className="w-4 h-4" />
             </button>
           )}
         </div>
       </form>
+
+      {/* ✅ Spacer for fixed bottom nav — mobile only, so input sits snug */}
+      <div
+        className="md:hidden shrink-0"
+        style={{ height: "calc(env(safe-area-inset-bottom) + 4.5rem)" }}
+      />
 
       {compareOpen && (
         <CompareModal
@@ -953,12 +1126,12 @@ export default function ConversationPage({
         />
       )}
       {lightbox && (
-  <ImageLightbox
-    image={lightbox}
-    onClose={() => setLightbox(null)}
-    onReply={(text) => setCommittedText(text)}
-  />
-)}
+        <ImageLightbox
+          image={lightbox}
+          onClose={() => setLightbox(null)}
+          onReply={(text) => setCommittedText(text)}
+        />
+      )}
     </div>
   );
 }
@@ -979,9 +1152,9 @@ function ModeButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+      className={`shrink-0 flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
         active
-          ? "border-violet-500 bg-violet-500/20 text-violet-300"
+          ? "border-blue-500 bg-blue-500/20 text-blue-300"
           : "border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
       }`}
     >
@@ -1148,15 +1321,15 @@ function CompareModal({
 }) {
   return (
     <div
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-6"
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 md:p-6"
       onClick={onClose}
     >
       <div
         className="w-full max-w-5xl max-h-[85vh] rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-          <h2 className="text-lg font-semibold">
+        <div className="flex items-center justify-between px-4 md:px-5 py-3 md:py-4 border-b border-slate-800">
+          <h2 className="text-base md:text-lg font-semibold">
             Compare {sources.length} sources
           </h2>
           <button
@@ -1167,7 +1340,7 @@ function CompareModal({
           </button>
         </div>
         <div className="flex-1 overflow-auto">
-          <div className="grid grid-cols-2 gap-3 p-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 md:p-4">
             {sources.map((s, i) => (
               <div
                 key={i}
@@ -1212,9 +1385,8 @@ function CompareModal({
     </div>
   );
 }
-// ═══════════════════════════════════════════════════════════════
-// LIGHTBOX — full-screen image viewer with zoom / download / reply
-// ═══════════════════════════════════════════════════════════════
+
+// ─── Lightbox ───
 function ImageLightbox({
   image,
   onClose,
@@ -1245,7 +1417,6 @@ function ImageLightbox({
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Download failed:", err);
-      // Fallback: open in new tab
       window.open(image.url, "_blank");
     }
   };
@@ -1261,7 +1432,6 @@ function ImageLightbox({
     onClose();
   };
 
-  // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -1278,12 +1448,11 @@ function ImageLightbox({
       className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex flex-col"
       onClick={onClose}
     >
-      {/* Top bar */}
       <div
-        className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950/80"
+        className="flex items-center justify-between px-3 md:px-4 py-3 border-b border-slate-800 bg-slate-950/80"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-sm text-slate-200 truncate">{image.title}</div>
           <div className="text-[11px] text-slate-500">
             {image.source}
@@ -1315,7 +1484,7 @@ function ImageLightbox({
               </svg>
             }
           />
-          <span className="text-xs text-slate-400 font-mono w-12 text-center">
+          <span className="text-xs text-slate-400 font-mono w-10 md:w-12 text-center">
             {Math.round(zoom * 100)}%
           </span>
           <IconButton
@@ -1343,9 +1512,8 @@ function ImageLightbox({
         </div>
       </div>
 
-      {/* Image area */}
       <div
-        className="flex-1 overflow-auto flex items-center justify-center p-4"
+        className="flex-1 overflow-auto flex items-center justify-center p-2 md:p-4"
         onClick={(e) => e.stopPropagation()}
       >
         <img
@@ -1361,52 +1529,35 @@ function ImageLightbox({
         />
       </div>
 
-      {/* Bottom action bar */}
       <div
-        className="flex items-center justify-center gap-2 px-4 py-3 border-t border-slate-800 bg-slate-950/80 flex-wrap"
+        className="flex items-center justify-center gap-2 px-3 md:px-4 py-3 border-t border-slate-800 bg-slate-950/80 flex-wrap"
         onClick={(e) => e.stopPropagation()}
       >
-        <ActionButton
-          onClick={download}
-          label="Download"
-          icon={
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-          }
-        />
-        <ActionButton
-          onClick={copyUrl}
-          label={copied ? "Copied!" : "Copy URL"}
-          icon={
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="9" y="9" width="13" height="13" rx="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </svg>
-          }
-        />
-        <ActionButton
-          onClick={handleReply}
-          label="Reply about this"
-          icon={
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="9 17 4 12 9 7" />
-              <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
-            </svg>
-          }
-        />
-        <ActionButton
-          onClick={onClose}
-          label="Close"
-          icon={
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          }
-        />
+        <ActionButton onClick={download} label="Download" icon={
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+        } />
+        <ActionButton onClick={copyUrl} label={copied ? "Copied!" : "Copy URL"} icon={
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        } />
+        <ActionButton onClick={handleReply} label="Reply" icon={
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="9 17 4 12 9 7" />
+            <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+          </svg>
+        } />
+        <ActionButton onClick={onClose} label="Close" icon={
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        } />
       </div>
     </div>
   );

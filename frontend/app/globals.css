@@ -147,3 +147,35 @@ html.light .bg-violet-500\/20 {
 html.light .bg-slate-800\/90 {
   background-color: rgba(226, 232, 240, 0.9) !important;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE GLOBALS
+   ═══════════════════════════════════════════════════════════ */
+
+/* Prevent iOS zoom on input focus */
+@media (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* Smooth scrolling */
+html {
+  -webkit-tap-highlight-color: transparent;
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbar on mobile */
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+/* Safe area for iPhone notch on top */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+  }
+}
