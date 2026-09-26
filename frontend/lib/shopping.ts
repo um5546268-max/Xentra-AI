@@ -36,6 +36,7 @@ export type EnrichedProduct = {
   rating?: number;
   reviews_count?: number;
   source?: string;
+  site?: string; 
   specs?: ProductSpecs;
   reviews?: ProductReviews;
   score: number;
@@ -55,6 +56,7 @@ export type ShoppingSearchProduct = {
   price?: number | null;
   currency?: string;
   source?: string;
+  site?: string;
 };
 
 export type ShoppingSearchResponse = {

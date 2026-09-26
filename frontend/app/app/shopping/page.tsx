@@ -43,7 +43,7 @@ export default function ShoppingPage() {
     return () => clearInterval(id);
   }, [loading, elapsed]);
 
-  const handleSearch = async (e: React.FormEvent) => {
+      const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim() || loading) return;
 
@@ -53,23 +53,26 @@ export default function ShoppingPage() {
     setError(null);
 
     try {
+      console.log("[shopping] Sending request…");
       const res = await shoppingCompare(query.trim(), 5);
+      console.log("[shopping] Got response, products:", res?.products?.length);
       useShoppingStore.getState().setResult(res);
     } catch (err: any) {
-  const detail = err?.response?.data?.detail;
-
-  // detail can be: string | array of {msg, loc, ...} | undefined
-  const message =
-    typeof detail === "string"
-      ? detail
-      : Array.isArray(detail)
-      ? detail.map((d: any) => d?.msg || JSON.stringify(d)).join(" · ")
-      : detail
-      ? JSON.stringify(detail)
-      : err?.message || "Search failed";
-
-  setError(message);
-}
+      console.error("[shopping] Request failed:", err);
+      const detail = err?.response?.data?.detail;
+      const message =
+        typeof detail === "string"
+          ? detail
+          : Array.isArray(detail)
+          ? detail.map((d: any) => d?.msg || JSON.stringify(d)).join(" · ")
+          : detail
+          ? JSON.stringify(detail)
+          : err?.message || "Search failed";
+      setError(message);
+    } finally {
+      console.log("[shopping] Finally — resetting loading");
+      useShoppingStore.getState().setLoading(false);
+    }
   };
 
   return (
@@ -155,7 +158,7 @@ export default function ShoppingPage() {
             <Loader2 className="w-8 h-8 mx-auto text-violet-400 animate-spin" />
             <div className="text-sm text-slate-300">Xentra is working…</div>
             <div className="text-xs text-slate-500 space-y-1">
-              <div>🔍 Searching Daraz Pakistan</div>
+              <div>🔍 Searching Daraz Pakistan + Amazon</div>
               <div>📄 Fetching top product pages</div>
               <div>🧠 Extracting specs & reviews</div>
               <div>⚖️ Scoring against your needs</div>
@@ -230,6 +233,32 @@ function IntentChip({ label, value }: { label: string; value: string }) {
   );
 }
 
+// ─── Site Badge ───
+function SiteBadge({ site }: { site?: string }) {
+  if (!site) return null;
+
+  const config: Record<string, { label: string; color: string }> = {
+    daraz:      { label: "Daraz",      color: "bg-orange-500/20 text-orange-300 border-orange-500/40" },
+    amazon:     { label: "Amazon",     color: "bg-blue-500/20 text-blue-300 border-blue-500/40" },
+    aliexpress: { label: "AliExpress", color: "bg-red-500/20 text-red-300 border-red-500/40" },
+    ebay:       { label: "eBay",       color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" },
+    walmart:    { label: "Walmart",    color: "bg-cyan-500/20 text-cyan-300 border-cyan-500/40" },
+  };
+
+  const c = config[site.toLowerCase()] || {
+    label: site,
+    color: "bg-slate-700/40 text-slate-300 border-slate-600/40",
+  };
+
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-semibold uppercase tracking-wider shrink-0 ${c.color}`}
+    >
+      {c.label}
+    </span>
+  );
+}
+
 // ─── Product Card ───
 function ProductCard({
   product,
@@ -273,9 +302,19 @@ function ProductCard({
 
         <div className="flex-1 min-w-0 space-y-2">
           <div className="flex items-start justify-between gap-3">
-            <h3 className="font-medium text-slate-100 leading-snug">
-              {product.product_name || product.title}
-            </h3>
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <SiteBadge site={product.site} />
+                {product.source && product.site !== product.source.toLowerCase() && (
+                  <span className="text-[11px] text-slate-500">
+                    via {product.source}
+                  </span>
+                )}
+              </div>
+              <h3 className="font-medium text-slate-100 leading-snug">
+                {product.product_name || product.title}
+              </h3>
+            </div>
             <div className={`shrink-0 text-right ${scoreColor}`}>
               <div className="text-xs uppercase tracking-wider opacity-60">
                 Match

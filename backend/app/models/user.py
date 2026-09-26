@@ -141,13 +141,24 @@ class User(Base):
         # ===== Plan (derived from subscription) =====
     @hybrid_property
     def plan(self) -> str:
-        """Return the current plan name (lowercase). Defaults to 'free'."""
+        """Return the current plan slug (lowercase). Defaults to 'free'."""
         sub = getattr(self, "subscription", None)
-        if sub is not None:
-            for attr in ("plan", "plan_name", "tier", "plan_id"):
-                val = getattr(sub, attr, None)
-                if val:
-                    return str(val).lower()
+        if sub is None:
+            return "free"
+
+        # Prefer the related Plan object's `slug` field
+        plan_obj = getattr(sub, "plan", None)
+        if plan_obj is not None:
+            slug = getattr(plan_obj, "slug", None)
+            if slug:
+                return str(slug).lower()
+
+        # Fallback to other possible attributes
+        for attr in ("plan_name", "tier"):
+            val = getattr(sub, attr, None)
+            if isinstance(val, str) and val:
+                return val.lower()
+
         return "free"
 
         # ===== Connect: friends & chats =====

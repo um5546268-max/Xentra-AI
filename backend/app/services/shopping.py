@@ -1,12 +1,11 @@
 """
-Shopping agent — uses Daraz.pk (via ScraperAPI) as the product source.
-Falls back to Google Shopping for non-Pakistan queries.
+Shopping agent — searches multiple sites in parallel (Daraz + Amazon + ...).
+Falls back gracefully if a site's scraper fails.
 """
 from urllib.parse import urlparse
 
 from app.services.query_parser import parse_shopping_query
-from app.services.product_search import search_products_shopping
-from app.services.spec_extractor import extract_specs, score_product
+from app.services.site_scrapers import aggregate_search
 from app.services.spec_extractor import extract_specs, score_product, compute_trust_score
 
 
@@ -17,47 +16,50 @@ def _domain(url: str) -> str:
         return ""
 
 
+# ═══════════════════════════════════════════════════════════════
+# SEARCH — fast, no enrichment
+# ═══════════════════════════════════════════════════════════════
 def search_products(
     user_query: str,
     budget_override: float | None = None,
     currency_override: str | None = None,
     max_results: int = 20,
 ) -> dict:
-    """
-    Parse query → search products (Daraz for PK, Google Shopping for other regions)
-    → filter by budget → return.
-    """
-    # 1. Parse intent
+    """Parse query → search ALL sites in parallel → filter by budget → return."""
+    import asyncio
+
     intent = parse_shopping_query(user_query)
     product_type = intent["product_type"]
     budget = budget_override or intent["budget_max"]
     currency = (currency_override or intent["currency"] or "PKR").strip()
-    country = intent["country"]
 
-    # Map country to 2-letter code
-    country_code = "pk" if country == "PK" else country.lower()
+    search_query = product_type
+    print(f"[shopping] multi-site search query: '{search_query}' (budget filter: {budget})")
 
-    # 2. Build a SHORT search query — Daraz needs keywords, not sentences
-        # 2. Build a SHORT search query — Daraz needs keywords, not sentences
-    #    Keep it minimal: just product_type + budget.
-    #    Extra keywords kill results because Daraz uses AND matching.
-    search_parts = [product_type]
-    if budget:
-        search_parts.append(str(int(budget)))
+    try:
+        raw_products = asyncio.run(
+            aggregate_search(
+                query=search_query,
+                budget_max=budget,
+                currency=currency,
+                max_per_site=max_results,
+            )
+        )
+    except RuntimeError:
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            raw_products = pool.submit(
+                asyncio.run,
+                aggregate_search(
+                    query=search_query,
+                    budget_max=budget,
+                    currency=currency,
+                    max_per_site=max_results,
+                ),
+            ).result()
 
-    search_query = " ".join(search_parts)
-    print(f"[shopping] Daraz search query: '{search_query}'")
+    print(f"[shopping] Got {len(raw_products)} products from all sites")
 
-    # 3. Search products
-    raw_products = search_products_shopping(
-        query=search_query,
-        country=country_code,
-        max_results=max_results,
-    )
-
-    print(f"[shopping] Got {len(raw_products)} raw products")
-
-    # 4. Filter by budget + normalize
     products = []
     seen_urls = set()
 
@@ -69,11 +71,8 @@ def search_products(
 
         price = p.get("price")
 
-        # Filter by budget (with 15% margin)
         if budget and price and price > budget * 1.15:
             continue
-
-        # Skip products without price when budget is specified
         if budget and not price:
             continue
 
@@ -82,6 +81,7 @@ def search_products(
             "url": url,
             "snippet": p.get("snippet", ""),
             "source": p.get("source") or _domain(url),
+            "site": p.get("site") or "unknown",
             "price": price,
             "currency": p.get("currency") or currency,
             "image": p.get("image"),
@@ -91,7 +91,6 @@ def search_products(
             "specs": {},
         })
 
-    # Sort cheapest first
     products.sort(key=lambda p: (p["price"] is None, p["price"] or 0))
 
     return {
@@ -104,6 +103,9 @@ def search_products(
     }
 
 
+# ═══════════════════════════════════════════════════════════════
+# ENRICH + RANK — slower, richer output
+# ═══════════════════════════════════════════════════════════════
 def enrich_and_rank(
     user_query: str,
     budget_override: float | None = None,
@@ -112,19 +114,17 @@ def enrich_and_rank(
     enrich_top_n: int = 5,
 ) -> dict:
     """
-    1. Search products (fast)
-    2. Enrich top N with specs (parallel)
+    1. Search products (fast, multi-site)
+    2. Enrich top N with specs (sequential — safe with LLM rate limits)
     3. Score against user intent
     4. Return ranked list
     """
     import time
-    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     start = time.time()
-    TOTAL_BUDGET = 45            # hard cap for the whole enrichment phase
-    PER_PRODUCT_TIMEOUT = 25     # each product fetch cap
+    TOTAL_BUDGET = 90  # generous — sequential enrichment can take longer
 
-    # ── Step 1: search ──
+    # ── Step 1: search (multi-site) ──
     search_result = search_products(
         user_query=user_query,
         budget_override=budget_override,
@@ -137,12 +137,12 @@ def enrich_and_rank(
     if not products:
         return {**search_result, "enriched_count": 0}
 
-    # ── Step 2: enrich top N IN PARALLEL ──
+    # ── Step 2: enrich top N SEQUENTIALLY (avoids Groq rate limits) ──
     candidates = products[:enrich_top_n]
     enriched = []
 
-    def _enrich_one(p: dict) -> dict | None:
-        """Enrich a single product. Runs inside a thread."""
+    def _enrich_one(p: dict) -> dict:
+        """Enrich a single product. Never raises."""
         try:
             result = extract_specs(p["url"])
 
@@ -170,7 +170,6 @@ def enrich_and_rank(
                 if ratings.get("count") and not p.get("reviews_count"):
                     p["reviews_count"] = ratings["count"]
 
-            # Score against intent
             spec_data_for_scoring = {
                 "specs": p.get("specs") or {},
                 "reviews": p.get("reviews") or {},
@@ -180,7 +179,6 @@ def enrich_and_rank(
             p["score"] = score_info.get("score", 0)
             p["score_reasons"] = score_info.get("reasons", [])
 
-            # Trust
             trust_info = compute_trust_score(p)
             p["trust_level"] = trust_info.get("level", "medium")
 
@@ -192,30 +190,31 @@ def enrich_and_rank(
             p["specs"] = {}
             return p
 
-    print(f"[shopping] enriching {len(candidates)} products in parallel…")
+    print(f"[shopping] enriching {len(candidates)} products sequentially…")
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        future_to_product = {pool.submit(_enrich_one, p): p for p in candidates}
+    for i, p in enumerate(candidates):
+        if time.time() - start > TOTAL_BUDGET:
+            print(f"[shopping] total budget exceeded ({TOTAL_BUDGET}s), stopping enrichment")
+            # Still include remaining products with empty enrichment
+            for remaining in candidates[i:]:
+                remaining.setdefault("score", 0)
+                remaining.setdefault("score_reasons", [])
+                remaining.setdefault("specs", {})
+                enriched.append(remaining)
+            break
 
-        for future in as_completed(future_to_product, timeout=TOTAL_BUDGET):
-            # Check total budget
-            if time.time() - start > TOTAL_BUDGET:
-                print(f"[shopping] total budget exceeded ({TOTAL_BUDGET}s), stopping")
-                break
-            try:
-                r = future.result(timeout=PER_PRODUCT_TIMEOUT)
-                if r:
-                    enriched.append(r)
-            except Exception as e:
-                p = future_to_product[future]
-                print(f"[shopping] future failed for {p.get('url')}: {e}")
-                # Still add the product with empty enrichment so user sees it
-                p["score"] = 0
-                p["score_reasons"] = []
-                enriched.append(p)
+        try:
+            enriched.append(_enrich_one(p))
+        except Exception as e:
+            print(f"[shopping] product {i} crashed: {e}")
+            p["score"] = 0
+            p["score_reasons"] = []
+            enriched.append(p)
 
-    print(f"[shopping] enriched {len(enriched)} products in "
-          f"{time.time() - start:.1f}s")
+    print(
+        f"[shopping] enriched {len(enriched)} products in "
+        f"{time.time() - start:.1f}s"
+    )
 
     # ── Step 3: sort by score, take top N ──
     enriched.sort(key=lambda p: p.get("score", 0), reverse=True)

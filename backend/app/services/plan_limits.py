@@ -25,6 +25,8 @@ PLAN_LIMITS: dict[str, dict[str, int]] = {
         "save_memory": 1,
         "automations": 2,
     },
+    # Your app calls this plan "basic" in the frontend but "plus" in DB?
+    # Use whichever name matches your DB. See note below.
     "basic": {
         "search": 15,
         "deep_research": 10,
@@ -37,7 +39,8 @@ PLAN_LIMITS: dict[str, dict[str, int]] = {
         "save_memory": 5,
         "automations": 10,
     },
-    "premium": {
+    # ✅ RENAMED: was "premium" — now matches your DB
+    "pro": {
         "search": 50,
         "deep_research": 30,
         "ai_coding": 50,
@@ -54,7 +57,7 @@ PLAN_LIMITS: dict[str, dict[str, int]] = {
         "deep_research": 100,
         "ai_coding": 150,
         "file_upload": 100,
-        "learning_minutes": -1,   # unlimited
+        "learning_minutes": -1,
         "shopping": 100,
         "browser_tasks": 100,
         "connect_ai_minutes": 600,
@@ -65,8 +68,11 @@ PLAN_LIMITS: dict[str, dict[str, int]] = {
 
 
 def get_plan_limits(plan_slug: str) -> dict[str, int]:
-    """Return the limit dict for a plan. Falls back to free."""
-    return PLAN_LIMITS.get(plan_slug, PLAN_LIMITS["free"])
+    limits = PLAN_LIMITS.get(plan_slug)
+    if limits is None:
+        print(f"[plan_limits] WARNING: no limits for plan '{plan_slug}', falling back to free")
+        return PLAN_LIMITS["free"]
+    return limits
 
 
 def get_limit(plan_slug: str, metric: str) -> int:
