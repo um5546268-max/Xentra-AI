@@ -548,10 +548,10 @@ export default function ConversationPage({
   };
 
   const handleCopy = async (m: Message) => {
-    await navigator.clipboard.writeText(m.content);
-    setCopiedId(m.id);
-    setTimeout(() => setCopiedId(null), 1500);
-  };
+  await navigator.clipboard.writeText(m.content);
+  setCopiedId(m.id);
+  setTimeout(() => setCopiedId(null), 1500);
+};
 
   const startEdit = (m: Message) => {
     setEditingId(m.id);

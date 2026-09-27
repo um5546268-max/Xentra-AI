@@ -6,6 +6,23 @@ import rehypeHighlight from "rehype-highlight";
 
 type Source = { title: string; url: string };
 
+/**
+ * Walk a React children tree and collect only string/number leaves.
+ * Used to safely serialize a code block's contents to the clipboard,
+ * avoiding "[object Object]" when children contain React elements
+ * (e.g. syntax-highlighted tokens from rehype-highlight).
+ */
+function extractText(node: any): string {
+  if (node == null || node === false) return "";
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(extractText).join("");
+  if (typeof node === "object" && "props" in node) {
+    return extractText(node.props?.children);
+  }
+  return "";
+}
+
 export default function MarkdownMessage({
   content,
   sources,
@@ -14,8 +31,6 @@ export default function MarkdownMessage({
   sources?: Source[];
 }) {
   // Replace [1], [2], ... in content with markdown links so they become clickable.
-  // Guards against replacing markdown link syntax like [text](url) by requiring a
-  // non-'(' char after the closing bracket.
   const withLinks = sources?.length
     ? content.replace(/\[(\d+)\](?!\()/g, (match, n) => {
         const idx = parseInt(n, 10) - 1;
@@ -36,8 +51,9 @@ export default function MarkdownMessage({
             const isBlock = !inline;
 
             if (isBlock) {
-              // ✅ Use <span> with display:block instead of <div>
-              // to avoid "div inside p" hydration errors.
+              // ✅ Safely serialize the code block for the copy button.
+              const codeText = extractText(children).replace(/\n$/, "");
+
               return (
                 <span
                   className="my-3 rounded-lg overflow-hidden border border-slate-700"
@@ -50,11 +66,7 @@ export default function MarkdownMessage({
                     <span>{match?.[1] || "code"}</span>
                     <button
                       type="button"
-                      onClick={() =>
-                        navigator.clipboard.writeText(
-                          String(children).replace(/\n$/, "")
-                        )
-                      }
+                      onClick={() => navigator.clipboard.writeText(codeText)}
                       className="hover:text-violet-400 transition"
                     >
                       Copy
@@ -82,7 +94,6 @@ export default function MarkdownMessage({
             );
           },
           a({ children, ...props }: any) {
-            // Detect citation links like [1] and style them as inline pills
             const isCitation =
               Array.isArray(children) &&
               children.length === 1 &&
