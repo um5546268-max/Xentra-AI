@@ -171,28 +171,32 @@ export function QuizViewer({
         )}
       </div>
 
-      {/* Nav */}
-      <div className="flex items-center justify-between">
+            {/* Nav — sticky on mobile so it's always visible */}
+      <div className="sticky bottom-24 sm:bottom-4 z-20 flex items-center justify-between gap-3 pt-4">
         <button
+          type="button"
           onClick={() => setCurrent((c) => Math.max(0, c - 1))}
           disabled={current === 0}
-          className="px-4 py-2 rounded-lg border border-slate-800 text-sm text-slate-400 hover:bg-slate-800 disabled:opacity-40 transition"
+          className="px-4 py-2.5 rounded-lg border border-slate-800 bg-slate-950/95 backdrop-blur text-sm text-slate-400 hover:bg-slate-800 disabled:opacity-40 transition"
         >
           Previous
         </button>
 
         {current < questions.length - 1 ? (
           <button
+            type="button"
             onClick={() => setCurrent((c) => c + 1)}
-            className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm font-medium transition"
+            disabled={!answered}
+            className="flex-1 sm:flex-none px-5 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm font-medium disabled:opacity-40 transition"
           >
-            Next question
+            Next question →
           </button>
         ) : (
           <button
+            type="button"
             onClick={handleSubmit}
             disabled={!allAnswered || loading}
-            className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm font-medium disabled:opacity-40 flex items-center gap-2 transition"
+            className="flex-1 sm:flex-none px-5 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm font-medium disabled:opacity-40 flex items-center justify-center gap-2 transition"
           >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             Finish quiz

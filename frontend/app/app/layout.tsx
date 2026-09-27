@@ -82,8 +82,8 @@ export default function AppLayout({
           <Sidebar />
         </div>
 
-        {/* Main content */}
-        <main className="flex-1 overflow-hidden min-w-0 h-full">
+                {/* Main content */}
+        <main className="flex-1 overflow-y-auto min-w-0 h-full">
           <MobileShell>{children}</MobileShell>
         </main>
 

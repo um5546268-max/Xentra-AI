@@ -65,10 +65,7 @@ export default function LanguagesPage() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Class picker state
   const [pendingSubject, setPendingSubject] = useState<{ id: string; label: string } | null>(null);
-
-  // Resources state
   const [resources, setResources] = useState<Resource[] | null>(null);
   const [resourcesFor, setResourcesFor] = useState<string | null>(null);
 
@@ -107,7 +104,7 @@ export default function LanguagesPage() {
     }
   };
 
-    const handleShowResources = async (langId: string, langLabel: string) => {
+  const handleShowResources = async (langId: string, langLabel: string) => {
     setResourcesFor(langLabel);
     setResources(null);
     try {
@@ -122,9 +119,10 @@ export default function LanguagesPage() {
       setResourcesFor(null);
     }
   };
+
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-5xl mx-auto p-8 space-y-6">
+    <div className="min-h-full overflow-y-auto pb-24">
+  <div className="max-w-5xl mx-auto p-4 sm:p-8 space-y-6">
         <button
           onClick={() => {
             if (resourcesFor) { setResourcesFor(null); setResources(null); }
@@ -167,9 +165,8 @@ export default function LanguagesPage() {
           </div>
         )}
 
-        {/* Category selection */}
         {!category && !resourcesFor && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <CategoryCard
               emoji="💻"
               label="Programming Languages"
@@ -197,9 +194,8 @@ export default function LanguagesPage() {
           </div>
         )}
 
-        {/* Programming languages */}
         {category === "programming" && !resourcesFor && (
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {PROGRAMMING_LANGS.map((lang) => (
               <LanguageCard
                 key={lang.id}
@@ -214,9 +210,8 @@ export default function LanguagesPage() {
           </div>
         )}
 
-        {/* World languages */}
         {category === "world" && !resourcesFor && (
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {WORLD_LANGS.map((lang) => (
               <LanguageCard
                 key={lang.id}
@@ -224,14 +219,13 @@ export default function LanguagesPage() {
                 label={lang.label}
                 color="cyan"
                 loading={generating === lang.id}
-                onLearn={() => handleLanguageClick(lang.id, lang.label)}
+                onLearn={() => handleLanguageClick(lang.id, lang.label, true)}
                 onResources={() => handleShowResources(lang.id, lang.label)}
               />
             ))}
           </div>
         )}
 
-        {/* Resources view */}
         {resourcesFor && (
           <>
             {!resources && (
@@ -275,12 +269,12 @@ function CategoryCard({
   return (
     <button
       onClick={onClick}
-      className={`rounded-2xl border bg-gradient-to-br ${style} p-5 text-left hover:scale-[1.02] transition space-y-3`}
+      className={`rounded-2xl border bg-gradient-to-br ${style} p-5 text-left hover:scale-[1.02] transition flex flex-col justify-between gap-3 min-h-[160px]`}
     >
       <div className="text-3xl">{emoji}</div>
       <div>
-        <div className="text-base font-semibold">{label}</div>
-        <div className="text-xs text-slate-400 mt-1">{sub}</div>
+        <div className="text-base font-semibold leading-tight">{label}</div>
+        <div className="text-xs text-slate-400 mt-1 leading-snug">{sub}</div>
       </div>
       <div className="flex items-center justify-between text-[10px] text-slate-500">
         <span>{count > 0 ? `${count} languages` : "Coming soon"}</span>
@@ -303,11 +297,13 @@ function LanguageCard({
   const style = COLOR_MAP[color] ?? COLOR_MAP.violet;
   return (
     <div
-      className={`rounded-xl border bg-gradient-to-br ${style} p-3 text-center space-y-2`}
+      className={`rounded-xl border bg-gradient-to-br ${style} p-3 text-center flex flex-col justify-between gap-2 min-h-[130px]`}
     >
       <div className="text-2xl">{emoji}</div>
-      <div className="text-sm font-medium">{label}</div>
-      <div className="flex gap-1">
+      <div className="text-sm font-medium leading-tight min-h-[2.4em] flex items-center justify-center">
+        {label}
+      </div>
+      <div className="flex flex-row gap-1">
         <button
           onClick={onLearn}
           disabled={loading}

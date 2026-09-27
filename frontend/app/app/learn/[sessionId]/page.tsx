@@ -2,14 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Layers, HelpCircle, BookOpen, AlertCircle } from "lucide-react";
 import {
-  LearnSessionDetail,
-  getLearnSession,
-} from "@/lib/learn";
+  ArrowLeft,
+  Loader2,
+  Layers,
+  HelpCircle,
+  BookOpen,
+  AlertCircle,
+  GitBranch,
+} from "lucide-react";
+import { LearnSessionDetail, getLearnSession } from "@/lib/learn";
 import { FlashcardViewer } from "@/components/learn/FlashcardViewer";
 import { QuizViewer } from "@/components/learn/QuizViewer";
-import { GitBranch } from "lucide-react";
 
 type Tab = "flashcards" | "quiz" | "summary";
 
@@ -28,7 +32,9 @@ export default function LearnSessionPage() {
       .catch((e) => {
         const status = e?.response?.status;
         if (status === 404) {
-          setError("This session no longer exists. It may have been deleted or was never saved.");
+          setError(
+            "This session no longer exists. It may have been deleted or was never saved."
+          );
         } else {
           setError(e?.response?.data?.detail || "Failed to load session");
         }
@@ -37,7 +43,7 @@ export default function LearnSessionPage() {
 
   if (error) {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8 gap-4">
+      <div className="min-h-screen flex flex-col items-center justify-center p-8 gap-4 bg-slate-950">
         <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-300 max-w-md text-center">
           {error}
         </div>
@@ -53,7 +59,7 @@ export default function LearnSessionPage() {
 
   if (!session) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
         <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
       </div>
     );
@@ -68,8 +74,8 @@ export default function LearnSessionPage() {
   const concepts = Array.isArray(session.concepts) ? session.concepts : [];
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-3xl mx-auto p-8 space-y-6">
+    <div className="min-h-screen bg-slate-950 pb-32">
+      <div className="max-w-3xl mx-auto px-4 sm:px-8 py-6 space-y-6">
         {/* Back */}
         <button
           onClick={() => router.push("/app/learn")}
@@ -81,10 +87,11 @@ export default function LearnSessionPage() {
 
         {/* Title */}
         <div>
-          <h1 className="text-3xl font-semibold">{session.title}</h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold break-words">
+            {session.title}
+          </h1>
           <p className="text-sm text-slate-500 mt-1">
-            {flashcards.length} flashcards ·{" "}
-            {quizQuestions.length} quiz questions
+            {flashcards.length} flashcards · {quizQuestions.length} quiz questions
           </p>
         </div>
 
@@ -108,28 +115,27 @@ export default function LearnSessionPage() {
             icon={<BookOpen className="w-3.5 h-3.5" />}
             label="Summary"
           />
-        </div>
-            <button
+          <button
             onClick={() => router.push(`/app/learn/${sessionId}/mindmap`)}
             className="flex items-center gap-1.5 rounded-lg border border-violet-500 bg-violet-500/20 px-3 py-1.5 text-xs font-medium text-violet-300 hover:bg-violet-500/30 transition ml-auto"
           >
             <GitBranch className="w-3.5 h-3.5" />
             Mind Map
           </button>
+        </div>
 
         {/* Content */}
-        {tab === "flashcards" && (
-          flashcards.length > 0 ? (
+        {tab === "flashcards" &&
+          (flashcards.length > 0 ? (
             <FlashcardViewer flashcards={flashcards} />
           ) : (
             <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center text-sm text-slate-500">
               No flashcards in this session.
             </div>
-          )
-        )}
+          ))}
 
-        {tab === "quiz" && (
-          hasQuiz ? (
+        {tab === "quiz" &&
+          (hasQuiz ? (
             <QuizViewer
               attemptId={session.latest_quiz!.id}
               questions={quizQuestions}
@@ -151,8 +157,7 @@ export default function LearnSessionPage() {
                 Create a new session →
               </button>
             </div>
-          )
-        )}
+          ))}
 
         {tab === "summary" && (
           <div className="space-y-4">

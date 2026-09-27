@@ -35,14 +35,12 @@ export default function SchoolPage() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Class picker state — remembers whether we're generating Learn or Resources
   const [pendingSubject, setPendingSubject] = useState<{
     id: string;
     label: string;
     intent: "learn" | "resources";
   } | null>(null);
 
-  // Resources state
   const [resources, setResources] = useState<Resource[] | null>(null);
   const [resourcesFor, setResourcesFor] = useState<string | null>(null);
 
@@ -61,7 +59,6 @@ export default function SchoolPage() {
         const session = await learnFromTopic(label, 8, "school", className);
         router.push(`/app/learn/${session.id}`);
       } else {
-        // Resources — pass class hint so backend adapts
         setResourcesFor(`${label} · ${className.replace("_", " ")}`);
         const data = await getResources(label, className);
         setResources(data.resources);
@@ -75,8 +72,8 @@ export default function SchoolPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-5xl mx-auto p-8 space-y-6">
+    <div className="min-h-full overflow-y-auto pb-24">
+  <div className="max-w-5xl mx-auto p-4 sm:p-8 space-y-6">
         <button
           onClick={() => {
             if (resourcesFor) { setResourcesFor(null); setResources(null); }
@@ -111,42 +108,18 @@ export default function SchoolPage() {
         )}
 
         {!resourcesFor && (
-          <div className="grid grid-cols-4 gap-3">
-            {SUBJECTS.map((s) => {
-              const style = COLOR_MAP[s.color] ?? COLOR_MAP.cyan;
-              const loading = generating === s.id;
-              return (
-                <div
-                  key={s.id}
-                  className={`rounded-xl border bg-gradient-to-br ${style} p-4 text-center space-y-2`}
-                >
-                  <div className="text-2xl">{s.emoji}</div>
-                  <div className="text-sm font-medium">{s.label}</div>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => handleSubjectClick(s.id, s.label, "learn")}
-                      disabled={loading}
-                      className="flex-1 flex items-center justify-center gap-1 rounded-md bg-violet-600 hover:bg-violet-500 py-1.5 text-[10px] font-medium text-white disabled:opacity-40"
-                    >
-                      {loading ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <>
-                          <Sparkles className="w-2.5 h-2.5" />
-                          Learn
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => handleSubjectClick(s.id, s.label, "resources")}
-                      className="flex-1 rounded-md border border-slate-700 hover:bg-slate-800 py-1.5 text-[10px] text-slate-400"
-                    >
-                      Resources
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {SUBJECTS.map((s) => (
+              <SubjectCard
+                key={s.id}
+                emoji={s.emoji}
+                label={s.label}
+                color={s.color}
+                loading={generating === s.id}
+                onLearn={() => handleSubjectClick(s.id, s.label, "learn")}
+                onResources={() => handleSubjectClick(s.id, s.label, "resources")}
+              />
+            ))}
           </div>
         )}
 
@@ -173,6 +146,51 @@ export default function SchoolPage() {
           onPick={handleClassPicked}
         />
       )}
+    </div>
+  );
+}
+
+function SubjectCard({
+  emoji, label, color, loading, onLearn, onResources,
+}: {
+  emoji: string;
+  label: string;
+  color: string;
+  loading: boolean;
+  onLearn: () => void;
+  onResources: () => void;
+}) {
+  const style = COLOR_MAP[color] ?? COLOR_MAP.cyan;
+  return (
+    <div
+      className={`rounded-xl border bg-gradient-to-br ${style} p-3 text-center flex flex-col justify-between gap-2 min-h-[130px]`}
+    >
+      <div className="text-2xl">{emoji}</div>
+      <div className="text-sm font-medium leading-tight min-h-[2.4em] flex items-center justify-center">
+        {label}
+      </div>
+      <div className="flex flex-row gap-1">
+        <button
+          onClick={onLearn}
+          disabled={loading}
+          className="flex-1 flex items-center justify-center gap-1 rounded-md bg-violet-600 hover:bg-violet-500 py-1.5 text-[10px] font-medium text-white disabled:opacity-40"
+        >
+          {loading ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <>
+              <Sparkles className="w-2.5 h-2.5" />
+              Learn
+            </>
+          )}
+        </button>
+        <button
+          onClick={onResources}
+          className="flex-1 rounded-md border border-slate-700 hover:bg-slate-800 py-1.5 text-[10px] text-slate-400"
+        >
+          Resources
+        </button>
+      </div>
     </div>
   );
 }

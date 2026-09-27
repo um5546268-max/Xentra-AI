@@ -100,3 +100,114 @@ def my_feedback(
         )
         for r in rows
     ]
+
+# ═══════════════════════════════════════════════════════════════
+# ADMIN — view and manage feedback
+# ═══════════════════════════════════════════════════════════════
+from app.deps import get_current_user
+from app.models.user import User as UserModel
+from typing import Optional as Opt
+
+
+class FeedbackAdminRead(BaseModel):
+    id: str
+    user_id: Optional[str] = None
+    user_email: Optional[str] = None
+    user_name: Optional[str] = None
+    category: str
+    rating: Optional[int]
+    message: str
+    page_url: Optional[str] = None
+    user_agent: Optional[str] = None
+    screenshot_url: Optional[str] = None
+    status: str
+    created_at: datetime
+
+
+def _require_admin(current_user: UserModel) -> None:
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(403, "Admin access required")
+
+
+@router.get("/admin/list", response_model=list[FeedbackAdminRead])
+def admin_list_feedback(
+    status_filter: Opt[str] = None,
+    category_filter: Opt[str] = None,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    """List all feedback. Admin only."""
+    _require_admin(current_user)
+
+    stmt = select(Feedback).order_by(Feedback.created_at.desc()).limit(min(limit, 500))
+
+    if status_filter:
+        stmt = stmt.where(Feedback.status == status_filter)
+    if category_filter:
+        stmt = stmt.where(Feedback.category == category_filter)
+
+    rows = db.execute(stmt).scalars().all()
+
+    result: list[FeedbackAdminRead] = []
+    for r in rows:
+        user = db.get(UserModel, r.user_id) if r.user_id else None
+        result.append(
+            FeedbackAdminRead(
+                id=str(r.id),
+                user_id=str(r.user_id) if r.user_id else None,
+                user_email=user.email if user else None,
+                user_name=user.full_name if user else None,
+                category=r.category,
+                rating=r.rating,
+                message=r.message,
+                page_url=r.page_url,
+                user_agent=r.user_agent,
+                screenshot_url=r.screenshot_url,
+                status=r.status,
+                created_at=r.created_at,
+            )
+        )
+
+    return result
+
+
+class FeedbackStatusUpdate(BaseModel):
+    status: str  # "new" | "reviewing" | "resolved" | "closed"
+
+
+@router.patch("/admin/{feedback_id}", response_model=FeedbackRead)
+def admin_update_feedback_status(
+    feedback_id: str,
+    payload: FeedbackStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Update a feedback item's status. Admin only."""
+    _require_admin(current_user)
+
+    if payload.status not in {"new", "reviewing", "resolved", "closed"}:
+        raise HTTPException(400, "Invalid status")
+
+    import uuid as _uuid
+    try:
+        fid = _uuid.UUID(feedback_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid ID")
+
+    fb = db.get(Feedback, fid)
+    if not fb:
+        raise HTTPException(404, "Feedback not found")
+
+    fb.status = payload.status
+    db.commit()
+    db.refresh(fb)
+
+    return FeedbackRead(
+        id=str(fb.id),
+        category=fb.category,
+        rating=fb.rating,
+        message=fb.message,
+        status=fb.status,
+        created_at=fb.created_at,
+    )

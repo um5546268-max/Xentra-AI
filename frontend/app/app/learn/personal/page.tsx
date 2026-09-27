@@ -47,8 +47,8 @@ export default function PersonalPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-5xl mx-auto p-8 space-y-6">
+       <div className="min-h-full overflow-y-auto pb-24">
+         <div className="max-w-5xl mx-auto p-4 sm:p-8 space-y-6">
         <button
           onClick={() => router.push("/app/learn")}
           className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-300"
@@ -72,7 +72,7 @@ export default function PersonalPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {TOPICS.map((t) => (
             <Card
               key={t.id}
@@ -100,9 +100,13 @@ function Card({
 }) {
   const style = COLOR_MAP[color] ?? COLOR_MAP.violet;
   return (
-    <div className={`rounded-xl border bg-gradient-to-br ${style} p-3 text-center space-y-2`}>
+    <div
+      className={`rounded-xl border bg-gradient-to-br ${style} p-3 text-center flex flex-col justify-between gap-2 min-h-[130px]`}
+    >
       <div className="text-2xl">{emoji}</div>
-      <div className="text-sm font-medium">{label}</div>
+      <div className="text-sm font-medium leading-tight min-h-[2.4em] flex items-center justify-center">
+        {label}
+      </div>
       <button
         onClick={onLearn}
         disabled={loading}

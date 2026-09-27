@@ -51,29 +51,39 @@ export default function Sidebar() {
   const unreadTotal = useUnreadStore((s) => s.total);
 
   // MAIN_NAV recomputed only when unreadTotal changes
-  const MAIN_NAV = useMemo(
-    () => [
-      { path: "/app", label: "Home", icon: Home },
-      { path: "/app/c", label: "AI Chat", icon: MessageSquare },
-      {
-        path: "/app/connect",
-        label: "Connect",
-        icon: Users,
-        badge: unreadTotal > 0 ? unreadTotal : undefined,
-      },
-      { path: "/app/learn", label: "Learning", icon: GraduationCap },
-      { path: "/app/code", label: "Code", icon: CodeIcon },
-      { path: "/app/media", label: "Media", icon: ImageIcon },
-      { path: "/app/files", label: "Files", icon: FolderOpen },
-      { path: "/app/tasks", label: "Tasks", icon: ListTodo },
-      { path: "/app/tools", label: "Tools", icon: Wrench },
-      { path: "/app/billing", label: "Billing", icon: CreditCard, premium: true },
-      { path: "/app/system-health", label: "System Health", icon: Activity },
-      { path: "/app/permissions", label: "Security", icon: ShieldCheck },
-      { path: "/app/settings", label: "Settings", icon: Settings },
-    ],
-    [unreadTotal]
-  );
+  const MAIN_NAV = useMemo(() => {
+  const nav = [
+    { path: "/app", label: "Home", icon: Home },
+    { path: "/app/c", label: "AI Chat", icon: MessageSquare },
+    {
+      path: "/app/connect",
+      label: "Connect",
+      icon: Users,
+      badge: unreadTotal > 0 ? unreadTotal : undefined,
+    },
+    { path: "/app/learn", label: "Learning", icon: GraduationCap },
+    { path: "/app/code", label: "Code", icon: CodeIcon },
+    { path: "/app/media", label: "Media", icon: ImageIcon },
+    { path: "/app/files", label: "Files", icon: FolderOpen },
+    { path: "/app/tasks", label: "Tasks", icon: ListTodo },
+    { path: "/app/tools", label: "Tools", icon: Wrench },
+    { path: "/app/billing", label: "Billing", icon: CreditCard, premium: true },
+    { path: "/app/system-health", label: "System Health", icon: Activity },
+    { path: "/app/permissions", label: "Security", icon: ShieldCheck },
+    { path: "/app/settings", label: "Settings", icon: Settings },
+  ];
+
+  // ✅ Only show Feedback Inbox to admins
+  if (user?.is_admin) {
+    nav.push({
+      path: "/app/admin/feedback",
+      label: "Feedback Inbox",
+      icon: MessageSquare,
+    } as any);
+  }
+
+  return nav;
+}, [unreadTotal, user?.is_admin]);
 
   // ✅ REMOVED the local poll useEffect — it lives in useUnreadStore now
 
