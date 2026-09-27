@@ -7,24 +7,35 @@ import { useAuth } from "@/lib/auth";
 
 export default function WelcomePage() {
   const router = useRouter();
-  
-  // ✅ FIX 1: Use selectors to prevent re-renders on unrelated state changes
+
   const user = useAuth((state) => state.user);
   const googleSignIn = useAuth((state) => state.googleSignIn);
-  const continueAsGuest = useAuth((state) => state.continueAsGuest); // ✅ NEW
+  const continueAsGuest = useAuth((state) => state.continueAsGuest);
 
   const [hovered, setHovered] = useState<"signin" | "signup" | "guest" | null>(null);
   const [gsiReady, setGsiReady] = useState(false);
+  const [gsiRendered, setGsiRendered] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
 
-  // Load Google Identity Services script once
+  // Hydration-safe GitHub URL
+  const [githubAuthUrl, setGithubAuthUrl] = useState<string>("");
+
+  // ── Load Google Identity Services script once ────────────────────────
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // If the script is already loaded (e.g. React Strict Mode double-mount), skip
-    if (document.getElementById("google-gsi-script")) {
+    if ((window as any).google?.accounts?.id) {
       setGsiReady(true);
       return;
+    }
+    if (document.getElementById("google-gsi-script")) {
+      const t = setInterval(() => {
+        if ((window as any).google?.accounts?.id) {
+          setGsiReady(true);
+          clearInterval(t);
+        }
+      }, 200);
+      return () => clearInterval(t);
     }
 
     const script = document.createElement("script");
@@ -34,17 +45,27 @@ export default function WelcomePage() {
     script.defer = true;
     script.onload = () => setGsiReady(true);
     document.body.appendChild(script);
-
-    // ✅ No cleanup — the script stays in the DOM.
-    // Removing it causes "removeChild: node is not a child" errors in React Strict Mode.
   }, []);
 
-  // Render the Google button once the script + ref are ready
+  // ── Build GitHub OAuth URL on the client only ────────────────────────
+  useEffect(() => {
+    const clientId = process.env.NEXT_PUBLIC_GITHUB_SIGNIN_CLIENT_ID ?? "";
+    const redirectUri = `${window.location.origin}/auth/callback`;
+    setGithubAuthUrl(
+      `https://github.com/login/oauth/authorize?client_id=${clientId}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&scope=read:user user:email`
+    );
+  }, []);
+
+  // ── Render the Google button once GSI is ready ──────────────────────
   useEffect(() => {
     if (!gsiReady || !googleBtnRef.current) return;
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_SIGNIN_CLIENT_ID;
     if (!clientId) {
-      console.warn("[google] NEXT_PUBLIC_GOOGLE_SIGNIN_CLIENT_ID is missing");
+      console.warn(
+        "[google] NEXT_PUBLIC_GOOGLE_SIGNIN_CLIENT_ID is missing — cannot render Google button"
+      );
       return;
     }
 
@@ -62,20 +83,28 @@ export default function WelcomePage() {
       cancel_on_tap_outside: true,
     });
 
+    // Compute width from container so it fits mobile too
+    const parent = googleBtnRef.current.parentElement;
+    const parentWidth = parent?.clientWidth ?? 400;
+    const safeWidth = Math.max(200, Math.min(parentWidth, 400));
+
+    googleBtnRef.current.innerHTML = "";
+
     g.accounts.id.renderButton(googleBtnRef.current, {
       theme: "filled_black",
       size: "large",
       shape: "pill",
       text: "continue_with",
-      width: 400,
+      width: safeWidth,
       logo_alignment: "left",
     });
+
+    setGsiRendered(true);
   }, [gsiReady, googleSignIn, router]);
 
   // If already logged in → redirect to dashboard
   useEffect(() => {
     if (!user) return;
-    // Small delay for smooth transition
     const id = setTimeout(() => {
       router.replace("/app");
     }, 200);
@@ -89,16 +118,11 @@ export default function WelcomePage() {
 
   return (
     <div className="min-h-screen bg-slate-950 relative overflow-hidden flex items-center justify-center px-6 py-12">
-      
-      {/* ✅ FIX 2: Memoized background prevents lag during state updates */}
       <BackgroundEffects />
 
       <div className="relative z-10 w-full max-w-5xl grid lg:grid-cols-2 gap-12 items-center">
-        
         {/* Left — brand */}
         <div className="space-y-6 text-center lg:text-left">
-          
-          {/* ✅ FIX 3: Memoized logo prevents heavy repaints */}
           <AnimatedLogo />
 
           <div>
@@ -123,24 +147,48 @@ export default function WelcomePage() {
 
         {/* ── Sign in with Google / GitHub ── */}
         <div className="flex flex-col items-center gap-3">
-          {/* Google button (injected by GIS) */}
-          <div ref={googleBtnRef} />
+          {/* Google: fallback + real GIS button sized to container */}
+          <div className="relative w-full max-w-[400px]">
+            {!gsiRendered && (
+              <button
+                type="button"
+                disabled
+                className="w-full flex items-center justify-center gap-3 rounded-full bg-slate-900 border border-slate-800 py-3 text-sm font-medium text-slate-400"
+              >
+                <svg viewBox="0 0 24 24" className="w-5 h-5">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                Continue with Google
+              </button>
+            )}
+            <div
+              ref={googleBtnRef}
+              className={`w-full flex justify-center ${
+                gsiRendered
+                  ? "block"
+                  : "absolute inset-0 opacity-0 pointer-events-none"
+              }`}
+            />
+          </div>
 
-          {/* GitHub button */}
-          <a
-            href={`https://github.com/login/oauth/authorize?client_id=${process.env.NEXT_PUBLIC_GITHUB_SIGNIN_CLIENT_ID}&redirect_uri=${encodeURIComponent(
-              typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : "",
-            )}&scope=read:user user:email`}
-            className="w-full max-w-[400px] flex items-center justify-center gap-3 rounded-full bg-slate-900 border border-slate-800 hover:bg-slate-800 transition py-3 text-sm font-medium text-slate-200"
-          >
-            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
-              <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56v-2.17c-3.2.7-3.88-1.54-3.88-1.54-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.04 1.78 2.72 1.27 3.38.97.1-.75.4-1.27.73-1.56-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.78 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.08 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.05.78 2.12v3.14c0 .31.21.67.8.56C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z" />
-            </svg>
-            Continue with GitHub
-          </a>
+          {/* GitHub button — rendered only after githubAuthUrl is built */}
+          {githubAuthUrl && (
+            <a
+              href={githubAuthUrl}
+              className="w-full max-w-[400px] flex items-center justify-center gap-3 rounded-full bg-slate-900 border border-slate-800 hover:bg-slate-800 transition py-3 text-sm font-medium text-slate-200"
+            >
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
+                <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56v-2.17c-3.2.7-3.88-1.54-3.88-1.54-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.04 1.78 2.72 1.27 3.38.97.1-.75.4-1.27.73-1.56-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.78 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.08 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.05.78 2.12v3.14c0 .31.21.67.8.56C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z" />
+              </svg>
+              Continue with GitHub
+            </a>
+          )}
 
           {/* Divider */}
-          <div className="flex items-center gap-3 w-full">
+          <div className="flex items-center gap-3 w-full max-w-[400px]">
             <div className="flex-1 h-px bg-slate-800" />
             <span className="text-[10px] uppercase tracking-wider text-slate-600">
               or
@@ -165,7 +213,6 @@ export default function WelcomePage() {
             className="group relative w-full overflow-hidden rounded-2xl border border-violet-500/40 bg-gradient-to-br from-violet-600/30 via-violet-700/20 to-cyan-600/20 p-[1px] transition-transform hover:scale-[1.02]"
           >
             <div className="relative rounded-2xl bg-slate-950/60 backdrop-blur px-6 py-5 flex items-center gap-4">
-              {/* Animated gradient */}
               <div
                 className={`absolute inset-0 rounded-2xl transition-opacity duration-500 ${
                   hovered === "signup" ? "opacity-100" : "opacity-0"
@@ -223,7 +270,7 @@ export default function WelcomePage() {
             </div>
           </button>
 
-          {/* ✅ NEW: CONTINUE AS GUEST — tertiary */}
+          {/* CONTINUE AS GUEST — tertiary */}
           <button
             onClick={handleGuestClick}
             onMouseEnter={() => setHovered("guest")}
@@ -284,12 +331,9 @@ function FeatureBadge({
   );
 }
 
-// ✅ FIX: Memoized components to prevent lag during state updates
-
 const BackgroundEffects = memo(() => {
   return (
     <>
-      {/* Ambient background */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
@@ -297,7 +341,6 @@ const BackgroundEffects = memo(() => {
             "radial-gradient(circle at 20% 20%, rgba(139,92,246,0.18) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(34,211,238,0.15) 0%, transparent 50%)",
         }}
       />
-      {/* Grid overlay */}
       <div
         className="absolute inset-0 opacity-[0.03] pointer-events-none"
         style={{

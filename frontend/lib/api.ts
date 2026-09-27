@@ -6,7 +6,10 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
-    const token = localStorage.getItem("xentra_token");
+    const token =
+      localStorage.getItem("xentra_token") ||
+      sessionStorage.getItem("xentra_token");
+
     if (token) {
       if (config.headers && typeof (config.headers as any).set === "function") {
         (config.headers as any).set("Authorization", `Bearer ${token}`);

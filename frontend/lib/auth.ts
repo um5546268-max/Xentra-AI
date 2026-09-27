@@ -10,8 +10,8 @@ export type User = {
   plan: "free" | "pro" | "ultimate" | string;
   emergency_stop?: boolean;
   created_at: string;
-  avatar_url?: string | null;      // ✅ NEW
-  display_name?: string | null;    // ✅ NEW
+  avatar_url?: string | null;
+  display_name?: string | null;
 };
 
 type AuthState = {
@@ -21,19 +21,66 @@ type AuthState = {
   error: string | null;
   isGuest: boolean;
 
-  signup: (email: string, password: string, fullName: string) => Promise<boolean>;
-  login: (email: string, password: string) => Promise<boolean>;
+  signup: (email: string, password: string, fullName: string, remember?: boolean) => Promise<boolean>;
+  login: (email: string, password: string, remember?: boolean) => Promise<boolean>;
   logout: () => void;
   loadFromStorage: () => void;
-  googleSignIn: (credential: string) => Promise<boolean>;
-  githubSignIn: (code: string) => Promise<boolean>;
+  googleSignIn: (credential: string, remember?: boolean) => Promise<boolean>;
+  githubSignIn: (code: string, remember?: boolean) => Promise<boolean>;
   continueAsGuest: () => void;
-  updateProfile: (patch: {        // ✅ NEW
+  updateProfile: (patch: {
     full_name?: string;
     avatar_url?: string | null;
   }) => Promise<boolean>;
 };
 
+// ─── Token storage helpers (localStorage vs sessionStorage) ─────────────
+const TOKEN_KEY = "xentra_token";
+const USER_KEY = "xentra_user";
+const GUEST_KEY = "xentra_guest";
+const REMEMBER_KEY = "xentra_remember"; // "true" if user chose Stay logged in
+
+const saveAuth = (token: string, user: User, remember: boolean) => {
+  if (typeof window === "undefined") return;
+  const store = remember ? localStorage : sessionStorage;
+  const other = remember ? sessionStorage : localStorage;
+
+  // Clean the "other" storage to avoid duplicates
+  other.removeItem(TOKEN_KEY);
+  other.removeItem(USER_KEY);
+
+  store.setItem(TOKEN_KEY, token);
+  store.setItem(USER_KEY, JSON.stringify(user));
+  localStorage.setItem(REMEMBER_KEY, remember ? "true" : "false");
+};
+
+const readAuth = (): { token: string | null; user: User | null; remember: boolean } => {
+  if (typeof window === "undefined") return { token: null, user: null, remember: false };
+
+  // Prefer localStorage (remembered), fall back to sessionStorage
+  const token =
+    localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
+  const userRaw =
+    localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY);
+  const remember = localStorage.getItem(REMEMBER_KEY) === "true";
+
+  let user: User | null = null;
+  if (userRaw) {
+    try { user = JSON.parse(userRaw); } catch { user = null; }
+  }
+  return { token, user, remember };
+};
+
+const clearAuth = () => {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(USER_KEY);
+  localStorage.removeItem(REMEMBER_KEY);
+};
+
+// ─── Store ──────────────────────────────────────────────────────────────
 export const useAuth = create<AuthState>((set) => ({
   user: null,
   token: null,
@@ -42,26 +89,19 @@ export const useAuth = create<AuthState>((set) => ({
   isGuest: false,
 
   loadFromStorage: () => {
-    if (typeof window === "undefined") return;
-    const token = localStorage.getItem("xentra_token");
-    const userRaw = localStorage.getItem("xentra_user");
-    const guest = localStorage.getItem("xentra_guest") === "true";
-    if (token && userRaw) {
-      try {
-        set({ token, user: JSON.parse(userRaw), isGuest: guest });
-      } catch {
-        localStorage.removeItem("xentra_token");
-        localStorage.removeItem("xentra_user");
-        localStorage.removeItem("xentra_guest");
-      }
+    const { token, user } = readAuth();
+    const guest = typeof window !== "undefined"
+      ? localStorage.getItem(GUEST_KEY) === "true"
+      : false;
+    if (token && user) {
+      set({ token, user, isGuest: guest });
     }
   },
 
-  // ✅ NEW — Update profile (avatar / full_name)
   updateProfile: async (patch) => {
     set({ loading: true, error: null });
     try {
-      const token = localStorage.getItem("xentra_token");
+      const { token } = readAuth();
       const res = await fetch(`${API_URL}/api/auth/me`, {
         method: "PATCH",
         headers: {
@@ -76,7 +116,10 @@ export const useAuth = create<AuthState>((set) => ({
         set({ loading: false, error: data.detail || "Update failed" });
         return false;
       }
-      localStorage.setItem("xentra_user", JSON.stringify(data));
+      // Persist to whichever store we're using
+      const remember = localStorage.getItem(REMEMBER_KEY) === "true";
+      const store = remember ? localStorage : sessionStorage;
+      store.setItem(USER_KEY, JSON.stringify(data));
       set({ user: data, loading: false, error: null });
       return true;
     } catch {
@@ -85,7 +128,6 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
-  // ✅ Guest Mode
   continueAsGuest: () => {
     if (typeof window === "undefined") return;
     const guestUser: User = {
@@ -97,13 +139,13 @@ export const useAuth = create<AuthState>((set) => ({
       created_at: new Date().toISOString(),
       avatar_url: null,
     };
-    localStorage.setItem("xentra_token", "guest-token");
-    localStorage.setItem("xentra_user", JSON.stringify(guestUser));
-    localStorage.setItem("xentra_guest", "true");
+    localStorage.setItem(GUEST_KEY, "true");
+    localStorage.setItem(TOKEN_KEY, "guest-token");
+    localStorage.setItem(USER_KEY, JSON.stringify(guestUser));
     set({ user: guestUser, token: "guest-token", isGuest: true, error: null });
   },
 
-  signup: async (email, password, fullName) => {
+  signup: async (email, password, fullName, remember = false) => {
     set({ loading: true, error: null });
     try {
       const res = await fetch(`${API_URL}/api/auth/signup`, {
@@ -116,15 +158,13 @@ export const useAuth = create<AuthState>((set) => ({
       });
 
       const data = await res.json();
-
       if (!res.ok) {
         set({ loading: false, error: data.detail || "Signup failed" });
         return false;
       }
 
-      localStorage.setItem("xentra_token", data.access_token);
-      localStorage.setItem("xentra_user", JSON.stringify(data.user));
-      localStorage.removeItem("xentra_guest");
+      localStorage.removeItem(GUEST_KEY);
+      saveAuth(data.access_token, data.user, remember);
       set({ user: data.user, token: data.access_token, loading: false, error: null, isGuest: false });
       return true;
     } catch {
@@ -133,7 +173,7 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
-  githubSignIn: async (code) => {
+  githubSignIn: async (code, remember = true) => {
     set({ loading: true, error: null });
     try {
       const res = await fetch(`${API_URL}/api/auth/github`, {
@@ -149,9 +189,9 @@ export const useAuth = create<AuthState>((set) => ({
         set({ loading: false, error: data.detail || "GitHub sign-in failed" });
         return false;
       }
-      localStorage.setItem("xentra_token", data.access_token);
-      localStorage.setItem("xentra_user", JSON.stringify(data.user));
-      localStorage.removeItem("xentra_guest");
+      localStorage.removeItem(GUEST_KEY);
+      // OAuth: default to remembered (user clicked a button, expects to stay in)
+      saveAuth(data.access_token, data.user, remember);
       set({ user: data.user, token: data.access_token, loading: false, error: null, isGuest: false });
       return true;
     } catch {
@@ -160,7 +200,7 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
-  login: async (email, password) => {
+  login: async (email, password, remember = false) => {
     set({ loading: true, error: null });
     try {
       const res = await fetch(`${API_URL}/api/auth/login`, {
@@ -173,15 +213,13 @@ export const useAuth = create<AuthState>((set) => ({
       });
 
       const data = await res.json();
-
       if (!res.ok) {
         set({ loading: false, error: data.detail || "Login failed" });
         return false;
       }
 
-      localStorage.setItem("xentra_token", data.access_token);
-      localStorage.setItem("xentra_user", JSON.stringify(data.user));
-      localStorage.removeItem("xentra_guest");
+      localStorage.removeItem(GUEST_KEY);
+      saveAuth(data.access_token, data.user, remember);
       set({ user: data.user, token: data.access_token, loading: false, error: null, isGuest: false });
       return true;
     } catch {
@@ -190,7 +228,7 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
-  googleSignIn: async (credential) => {
+  googleSignIn: async (credential, remember = true) => {
     set({ loading: true, error: null });
     try {
       const res = await fetch(`${API_URL}/api/auth/google`, {
@@ -203,15 +241,13 @@ export const useAuth = create<AuthState>((set) => ({
       });
 
       const data = await res.json();
-
       if (!res.ok) {
         set({ loading: false, error: data.detail || "Google sign-in failed" });
         return false;
       }
 
-      localStorage.setItem("xentra_token", data.access_token);
-      localStorage.setItem("xentra_user", JSON.stringify(data.user));
-      localStorage.removeItem("xentra_guest");
+      localStorage.removeItem(GUEST_KEY);
+      saveAuth(data.access_token, data.user, remember);
       set({ user: data.user, token: data.access_token, loading: false, error: null, isGuest: false });
       return true;
     } catch {
@@ -221,23 +257,20 @@ export const useAuth = create<AuthState>((set) => ({
   },
 
   logout: () => {
-  // ✅ Reset all cached stats/mock data so next login starts fresh
-  if (typeof window !== "undefined") {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      if (key === "xentra_token" || key === "xentra_user") continue;
-      if (key.startsWith("xentra-") || key.startsWith("xentra_")) {
-        keysToRemove.push(key);
+    if (typeof window !== "undefined") {
+      // Clean any other xentra-* cached data
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (key === TOKEN_KEY || key === USER_KEY) continue;
+        if (key.startsWith("xentra-") || key.startsWith("xentra_")) {
+          keysToRemove.push(key);
+        }
       }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
     }
-    keysToRemove.forEach((k) => localStorage.removeItem(k));
-  }
-
-  localStorage.removeItem("xentra_token");
-  localStorage.removeItem("xentra_user");
-  localStorage.removeItem("xentra_guest");
-  set({ user: null, token: null, error: null, isGuest: false });
-},
+    clearAuth();
+    set({ user: null, token: null, error: null, isGuest: false });
+  },
 }));

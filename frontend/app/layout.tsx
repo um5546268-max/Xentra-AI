@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Toaster } from "sonner";
+import AuthLoader from "@/components/AuthLoader";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,7 +21,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   themeColor: "#020617",
-  viewportFit: "cover",   // ← important for iPhone notch
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -31,7 +32,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="bg-slate-950 text-white antialiased">
+        <AuthLoader />
         {children}
+        <Toaster />
       </body>
     </html>
   );

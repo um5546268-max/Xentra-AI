@@ -17,6 +17,7 @@ import KeyboardShortcutsModal from "@/components/KeyboardShortcutsModal";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
 import MobileShell from "@/components/mobile/MobileShell";
 import UnreadPoller from "@/components/UnreadPoller";
+import AppGuard from "@/components/AppGuard";
 
 export default function AppLayout({
   children,
@@ -68,59 +69,61 @@ export default function AppLayout({
   }, [loadTheme]);
 
   return (
-    <div
-      className="flex flex-col bg-slate-950 text-white overflow-hidden"
-      style={{ height: "100vh" }}
-    >
-      {/* ✅ Global unread poller — mounts once, polls every 30s */}
-      <UnreadPoller />
+    <AppGuard>
+      <div
+        className="flex flex-col bg-slate-950 text-white overflow-hidden"
+        style={{ height: "100vh" }}
+      >
+        {/* ✅ Global unread poller — mounts once, polls every 30s */}
+        <UnreadPoller />
 
-      {/* Main row: sidebar (desktop) + content + bottom nav (mobile) */}
-      <div className="flex flex-1 min-h-0">
-        {/* Sidebar — hidden on mobile */}
-        <div className="hidden md:flex">
-          <Sidebar />
-        </div>
-
-                {/* Main content */}
-        <main className="flex-1 overflow-y-auto min-w-0 h-full">
-          <MobileShell>{children}</MobileShell>
-        </main>
-
-        {showCommandCenter && (
-          <div className="hidden md:block">
-            <CommandCenter />
+        {/* Main row: sidebar (desktop) + content + bottom nav (mobile) */}
+        <div className="flex flex-1 min-h-0">
+          {/* Sidebar — hidden on mobile */}
+          <div className="hidden md:flex">
+            <Sidebar />
           </div>
-        )}
-        <GlobalAudioHost />
-        <GlobalYouTubePlayer />
-        {showTour && <OnboardingTour onComplete={() => setShowTour(false)} />}
-        {showShortcuts && (
-          <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />
-        )}
-        <UpgradeModal />
-      </div>
 
-      {/* Bottom status bar — desktop only */}
-      <div className="hidden md:flex shrink-0 h-7 border-t border-slate-800 bg-slate-950 items-center justify-between px-4 text-[10px] text-slate-500">
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-            <span className="font-semibold text-violet-300">XENTRA AI</span>
-          </span>
-          <span className="text-slate-700">·</span>
-          <span>Connect</span>
-          <span className="text-slate-700">·</span>
-          <span>Learn</span>
-          <span className="text-slate-700">·</span>
-          <span>Build</span>
-          <span className="text-slate-700">·</span>
-          <span>Together</span>
+          {/* Main content */}
+          <main className="flex-1 overflow-y-auto min-w-0 h-full">
+            <MobileShell>{children}</MobileShell>
+          </main>
+
+          {showCommandCenter && (
+            <div className="hidden md:block">
+              <CommandCenter />
+            </div>
+          )}
+          <GlobalAudioHost />
+          <GlobalYouTubePlayer />
+          {showTour && <OnboardingTour onComplete={() => setShowTour(false)} />}
+          {showShortcuts && (
+            <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />
+          )}
+          <UpgradeModal />
         </div>
-        <div className="relative">
-          <SystemStatsWidget />
+
+        {/* Bottom status bar — desktop only */}
+        <div className="hidden md:flex shrink-0 h-7 border-t border-slate-800 bg-slate-950 items-center justify-between px-4 text-[10px] text-slate-500">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+              <span className="font-semibold text-violet-300">XENTRA AI</span>
+            </span>
+            <span className="text-slate-700">·</span>
+            <span>Connect</span>
+            <span className="text-slate-700">·</span>
+            <span>Learn</span>
+            <span className="text-slate-700">·</span>
+            <span>Build</span>
+            <span className="text-slate-700">·</span>
+            <span>Together</span>
+          </div>
+          <div className="relative">
+            <SystemStatsWidget />
+          </div>
         </div>
       </div>
-    </div>
+    </AppGuard>
   );
 }
