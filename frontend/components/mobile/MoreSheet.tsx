@@ -6,24 +6,26 @@ import {
   Code, FolderOpen, Image as ImageIcon, ShoppingBag,
   Globe, Activity, Wrench, CreditCard, Settings, X,
   Sparkles, ListTodo, Brain, Music, User, MessageSquare,
+  Inbox,
 } from "lucide-react";
 import FeedbackModal from "@/components/feedback/FeedbackModal";
 
 const FEATURES = [
-  { id: "profile",   label: "Profile",      icon: User,           color: "violet",  href: "/app/profile" },
-  { id: "code",      label: "Code",         icon: Code,           color: "violet",  href: "/app/code" },
-  { id: "files",     label: "Files",        icon: FolderOpen,     color: "cyan",    href: "/app/files" },
-  { id: "media",     label: "Media",        icon: ImageIcon,      color: "pink",    href: "/app/media" },
-  { id: "shopping",  label: "Shopping",     icon: ShoppingBag,    color: "emerald", href: "/app/shopping" },
-  { id: "browser",   label: "Browser",      icon: Globe,          color: "blue",    href: "/app/browser" },
-  { id: "health",    label: "System Health",icon: Activity,       color: "amber",   href: "/app/system-health" },
-  { id: "tools",     label: "Tools",        icon: Wrench,         color: "violet",  href: "/app/tools" },
-  { id: "tasks",     label: "Tasks",        icon: ListTodo,       color: "cyan",    href: "/app/tasks" },
-  { id: "memory",    label: "Memory",       icon: Brain,          color: "pink",    href: "/app/memory" },
-  { id: "music",     label: "Music",        icon: Music,          color: "emerald", href: "/app/media" },
-  { id: "billing",   label: "Billing",      icon: CreditCard,     color: "amber",   href: "/app/billing" },
-  { id: "feedback",  label: "Feedback",     icon: MessageSquare,  color: "violet",  href: "#feedback" },
-  { id: "settings",  label: "Settings",     icon: Settings,       color: "slate",   href: "/app/settings" },
+  { id: "profile",      label: "Profile",       icon: User,           color: "violet",  href: "/app/profile" },
+  { id: "code",         label: "Code",          icon: Code,           color: "violet",  href: "/app/code" },
+  { id: "files",        label: "Files",         icon: FolderOpen,     color: "cyan",    href: "/app/files" },
+  { id: "media",        label: "Media",         icon: ImageIcon,      color: "pink",    href: "/app/media" },
+  { id: "shopping",     label: "Shopping",      icon: ShoppingBag,    color: "emerald", href: "/app/shopping" },
+  { id: "browser",      label: "Browser",       icon: Globe,          color: "blue",    href: "/app/browser" },
+  { id: "health",       label: "System Health", icon: Activity,       color: "amber",   href: "/app/system-health" },
+  { id: "tools",        label: "Tools",         icon: Wrench,         color: "violet",  href: "/app/tools" },
+  { id: "tasks",        label: "Tasks",         icon: ListTodo,       color: "cyan",    href: "/app/tasks" },
+  { id: "memory",       label: "Memory",        icon: Brain,          color: "pink",    href: "/app/memory" },
+  { id: "music",        label: "Music",         icon: Music,          color: "emerald", href: "/app/media" },
+  { id: "billing",      label: "Billing",       icon: CreditCard,     color: "amber",   href: "/app/billing" },
+  { id: "feedback",     label: "Feedback",      icon: MessageSquare,  color: "violet",  href: "#feedback" },
+  { id: "my-feedback",  label: "My Feedback",   icon: Inbox,          color: "cyan",    href: "/app/feedback" },
+  { id: "settings",     label: "Settings",      icon: Settings,       color: "slate",   href: "/app/settings" },
 ];
 
 const COLOR_MAP: Record<string, string> = {
