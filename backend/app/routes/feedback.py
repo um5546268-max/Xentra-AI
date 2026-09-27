@@ -54,7 +54,7 @@ class FeedbackAdminRead(BaseModel):
 
 
 class FeedbackStatusUpdate(BaseModel):
-    status: str  # "new" | "reviewing" | "resolved" | "closed"
+    status: str
 
 
 class FeedbackReply(BaseModel):
@@ -63,16 +63,17 @@ class FeedbackReply(BaseModel):
 
 class BulkAction(BaseModel):
     ids: List[str]
-    action: str  # "read" | "resolved" | "closed" | "delete"
+    action: str
 
 
-# ── Admin guard ───────────────────────────────────────────────────────
 def _require_admin(current_user: User) -> None:
     if not getattr(current_user, "is_admin", False):
         raise HTTPException(403, "Admin access required")
 
 
-# ── Public endpoints ─────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# PUBLIC ROUTES
+# ═══════════════════════════════════════════════════════════════════════
 @router.post("", response_model=FeedbackRead, status_code=201)
 def submit_feedback(
     payload: FeedbackCreate,
@@ -80,10 +81,8 @@ def submit_feedback(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user),
 ):
-    """Submit feedback. Guests allowed (user_id will be null)."""
     if not payload.message.strip():
         raise HTTPException(400, "Message is required")
-
     if payload.screenshot_url and len(payload.screenshot_url) > 2_800_000:
         raise HTTPException(413, "Screenshot too large (max 2 MB)")
 
@@ -116,7 +115,6 @@ def my_feedback(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """The current user's own feedback history."""
     rows = db.execute(
         select(Feedback)
         .where(Feedback.user_id == current_user.id)
@@ -137,7 +135,11 @@ def my_feedback(
     ]
 
 
-# ── Admin endpoints ───────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# ADMIN ROUTES — ORDER MATTERS! Literal paths (/list, /stats, /bulk)
+# MUST come before dynamic paths (/{feedback_id}).
+# ═══════════════════════════════════════════════════════════════════════
+
 def _to_admin_read(db: Session, r: Feedback) -> FeedbackAdminRead:
     user = db.get(User, r.user_id) if r.user_id else None
     return FeedbackAdminRead(
@@ -158,6 +160,7 @@ def _to_admin_read(db: Session, r: Feedback) -> FeedbackAdminRead:
     )
 
 
+# ─── LITERAL ROUTES FIRST ─────────────────────────────────────────────
 @router.get("/admin/list", response_model=dict)
 def admin_list_feedback(
     status_filter: Optional[str] = None,
@@ -168,7 +171,6 @@ def admin_list_feedback(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all feedback with filters + pagination. Admin only."""
     _require_admin(current_user)
 
     limit = max(1, min(limit, 100))
@@ -207,7 +209,6 @@ def admin_feedback_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Summary stats for the admin dashboard. Admin only."""
     _require_admin(current_user)
 
     total = db.query(func.count(Feedback.id)).scalar() or 0
@@ -229,140 +230,13 @@ def admin_feedback_stats(
         .scalar()
         or 0
     )
-    by_status = dict(
-        db.query(Feedback.status, func.count(Feedback.id))
-        .group_by(Feedback.status)
-        .all()
-    )
-    by_category = dict(
-        db.query(Feedback.category, func.count(Feedback.id))
-        .group_by(Feedback.category)
-        .all()
-    )
 
     return {
         "total": total,
         "new": new_count,
         "avg_rating": round(float(avg_rating), 2) if avg_rating else None,
         "this_week": this_week,
-        "by_status": by_status,
-        "by_category": by_category,
     }
-
-
-@router.get("/admin/{feedback_id}", response_model=FeedbackAdminRead)
-def admin_get_one(
-    feedback_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Fetch a single feedback item. Admin only."""
-    _require_admin(current_user)
-
-    import uuid as _uuid
-    try:
-        fid = _uuid.UUID(feedback_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid ID")
-
-    fb = db.get(Feedback, fid)
-    if not fb:
-        raise HTTPException(404, "Feedback not found")
-
-    return _to_admin_read(db, fb)
-
-
-@router.patch("/admin/{feedback_id}", response_model=FeedbackAdminRead)
-def admin_update_feedback(
-    feedback_id: str,
-    payload: FeedbackStatusUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Update a feedback item's status. Admin only."""
-    _require_admin(current_user)
-
-    if payload.status not in {"new", "reviewing", "resolved", "closed"}:
-        raise HTTPException(400, "Invalid status")
-
-    import uuid as _uuid
-    try:
-        fid = _uuid.UUID(feedback_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid ID")
-
-    fb = db.get(Feedback, fid)
-    if not fb:
-        raise HTTPException(404, "Feedback not found")
-
-    fb.status = payload.status
-    db.commit()
-    db.refresh(fb)
-    return _to_admin_read(db, fb)
-
-
-@router.post("/admin/{feedback_id}/reply", response_model=FeedbackAdminRead)
-def admin_reply_feedback(
-    feedback_id: str,
-    payload: FeedbackReply,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Send a reply to the feedback author and mark resolved. Admin only."""
-    _require_admin(current_user)
-
-    import uuid as _uuid
-    try:
-        fid = _uuid.UUID(feedback_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid ID")
-
-    fb = db.get(Feedback, fid)
-    if not fb:
-        raise HTTPException(404, "Feedback not found")
-
-    fb.meta = {
-        **(fb.meta or {}),
-        "reply": payload.message.strip(),
-        "replied_at": datetime.now(timezone.utc).isoformat(),
-        "replied_by": str(current_user.id),
-    }
-    fb.status = "resolved"
-    db.commit()
-    db.refresh(fb)
-
-    # Optional email — uncomment once you add a mail service
-    # from app.services.email import send_email
-    # if fb.user_id:
-    #     user = db.get(User, fb.user_id)
-    #     if user and user.email:
-    #         send_email(user.email, "Re: your feedback", payload.message)
-
-    return _to_admin_read(db, fb)
-
-
-@router.delete("/admin/{feedback_id}")
-def admin_delete_feedback(
-    feedback_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Delete a feedback item. Admin only."""
-    _require_admin(current_user)
-
-    import uuid as _uuid
-    try:
-        fid = _uuid.UUID(feedback_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid ID")
-
-    fb = db.get(Feedback, fid)
-    if not fb:
-        raise HTTPException(404, "Feedback not found")
-
-    db.delete(fb)
-    db.commit()
-    return {"ok": True}
 
 
 @router.post("/admin/bulk")
@@ -371,7 +245,6 @@ def admin_bulk_action(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Bulk status change or delete. Admin only."""
     _require_admin(current_user)
 
     if not body.ids:
@@ -403,3 +276,107 @@ def admin_bulk_action(
 
     db.commit()
     return {"ok": True, "affected": len(uuids)}
+
+
+# ─── DYNAMIC ROUTES LAST ──────────────────────────────────────────────
+@router.get("/admin/{feedback_id}", response_model=FeedbackAdminRead)
+def admin_get_one(
+    feedback_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+
+    import uuid as _uuid
+    try:
+        fid = _uuid.UUID(feedback_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid ID")
+
+    fb = db.get(Feedback, fid)
+    if not fb:
+        raise HTTPException(404, "Feedback not found")
+
+    return _to_admin_read(db, fb)
+
+
+@router.patch("/admin/{feedback_id}", response_model=FeedbackAdminRead)
+def admin_update_feedback(
+    feedback_id: str,
+    payload: FeedbackStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+
+    if payload.status not in {"new", "reviewing", "resolved", "closed"}:
+        raise HTTPException(400, "Invalid status")
+
+    import uuid as _uuid
+    try:
+        fid = _uuid.UUID(feedback_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid ID")
+
+    fb = db.get(Feedback, fid)
+    if not fb:
+        raise HTTPException(404, "Feedback not found")
+
+    fb.status = payload.status
+    db.commit()
+    db.refresh(fb)
+    return _to_admin_read(db, fb)
+
+
+@router.post("/admin/{feedback_id}/reply", response_model=FeedbackAdminRead)
+def admin_reply_feedback(
+    feedback_id: str,
+    payload: FeedbackReply,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+
+    import uuid as _uuid
+    try:
+        fid = _uuid.UUID(feedback_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid ID")
+
+    fb = db.get(Feedback, fid)
+    if not fb:
+        raise HTTPException(404, "Feedback not found")
+
+    fb.meta = {
+        **(fb.meta or {}),
+        "reply": payload.message.strip(),
+        "replied_at": datetime.now(timezone.utc).isoformat(),
+        "replied_by": str(current_user.id),
+    }
+    fb.status = "resolved"
+    db.commit()
+    db.refresh(fb)
+    return _to_admin_read(db, fb)
+
+
+@router.delete("/admin/{feedback_id}")
+def admin_delete_feedback(
+    feedback_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+
+    import uuid as _uuid
+    try:
+        fid = _uuid.UUID(feedback_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid ID")
+
+    fb = db.get(Feedback, fid)
+    if not fb:
+        raise HTTPException(404, "Feedback not found")
+
+    db.delete(fb)
+    db.commit()
+    return {"ok": True}
