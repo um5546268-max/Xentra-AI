@@ -1,6 +1,8 @@
 """
 Usage enforcement dependency: enforce_limit("search").
 Returns HTTP 402 (Payment Required) with upgrade info if user hit their daily cap.
+
+ADMINS ARE ALWAYS UNLIMITED — the check short-circuits before any quota logic.
 """
 from __future__ import annotations
 
@@ -27,6 +29,15 @@ def enforce_limit(metric: str, amount: int = 1):
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
     ) -> None:
+        # ── ADMIN BYPASS ─────────────────────────────────────────────
+        # Admins get unlimited access to every metric. We still record
+        # usage so the admin's own dashboard shows real numbers, but we
+        # never block them.
+        if getattr(current_user, "is_admin", False):
+            record_usage(db, current_user.id, metric, amount=amount)
+            return
+        # ─────────────────────────────────────────────────────────────
+
         plan_slug = (current_user.plan or "free").lower()
         limit = get_limit(plan_slug, metric)
 

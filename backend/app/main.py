@@ -61,6 +61,7 @@ from app.routes import onboarding as onboarding_routes
 from app.routes import friends as friend_routes
 from app.routes import chats as connect_chat_routes
 from app.routes import feedback as feedback_routes
+from app.routes import admin_feedback as admin_feedback_routes
 
 setup_logging()
 init_sentry()
@@ -157,6 +158,7 @@ app.include_router(onboarding_routes.router, prefix=settings.API_V1_STR)
 app.include_router(friend_routes.router, prefix=settings.API_V1_STR)
 app.include_router(chat_routes.router, prefix=settings.API_V1_STR)         # AI chat
 app.include_router(feedback_routes.router, prefix=settings.API_V1_STR)
+app.include_router(admin_feedback_routes.router, prefix=settings.API_V1_STR)
 
 # ==== Health & root ====
 @app.get("/api/health")

@@ -1,95 +1,116 @@
 """
-Plan-based limits — single source of truth for what each plan allows.
-Used by the usage_guard dependency to block over-limit requests.
-"""
-from __future__ import annotations
+Central plan limits.
 
+Every route that cares about "how many results can this user get" or
+"how many operations can this user run" reads from here.
+
+ADMINS ARE ALWAYS UNLIMITED.
+"""
+
+from typing import Dict, Any
 from app.models.user import User
 
 
-# ═══════════════════════════════════════════════════════════════
-# PLAN LIMITS TABLE
-# -1 means unlimited
-# Numeric values are per-day (or per-minute for minutes metrics)
-# ═══════════════════════════════════════════════════════════════
-PLAN_LIMITS: dict[str, dict[str, int]] = {
+# ─── Quotas per plan ─────────────────────────────────────────────────
+# -1 means "unlimited"
+PLAN_LIMITS: Dict[str, Dict[str, int]] = {
     "free": {
-        "search": 3,
-        "deep_research": 3,
-        "ai_coding": 5,
-        "file_upload": 3,
-        "learning_minutes": 120,
-        "shopping": 3,
-        "browser_tasks": 3,
+        "messages":          50,
+        "images":            5,
+        "file_upload":       3,
+        "browser_tasks":     5,
+        "automations":       3,
+        "ai_coding":         10,
+        "learning_minutes":  60,
+        "save_memory":       20,
+        "shopping":          10,
         "connect_ai_minutes": 30,
-        "save_memory": 1,
-        "automations": 2,
+        # result caps (used by clamp_count)
+        "spotify_results":   10,
+        "youtube_results":   10,
+        "shopping_results":  10,
     },
-    # Your app calls this plan "basic" in the frontend but "plus" in DB?
-    # Use whichever name matches your DB. See note below.
-    "basic": {
-        "search": 15,
-        "deep_research": 10,
-        "ai_coding": 15,
-        "file_upload": 10,
-        "learning_minutes": 300,
-        "shopping": 10,
-        "browser_tasks": 10,
-        "connect_ai_minutes": 120,
-        "save_memory": 5,
-        "automations": 10,
-    },
-    # ✅ RENAMED: was "premium" — now matches your DB
     "pro": {
-        "search": 50,
-        "deep_research": 30,
-        "ai_coding": 50,
-        "file_upload": 30,
-        "learning_minutes": 600,
-        "shopping": 30,
-        "browser_tasks": 30,
+        "messages":          500,
+        "images":            100,
+        "file_upload":       20,
+        "browser_tasks":     50,
+        "automations":       25,
+        "ai_coding":         200,
+        "learning_minutes":  600,
+        "save_memory":       200,
+        "shopping":          100,
         "connect_ai_minutes": 300,
-        "save_memory": 15,
-        "automations": 30,
+        "spotify_results":   25,
+        "youtube_results":   25,
+        "shopping_results":  25,
     },
     "ultimate": {
-        "search": 150,
-        "deep_research": 100,
-        "ai_coding": 150,
-        "file_upload": 100,
-        "learning_minutes": -1,
-        "shopping": 100,
-        "browser_tasks": 100,
-        "connect_ai_minutes": 600,
-        "save_memory": 50,
-        "automations": 100,
+        "messages":          5000,
+        "images":            1000,
+        "file_upload":       200,
+        "browser_tasks":     500,
+        "automations":       200,
+        "ai_coding":         2000,
+        "learning_minutes":  3000,
+        "save_memory":       2000,
+        "shopping":          1000,
+        "connect_ai_minutes": 3000,
+        "spotify_results":   50,
+        "youtube_results":   50,
+        "shopping_results":  50,
+    },
+    # Admins — treated as unlimited. The is_admin() check in clamp_count
+    # and usage_guard short-circuits before this dict is even consulted,
+    # but include it so nothing KeyErrors if the check is bypassed.
+    "admin": {
+        k: -1 for k in [
+            "messages", "images", "file_upload", "browser_tasks",
+            "automations", "ai_coding", "learning_minutes", "save_memory",
+            "shopping", "connect_ai_minutes",
+            "spotify_results", "youtube_results", "shopping_results",
+        ]
     },
 }
 
 
-def get_plan_limits(plan_slug: str) -> dict[str, int]:
-    limits = PLAN_LIMITS.get(plan_slug)
-    if limits is None:
-        print(f"[plan_limits] WARNING: no limits for plan '{plan_slug}', falling back to free")
-        return PLAN_LIMITS["free"]
-    return limits
+def is_admin(user: User | None) -> bool:
+    return bool(user and getattr(user, "is_admin", False))
 
 
-def get_limit(plan_slug: str, metric: str) -> int:
-    """Return the numeric limit for a metric on a plan. -1 = unlimited."""
-    return get_plan_limits(plan_slug).get(metric, -1)
+def plan_key(user: User | None) -> str:
+    """Return the effective plan key ('admin' for admins)."""
+    if is_admin(user):
+        return "admin"
+    slug = (getattr(user, "plan", "free") or "free").lower()
+    return slug if slug in PLAN_LIMITS else "free"
 
 
-# ═══════════════════════════════════════════════════════════════
-# BACKWARD COMPAT — used by shopping.py
-# ═══════════════════════════════════════════════════════════════
-def clamp_count(user: User, metric: str, requested: int) -> int:
+def get_limit(user: User | None, metric: str) -> int:
+    """Return the raw limit for a metric. -1 = unlimited."""
+    if is_admin(user):
+        return -1
+    return PLAN_LIMITS.get(plan_key(user), PLAN_LIMITS["free"]).get(metric, -1)
+
+
+def clamp_count(
+    user: User | None,
+    metric: str,
+    requested: int,
+    *,
+    hard_max: int = 200,
+) -> int:
     """
-    Clamp a requested count to the plan's limit.
-    Used by shopping to cap max_results.
+    Clamp a requested result count to the plan's limit.
+
+    Admins → no clamp (returns `requested`, capped only by hard_max).
+    Free users → clamped to their plan limit.
     """
-    plan_slug = (user.plan or "free").lower()
-    limit = get_limit(plan_slug, metric)
+    # ── ADMIN BYPASS ─────────────────────────────────────────────────
+    if is_admin(user):
+        return min(max(1, requested), hard_max)
+    # ─────────────────────────────────────────────────────────────────
+    limit = get_limit(user, metric)
     if limit == -1:
-        return requested
-    return min(requested, limit)
+        return min(max(1, requested), hard_max)
+    return min(max(1, requested), limit)

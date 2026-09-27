@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import {
   Crown, Check, Sparkles, Zap, Shield, CreditCard, Plus,
   TrendingUp, MessageSquare, FolderOpen, Bot, GraduationCap,
-  Copy, CheckCircle2, ChevronRight, Loader2, X, FileText,
+  Copy, CheckCircle2, ChevronRight, Loader2, X, FileText, Infinity as InfinityIcon,
 } from "lucide-react";
 import {
   listPlans, getBillingStatus, startCheckout,
@@ -17,7 +17,7 @@ import {
 import { useAuth } from "@/lib/auth";
 
 // ─────────────────────────────────────────────────────────────
-// SHORT CARD FEATURES (per plan)
+// SHORT CARD FEATURES
 // ─────────────────────────────────────────────────────────────
 const CARD_FEATURES: Record<string, string[]> = {
   free: [
@@ -63,7 +63,7 @@ const CARD_FEATURES: Record<string, string[]> = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// FULL COMPARISON TABLE
+// COMPARISON TABLE
 // ─────────────────────────────────────────────────────────────
 type FeatureRow = {
   label: string;
@@ -150,14 +150,6 @@ const PLAN_ICONS: Record<string, React.ReactNode> = {
 };
 
 const USAGE_ICONS: Record<string, React.ReactNode> = {
-  messages_per_day: <MessageSquare className="w-4 h-4 text-violet-300" />,
-  tasks_per_day: <Sparkles className="w-4 h-4 text-cyan-300" />,
-  images_per_day: <Sparkles className="w-4 h-4 text-pink-300" />,
-  files_storage_mb: <FolderOpen className="w-4 h-4 text-emerald-300" />,
-  voice_minutes_per_day: <GraduationCap className="w-4 h-4 text-amber-300" />,
-  automations_max: <Bot className="w-4 h-4 text-violet-300" />,
-  learning_max: <GraduationCap className="w-4 h-4 text-cyan-300" />,
-  ai_agents_max: <Bot className="w-4 h-4 text-amber-300" />,
   search: <Sparkles className="w-4 h-4 text-cyan-300" />,
   deep_research: <Sparkles className="w-4 h-4 text-violet-300" />,
   ai_coding: <Bot className="w-4 h-4 text-emerald-300" />,
@@ -167,14 +159,12 @@ const USAGE_ICONS: Record<string, React.ReactNode> = {
   save_memory: <Sparkles className="w-4 h-4 text-pink-300" />,
   connect_ai_minutes: <Bot className="w-4 h-4 text-violet-300" />,
   learning_minutes: <GraduationCap className="w-4 h-4 text-amber-300" />,
+  messages_per_day: <MessageSquare className="w-4 h-4 text-violet-300" />,
 };
 
-// ─────────────────────────────────────────────────────────────
-// INNER COMPONENT (uses useSearchParams — must be inside <Suspense>)
-// ─────────────────────────────────────────────────────────────
 function BillingPageInner() {
   const searchParams = useSearchParams();
-  const user = useAuth((s) => s.user);
+  const authUser = useAuth((s) => s.user);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -183,6 +173,8 @@ function BillingPageInner() {
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null);
   const [successBanner, setSuccessBanner] = useState(false);
+
+  const isAdminUser = !!authUser?.is_admin;
 
   useEffect(() => {
     if (searchParams.get("checkout") === "success") {
@@ -214,9 +206,16 @@ function BillingPageInner() {
     return () => clearTimeout(t);
   }, [successBanner]);
 
-  const currentSlug = status?.plan?.slug || "free";
+  const currentSlug = status?.plan?.slug || (isAdminUser ? "admin" : "free");
 
   const handleChoosePlan = async (slug: string) => {
+    if (isAdminUser) {
+      setInfoModal({
+        title: "You already have unlimited access",
+        message: "Your admin account has every feature of every plan unlocked. No upgrade needed.",
+      });
+      return;
+    }
     if (slug === currentSlug) return;
     setCheckoutLoading(slug);
     try {
@@ -287,7 +286,36 @@ function BillingPageInner() {
           </div>
         </div>
 
-        {status && (
+        {/* ── CURRENT PLAN CARD ────────────────────────────────── */}
+        {isAdminUser ? (
+          <div className="relative overflow-hidden rounded-2xl border border-violet-500/50 bg-gradient-to-br from-violet-600/25 via-violet-800/15 to-cyan-900/10 p-6">
+            <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-violet-500/30 blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-16 -left-16 w-64 h-64 rounded-full bg-cyan-500/20 blur-3xl pointer-events-none" />
+            <div className="relative flex items-start justify-between gap-6 flex-wrap">
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center shrink-0 shadow-lg shadow-violet-500/40">
+                  <InfinityIcon className="w-7 h-7 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <h2 className="text-xl font-semibold">Admin — Unlimited</h2>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-500/30 text-violet-200 border border-violet-500/40">
+                      Administrator
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-300/90 max-w-md">
+                    You have unrestricted access to every feature of every plan.
+                    No quotas, no limits, no billing.
+                  </p>
+                </div>
+              </div>
+              <div className="shrink-0 rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-2 text-xs text-violet-200 flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                System-wide privileges
+              </div>
+            </div>
+          </div>
+        ) : status ? (
           <div className="relative overflow-hidden rounded-2xl border border-violet-500/40 bg-gradient-to-br from-violet-600/20 via-violet-800/10 to-slate-900 p-6">
             <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-violet-500/20 blur-3xl pointer-events-none" />
             <div className="relative flex items-start justify-between gap-6 flex-wrap">
@@ -317,37 +345,44 @@ function BillingPageInner() {
               </button>
             </div>
           </div>
-        )}
+        ) : null}
 
+        {/* ── PLANS ────────────────────────────────────────────── */}
         <div id="plans" className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h2 className="text-xl font-semibold">Choose Your Plan</h2>
+              <h2 className="text-xl font-semibold">
+                {isAdminUser ? "All Plans (Preview)" : "Choose Your Plan"}
+              </h2>
               <p className="text-sm text-slate-500">
-                Select the perfect plan for your needs. Upgrade, downgrade, or cancel anytime.
+                {isAdminUser
+                  ? "You already have everything unlocked. This is what regular users see."
+                  : "Select the perfect plan for your needs. Upgrade, downgrade, or cancel anytime."}
               </p>
             </div>
-            <div className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/60 p-1">
-              <button
-                onClick={() => setCycle("monthly")}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                  cycle === "monthly" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setCycle("yearly")}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition flex items-center gap-1.5 ${
-                  cycle === "yearly" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                Yearly
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-500/40">
-                  Save 20%
-                </span>
-              </button>
-            </div>
+            {!isAdminUser && (
+              <div className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/60 p-1">
+                <button
+                  onClick={() => setCycle("monthly")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                    cycle === "monthly" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Monthly
+                </button>
+                <button
+                  onClick={() => setCycle("yearly")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition flex items-center gap-1.5 ${
+                    cycle === "yearly" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Yearly
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-500/40">
+                    Save 20%
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
@@ -408,9 +443,11 @@ function BillingPageInner() {
 
                   <button
                     onClick={() => handleChoosePlan(p.slug)}
-                    disabled={isCurrent || checkoutLoading === p.slug}
+                    disabled={(!isAdminUser && isCurrent) || checkoutLoading === p.slug}
                     className={`w-full rounded-lg py-2.5 text-sm font-semibold transition flex items-center justify-center gap-2 ${
-                      isCurrent
+                      !isAdminUser && isCurrent
+                        ? "bg-slate-900/60 text-slate-500 border border-slate-800 cursor-not-allowed"
+                        : isAdminUser
                         ? "bg-slate-900/60 text-slate-500 border border-slate-800 cursor-not-allowed"
                         : styles.buttonBg
                     }`}
@@ -419,6 +456,11 @@ function BillingPageInner() {
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
                         Opening…
+                      </>
+                    ) : isAdminUser ? (
+                      <>
+                        <InfinityIcon className="w-4 h-4" />
+                        Included
                       </>
                     ) : isCurrent ? (
                       "Current Plan"
@@ -434,6 +476,7 @@ function BillingPageInner() {
           </div>
         </div>
 
+        {/* ── COMPARISON TABLE ────────────────────────────────── */}
         <div className="space-y-3">
           <div>
             <h2 className="text-xl font-semibold">Compare All Features</h2>
@@ -492,32 +535,36 @@ function BillingPageInner() {
           </div>
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl border border-violet-500/30 bg-gradient-to-r from-violet-600/10 via-slate-900 to-cyan-600/10 p-5 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-4">
-            <div className="text-4xl">🎁</div>
-            <div>
-              <div className="font-semibold text-slate-100">Special Offers for You</div>
-              <div className="text-sm text-slate-400 mt-0.5">
-                Get <span className="text-violet-300 font-semibold">20% OFF</span> on your next upgrade! Use the code{" "}
-                <span className="font-mono font-bold text-violet-300">XENTRA20</span> at checkout.
+        {/* ── COUPON (hidden for admins) ───────────────────────── */}
+        {!isAdminUser && (
+          <div className="relative overflow-hidden rounded-2xl border border-violet-500/30 bg-gradient-to-r from-violet-600/10 via-slate-900 to-cyan-600/10 p-5 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4">
+              <div className="text-4xl">🎁</div>
+              <div>
+                <div className="font-semibold text-slate-100">Special Offers for You</div>
+                <div className="text-sm text-slate-400 mt-0.5">
+                  Get <span className="text-violet-300 font-semibold">20% OFF</span> on your next upgrade! Use the code{" "}
+                  <span className="font-mono font-bold text-violet-300">XENTRA20</span> at checkout.
+                </div>
               </div>
             </div>
+            <div className="flex items-center gap-2 rounded-lg border border-dashed border-violet-500/50 bg-slate-950/60 px-4 py-2">
+              <span className="font-mono text-sm font-bold text-violet-300 tracking-wider">XENTRA20</span>
+              <button
+                onClick={copyCoupon}
+                className="ml-2 rounded-md border border-slate-700 hover:bg-slate-800 px-2.5 py-1 text-xs text-slate-300 flex items-center gap-1 transition"
+              >
+                {copied ? (
+                  <><CheckCircle2 className="w-3 h-3 text-emerald-400" /> Copied</>
+                ) : (
+                  <><Copy className="w-3 h-3" /> Copy</>
+                )}
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2 rounded-lg border border-dashed border-violet-500/50 bg-slate-950/60 px-4 py-2">
-            <span className="font-mono text-sm font-bold text-violet-300 tracking-wider">XENTRA20</span>
-            <button
-              onClick={copyCoupon}
-              className="ml-2 rounded-md border border-slate-700 hover:bg-slate-800 px-2.5 py-1 text-xs text-slate-300 flex items-center gap-1 transition"
-            >
-              {copied ? (
-                <><CheckCircle2 className="w-3 h-3 text-emerald-400" /> Copied</>
-              ) : (
-                <><Copy className="w-3 h-3" /> Copy</>
-              )}
-            </button>
-          </div>
-        </div>
+        )}
 
+        {/* ── PAYMENT + USAGE ROW ─────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
             <div className="flex items-center justify-between">
@@ -525,38 +572,49 @@ function BillingPageInner() {
                 <CreditCard className="w-4 h-4 text-slate-400" />
                 <div className="font-semibold text-slate-100">Payment Method</div>
               </div>
-              <button className="text-xs text-blue-400 hover:text-blue-300">Manage →</button>
+              {!isAdminUser && (
+                <button className="text-xs text-blue-400 hover:text-blue-300">Manage →</button>
+              )}
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 flex items-center gap-3">
-              <div className="w-12 h-8 rounded-md bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-[10px] font-bold text-white italic">
-                VISA
+            {isAdminUser ? (
+              <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-4 text-sm text-violet-200 flex items-center gap-3">
+                <Shield className="w-5 h-5 text-violet-300 shrink-0" />
+                <span>Admin accounts don't require a payment method.</span>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-slate-200">Visa •••• 4242</div>
-                <div className="text-xs text-slate-500">Managed by Paddle</div>
-              </div>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                Active
-              </span>
-            </div>
+            ) : (
+              <>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 flex items-center gap-3">
+                  <div className="w-12 h-8 rounded-md bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-[10px] font-bold text-white italic">
+                    VISA
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-slate-200">Visa •••• 4242</div>
+                    <div className="text-xs text-slate-500">Managed by Paddle</div>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    Active
+                  </span>
+                </div>
 
-            <button
-              onClick={() => setInfoModal({ title: "Add card", message: "New cards are added during checkout. Click Upgrade Now on any paid plan to manage your payment method through Paddle." })}
-              className="w-full rounded-lg border border-dashed border-slate-700 hover:border-violet-500/60 hover:bg-slate-900/60 py-3 text-sm text-slate-400 flex items-center justify-center gap-2 transition"
-            >
-              <Plus className="w-4 h-4" /> Add New Card
-            </button>
+                <button
+                  onClick={() => setInfoModal({ title: "Add card", message: "New cards are added during checkout. Click Upgrade Now on any paid plan to manage your payment method through Paddle." })}
+                  className="w-full rounded-lg border border-dashed border-slate-700 hover:border-violet-500/60 hover:bg-slate-900/60 py-3 text-sm text-slate-400 flex items-center justify-center gap-2 transition"
+                >
+                  <Plus className="w-4 h-4" /> Add New Card
+                </button>
 
-            <div className="pt-2 border-t border-slate-800/60">
-              <div className="text-[10px] text-slate-500 mb-2 text-center">Powered by Paddle</div>
-              <div className="flex items-center justify-center gap-2 flex-wrap">
-                <AltPayBadge label="Visa" color="from-blue-700 to-blue-900" />
-                <AltPayBadge label="Mastercard" color="from-red-700 to-red-900" />
-                <AltPayBadge label="PayPal" color="from-blue-700 to-blue-900" />
-                <AltPayBadge label="Apple Pay" color="from-slate-700 to-slate-900" />
-              </div>
-            </div>
+                <div className="pt-2 border-t border-slate-800/60">
+                  <div className="text-[10px] text-slate-500 mb-2 text-center">Powered by Paddle</div>
+                  <div className="flex items-center justify-center gap-2 flex-wrap">
+                    <AltPayBadge label="Visa" color="from-blue-700 to-blue-900" />
+                    <AltPayBadge label="Mastercard" color="from-red-700 to-red-900" />
+                    <AltPayBadge label="PayPal" color="from-blue-700 to-blue-900" />
+                    <AltPayBadge label="Apple Pay" color="from-slate-700 to-slate-900" />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
@@ -565,75 +623,103 @@ function BillingPageInner() {
                 <TrendingUp className="w-4 h-4 text-slate-400" />
                 <div className="font-semibold text-slate-100">Your Usage</div>
               </div>
-              <button className="text-xs text-blue-400 hover:text-blue-300">View Details →</button>
             </div>
 
-            <div className="space-y-4">
-              {status?.usage && Object.keys(status.usage).length > 0 ? (
-                Object.entries(status.usage).slice(0, 5).map(([key, metric]) => {
-                  const isUnlimited = metric.limit === -1;
-                  const pct = isUnlimited ? 0 : Math.min(100, (metric.used / metric.limit) * 100);
-                  return (
-                    <div key={key} className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2 text-slate-400">
-                          {USAGE_ICONS[key] || <Sparkles className="w-4 h-4 text-slate-500" />}
-                          <span>{metricLabel(key)}</span>
-                        </div>
-                        <span className="font-mono text-slate-500">
-                          {metric.used} / {isUnlimited ? "Unlimited" : metric.limit}
-                        </span>
+            {isAdminUser ? (
+              <div className="space-y-4">
+                {[
+                  { key: "search", label: "Search" },
+                  { key: "ai_coding", label: "AI Coding" },
+                  { key: "file_upload", label: "File uploads" },
+                  { key: "connect_ai_minutes", label: "Connect AI" },
+                  { key: "learning_minutes", label: "Learning" },
+                ].map((m) => (
+                  <div key={m.key} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 text-slate-400">
+                        {USAGE_ICONS[m.key] || <Sparkles className="w-4 h-4 text-slate-500" />}
+                        <span>{m.label}</span>
                       </div>
-                      <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                        <div
-                          className={`h-full transition-all ${usageColor(metric.used, metric.limit)}`}
-                          style={{ width: isUnlimited ? "30%" : `${pct}%` }}
-                        />
-                      </div>
+                      <span className="font-mono text-violet-300 flex items-center gap-1">
+                        <InfinityIcon className="w-3 h-3" /> Unlimited
+                      </span>
                     </div>
-                  );
-                })
-              ) : (
-                <UsagePreview />
-              )}
-            </div>
+                    <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-violet-500 to-cyan-400 opacity-40"
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : status?.usage && Object.keys(status.usage).length > 0 ? (
+              Object.entries(status.usage).slice(0, 5).map(([key, metric]) => {
+                const isUnlimited = metric.limit === -1;
+                const pct = isUnlimited ? 0 : Math.min(100, (metric.used / metric.limit) * 100);
+                return (
+                  <div key={key} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 text-slate-400">
+                        {USAGE_ICONS[key] || <Sparkles className="w-4 h-4 text-slate-500" />}
+                        <span>{metricLabel(key)}</span>
+                      </div>
+                      <span className="font-mono text-slate-500">
+                        {metric.used} / {isUnlimited ? "Unlimited" : metric.limit}
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                      <div
+                        className={`h-full transition-all ${usageColor(metric.used, metric.limit)}`}
+                        style={{ width: isUnlimited ? "30%" : `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <UsagePreview />
+            )}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-slate-400" />
-              <div className="font-semibold text-slate-100">Recent Transactions</div>
+        {/* ── TRANSACTIONS (hidden for admins) ─────────────────── */}
+        {!isAdminUser && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-slate-400" />
+                <div className="font-semibold text-slate-100">Recent Transactions</div>
+              </div>
+              <button className="text-xs text-blue-400 hover:text-blue-300">View All →</button>
             </div>
-            <button className="text-xs text-blue-400 hover:text-blue-300">View All →</button>
-          </div>
 
-          <div className="space-y-2">
-            {[
-              { name: "Pro Plan (Monthly)", amount: "$9.99", date: "Sep 12, 2025" },
-              { name: "File Storage Add-on", amount: "$2.99", date: "Sep 05, 2025" },
-              { name: "Plus Plan (Monthly)", amount: "$4.99", date: "Aug 12, 2025" },
-            ].map((tx, i) => (
-              <div key={i} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                <div className="w-9 h-9 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
-                  <Crown className="w-4 h-4 text-amber-300" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-slate-200 truncate">{tx.name}</div>
-                  <div className="text-[11px] text-emerald-400 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                    Completed
+            <div className="space-y-2">
+              {[
+                { name: "Pro Plan (Monthly)", amount: "$9.99", date: "Sep 12, 2025" },
+                { name: "File Storage Add-on", amount: "$2.99", date: "Sep 05, 2025" },
+                { name: "Plus Plan (Monthly)", amount: "$4.99", date: "Aug 12, 2025" },
+              ].map((tx, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <div className="w-9 h-9 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+                    <Crown className="w-4 h-4 text-amber-300" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-slate-200 truncate">{tx.name}</div>
+                    <div className="text-[11px] text-emerald-400 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      Completed
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-sm font-semibold text-slate-200">{tx.amount}</div>
+                    <div className="text-[11px] text-slate-500">{tx.date}</div>
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="text-sm font-semibold text-slate-200">{tx.amount}</div>
-                  <div className="text-[11px] text-slate-500">{tx.date}</div>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <TrustBadge icon={<Shield className="w-4 h-4 text-emerald-400" />} title="Secure Payments" subtitle="Bank-level encryption." />
@@ -675,9 +761,6 @@ function BillingPageInner() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// DEFAULT EXPORT — wrapped in Suspense (fixes Vercel prerender error)
-// ─────────────────────────────────────────────────────────────
 export default function BillingPage() {
   return (
     <Suspense

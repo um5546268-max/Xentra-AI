@@ -24,13 +24,31 @@ from app.services.billing import (
     get_user_plan,
     get_usage_summary,
 )
-from app.services.plan_limits import PLAN_LIMITS
+from app.services.plan_limits import PLAN_LIMITS, plan_key, is_admin
 from app.services.usage_tracker import get_today_count
 
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+
+
+# ═══════════════════════════════════════════════════════════════
+# ADMIN-ONLY PLAN (virtual — not stored in DB)
+# ═══════════════════════════════════════════════════════════════
+ADMIN_PLAN = {
+    "id": "admin",
+    "slug": "admin",
+    "name": "Admin",
+    "description": "Unlimited access to every feature.",
+    "price_cents": 0,
+    "currency": "USD",
+    "interval": "month",
+    "is_public": False,
+    "display_order": 0,
+    "limits": None,
+    "features": None,
+}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -56,6 +74,22 @@ def get_billing_status(
     current_user: User = Depends(get_current_user),
 ):
     """Get the current user's subscription + usage summary."""
+    # ── ADMIN SHORT-CIRCUIT ────────────────────────────────────────
+    if is_admin(current_user):
+        return BillingStatusResponse(
+            subscription=SubscriptionRead(
+                id="admin",
+                status="active",
+                plan_id="admin",
+                current_period_start=None,
+                current_period_end=None,
+                cancel_at_period_end=False,
+            ),
+            plan=PlanRead(**ADMIN_PLAN),
+            usage={},  # no quota tracking for admins
+        )
+    # ──────────────────────────────────────────────────────────────
+
     sub = get_or_create_subscription(db, current_user.id)
     plan = get_user_plan(db, current_user.id)
     usage = get_usage_summary(db, current_user.id)
@@ -68,18 +102,31 @@ def get_billing_status(
 
 
 # ═══════════════════════════════════════════════════════════════
-# TODAY'S USAGE (per-metric, for the Your Usage panel)
+# TODAY'S USAGE
 # ═══════════════════════════════════════════════════════════════
 @router.get("/usage-today")
 def get_usage_today(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Return per-metric usage for today, so the Billing page can show live counters.
-    Free plan users see real live counts; paid plans see real limits.
-    """
-    plan_slug = (current_user.plan or "free").lower()
+    """Per-metric usage for today. Admins get all limits as -1."""
+    # ── ADMIN SHORT-CIRCUIT ────────────────────────────────────────
+    if is_admin(current_user):
+        return {
+            "plan": "admin",
+            "is_admin": True,
+            "usage": {
+                m: {"used": 0, "limit": -1, "remaining": -1}
+                for m in [
+                    "search", "deep_research", "ai_coding", "file_upload",
+                    "shopping", "browser_tasks", "save_memory", "automations",
+                    "connect_ai_minutes", "learning_minutes",
+                ]
+            },
+        }
+    # ──────────────────────────────────────────────────────────────
+
+    plan_slug = plan_key(current_user)     # "admin" never reaches here
     limits = PLAN_LIMITS.get(plan_slug, PLAN_LIMITS["free"])
 
     metrics = [
@@ -105,11 +152,11 @@ def get_usage_today(
             "remaining": -1 if limit == -1 else max(0, limit - used),
         }
 
-    return {"plan": plan_slug, "usage": result}
+    return {"plan": plan_slug, "is_admin": False, "usage": result}
 
 
 # ═══════════════════════════════════════════════════════════════
-# CHECKOUT (creates a real Paddle transaction)
+# CHECKOUT
 # ═══════════════════════════════════════════════════════════════
 @router.post("/checkout")
 def create_checkout(
@@ -118,6 +165,15 @@ def create_checkout(
     current_user: User = Depends(get_current_user),
 ):
     """Create a real Paddle checkout session for upgrading to a plan."""
+
+    # ── ADMIN SHORT-CIRCUIT ────────────────────────────────────────
+    if is_admin(current_user):
+        raise HTTPException(
+            status_code=400,
+            detail="Admins already have unlimited access. No checkout needed.",
+        )
+    # ──────────────────────────────────────────────────────────────
+
     plan = db.execute(
         select(Plan).where(Plan.slug == payload.plan_slug)
     ).scalar_one_or_none()
@@ -162,14 +218,10 @@ def create_checkout(
 
 
 # ═══════════════════════════════════════════════════════════════
-# WEBHOOK (Paddle → us)
+# WEBHOOK (unchanged)
 # ═══════════════════════════════════════════════════════════════
 @router.post("/webhook")
 async def paddle_webhook(request: Request, db: Session = Depends(get_db)):
-    """
-    Receive webhook events from Paddle.
-    Verifies signature, then updates the user's subscription in our DB.
-    """
     raw_body = await request.body()
     signature = request.headers.get("Paddle-Signature", "")
 
@@ -179,7 +231,6 @@ async def paddle_webhook(request: Request, db: Session = Depends(get_db)):
         logger.warning("Webhook signature rejected: %s", e)
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Normalize SDK event → dict
     if not isinstance(event, dict):
         event = getattr(event, "__dict__", {}) or {}
 
@@ -208,10 +259,9 @@ async def paddle_webhook(request: Request, db: Session = Depends(get_db)):
 
 
 # ═══════════════════════════════════════════════════════════════
-# WEBHOOK HELPERS
+# WEBHOOK HELPERS (unchanged)
 # ═══════════════════════════════════════════════════════════════
 async def _handle_subscription_event(db: Session, data: dict):
-    """Update our Subscription row when Paddle sends a subscription event."""
     paddle_sub_id = data.get("id")
     if not paddle_sub_id:
         return
@@ -240,10 +290,6 @@ async def _handle_subscription_event(db: Session, data: dict):
 
 
 async def _upgrade_user(db: Session, user_id: str, plan_slug: str, data: dict):
-    """
-    Called when a transaction.completed event arrives.
-    Ensures the user's Subscription row reflects the newly purchased plan.
-    """
     import uuid as _uuid
 
     try:
@@ -289,7 +335,6 @@ async def _upgrade_user(db: Session, user_id: str, plan_slug: str, data: dict):
 
 
 def _parse_dt(value: str) -> datetime | None:
-    """Parse an ISO8601 string from Paddle into a datetime."""
     if not value:
         return None
     try:
