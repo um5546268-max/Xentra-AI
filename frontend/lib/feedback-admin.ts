@@ -40,7 +40,7 @@ export type ListParams = {
 };
 
 export const listFeedback = async (params: ListParams) => {
-  const { data } = await api.get("/api/v1/feedback/admin/list", {
+  const { data } = await api.get("/api/feedback/admin/list", {
     params: {
       status_filter: params.status && params.status !== "all" ? params.status : undefined,
       category_filter: params.category && params.category !== "all" ? params.category : undefined,
