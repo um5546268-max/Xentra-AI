@@ -21,6 +21,8 @@ import {
   VolumeX,
   Paperclip,
   Settings as SettingsIcon,
+  Image as ImageIcon,
+  Film,
 } from "lucide-react";
 import {
   Message,
@@ -41,6 +43,7 @@ import { useLiveBees } from "@/lib/live-bees";
 import { useAuth } from "@/lib/auth";
 import MarkdownMessage from "@/components/MarkdownMessage";
 import MicButton from "@/components/MicButton";
+import api from "@/lib/api";
 
 const MODELS = [
   { id: "openai/gpt-oss-20b", label: "GPT-OSS 20B (fast)" },
@@ -61,6 +64,17 @@ const BEE_RESULT_URLS: Record<string, string> = {
   research: "/app/browser",
   health: "/app/system-health",
   video: "/app/videos",
+};
+
+type PickedFile = {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  previewUrl?: string;
+  uploading?: boolean;
+  uploadedId?: string;
+  error?: string;
 };
 
 export default function ConversationPage({
@@ -91,6 +105,14 @@ export default function ConversationPage({
   const lastSpokenRef = useRef<string | null>(null);
   const lastBeeTypeRef = useRef<string>("manager");
   const [lightbox, setLightbox] = useState<TopicImage | null>(null);
+
+  // ─── File attachment state ────────────────────────────────────────
+  const [pickedFiles, setPickedFiles] = useState<PickedFile[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pickedFilesRef = useRef<PickedFile[]>([]);
+  useEffect(() => {
+    pickedFilesRef.current = pickedFiles;
+  }, [pickedFiles]);
 
   const { setBees, updateProgress, removeBee } = useLiveBees();
 
@@ -231,6 +253,106 @@ export default function ConversationPage({
     return { onBees, onBeeProgress, onBeesDone };
   };
 
+  // ─── File picker handlers ─────────────────────────────────────────
+  const openFilePicker = () => fileInputRef.current?.click();
+
+  const handleFilesPicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
+    const MAX_FILES = 5;
+
+    const accepted: PickedFile[] = [];
+    for (const f of files.slice(0, MAX_FILES)) {
+      if (f.size > MAX_SIZE) {
+        toast.error(`${f.name} is too large (max 50 MB)`);
+        continue;
+      }
+      accepted.push({
+        id: "pick-" + Math.random().toString(36).slice(2),
+        file: f,
+        name: f.name,
+        size: f.size,
+        previewUrl: f.type.startsWith("image/")
+          ? URL.createObjectURL(f)
+          : undefined,
+        uploading: true,
+      });
+    }
+
+    setPickedFiles((prev) => [...prev, ...accepted].slice(0, MAX_FILES));
+
+    await Promise.all(
+      accepted.map(async (p) => {
+        try {
+          // ─── 1. Upload the file ───────────────────────────────────
+          const fd = new FormData();
+          fd.append("file", p.file);
+          const { data } = await api.post("/api/files/upload", fd, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+
+          // ─── 2. Attach it to the current conversation ─────────────
+          //     This is what makes the AI able to read its contents.
+          try {
+            await api.post(`/api/files/${data.id}/attach`, {
+              conversation_id: conversationId,
+            });
+          } catch (attachErr: any) {
+            console.warn(
+              "[file] Attach failed:",
+              attachErr?.response?.data || attachErr
+            );
+            // Upload succeeded, but the file won't be auto-loaded by the AI.
+            toast.warning(
+              `${p.name} uploaded, but couldn't be attached to this chat.`
+            );
+          }
+
+          setPickedFiles((prev) =>
+            prev.map((x) =>
+              x.id === p.id
+                ? { ...x, uploading: false, uploadedId: data.id }
+                : x
+            )
+          );
+        } catch (err: any) {
+          const msg = err?.response?.data?.detail || "Upload failed";
+          setPickedFiles((prev) =>
+            prev.map((x) =>
+              x.id === p.id ? { ...x, uploading: false, error: msg } : x
+            )
+          );
+          toast.error(`${p.name}: ${msg}`);
+        }
+      })
+    );
+
+    e.target.value = "";
+  };
+
+  const removePickedFile = (id: string) => {
+    setPickedFiles((prev) => {
+      const target = prev.find((x) => x.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((x) => x.id !== id);
+    });
+  };
+
+  const waitForUploads = async (): Promise<string[]> => {
+    const start = Date.now();
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const state = pickedFilesRef.current;
+      if (!state.some((f) => f.uploading)) {
+        return state.filter((f) => f.uploadedId).map((f) => f.uploadedId!);
+      }
+      if (Date.now() - start > 60_000) throw new Error("Upload timed out");
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!committedText.trim() || sending) return;
@@ -240,12 +362,28 @@ export default function ConversationPage({
     setInterimText("");
     setError(null);
 
+    // Wait for pending uploads
+    let attachedFileIds: string[] = [];
+    try {
+      attachedFileIds = await waitForUploads();
+    } catch (err: any) {
+      setError(err.message || "File upload failed");
+      return;
+    }
+    const filesForMessage = pickedFiles.filter((f) => f.uploadedId);
+
     const tempUser: Message = {
       id: "temp-user-" + Date.now(),
       role: "user",
       content: userText,
       created_at: new Date().toISOString(),
       _temp: true,
+      _files: filesForMessage.map((f) => ({
+        id: f.uploadedId!,
+        name: f.name,
+        size: f.size,
+        extension: f.name.split(".").pop(),
+      })),
     };
 
     const tempAi: Message = {
@@ -258,6 +396,7 @@ export default function ConversationPage({
     };
 
     setMessages((prev) => [...prev, tempUser, tempAi]);
+    setPickedFiles([]);
     setSending(true);
 
     const history = [
@@ -328,6 +467,7 @@ export default function ConversationPage({
       } else {
         await streamChat(conversationId, history, onDelta, {
           useWebSearch: mode === "web",
+          attachedFileIds: attachedFileIds,
           onSources,
           onImage,
           onFiles,
@@ -534,7 +674,7 @@ export default function ConversationPage({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header — responsive */}
+      {/* Header */}
       <div className="border-b border-slate-800 px-3 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="text-xs md:text-sm text-slate-500">Conversation</div>
@@ -603,159 +743,12 @@ export default function ConversationPage({
             Loading history…
           </div>
         ) : messages.length === 0 ? (
-          /* ─── Empty state matching mockup ─── */
-          <div className="pt-2 space-y-5">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/40"
-                style={{
-                  background: "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
-                }}
-              >
-                <span
-                  className="text-white font-black text-2xl italic leading-none"
-                  style={{ fontFamily: "Inter, system-ui, sans-serif" }}
-                >
-                  X
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-base font-bold text-slate-100">
-                  AI Chat
-                </div>
-                <div className="text-xs text-slate-400">
-                  Your personal AI assistant.
-                </div>
-              </div>
-              <button
-                onClick={() => router.push("/app/settings")}
-                className="w-9 h-9 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200 transition"
-                title="Settings"
-              >
-                <SettingsIcon className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
-                {user?.avatar_url ? (
-                  <img
-                    src={user.avatar_url}
-                    alt={firstName}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <span className="text-xs font-semibold text-slate-300">
-                    {firstName[0]?.toUpperCase() || "U"}
-                  </span>
-                )}
-              </div>
-              <div className="flex-1 max-w-[85%] rounded-2xl rounded-tl-md border border-blue-500/40 bg-gradient-to-br from-blue-500/15 via-slate-900/70 to-slate-900/50 px-4 py-3">
-                <div className="text-sm text-slate-100 leading-relaxed">
-                  Hey {firstName}! 👋
-                  <br />
-                  How can I help you today?
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { id: "explain",  label: "Explain this topic",  prompt: "Explain this topic: " },
-                  { id: "program",  label: "Write a program",     prompt: "Write a program that " },
-                  { id: "pdf",      label: "Summarize a PDF",     prompt: "Summarize a PDF about " },
-                  { id: "study",    label: "Help with study",     prompt: "Help me study for " },
-                ].map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setCommittedText(p.prompt)}
-                    className="flex items-center gap-2 rounded-full border border-blue-500/50 bg-slate-900/80 px-3 py-2.5 text-left hover:border-blue-400 hover:bg-slate-800 transition active:scale-[0.97]"
-                  >
-                    <span
-                      className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
-                      }}
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        width="10"
-                        height="10"
-                        fill="none"
-                        stroke="white"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        {p.id === "explain" && (
-                          <>
-                            <circle cx="12" cy="12" r="9" />
-                            <line x1="12" y1="8" x2="12" y2="12" />
-                            <line x1="12" y1="15" x2="12" y2="15.01" />
-                          </>
-                        )}
-                        {p.id === "program" && (
-                          <>
-                            <polyline points="8 6 3 12 8 18" />
-                            <polyline points="16 6 21 12 16 18" />
-                          </>
-                        )}
-                        {p.id === "pdf" && (
-                          <>
-                            <rect x="5" y="4" width="14" height="16" rx="2" />
-                            <line x1="9" y1="9" x2="15" y2="9" />
-                            <line x1="9" y1="13" x2="13" y2="13" />
-                          </>
-                        )}
-                        {p.id === "study" && (
-                          <>
-                            <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
-                            <line x1="8" y1="10" x2="16" y2="10" />
-                            <line x1="8" y1="14" x2="14" y2="14" />
-                          </>
-                        )}
-                      </svg>
-                    </span>
-                    <span className="text-xs text-slate-100 leading-tight font-medium">
-                      {p.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setCommittedText("Plan my day: ")}
-                className="flex items-center gap-2 rounded-full border border-blue-500/50 bg-slate-900/80 px-3 py-2.5 hover:border-blue-400 hover:bg-slate-800 transition active:scale-[0.97]"
-              >
-                <span
-                  className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
-                  }}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="10"
-                    height="10"
-                    fill="none"
-                    stroke="white"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  >
-                    <rect x="3" y="5" width="18" height="16" rx="2" />
-                    <line x1="8" y1="3" x2="8" y2="7" />
-                    <line x1="16" y1="3" x2="16" y2="7" />
-                    <line x1="3" y1="11" x2="21" y2="11" />
-                  </svg>
-                </span>
-                <span className="text-xs text-slate-100 font-medium">
-                  Plan my day
-                </span>
-              </button>
-            </div>
-          </div>
+          <EmptyState
+            firstName={firstName}
+            avatarUrl={user?.avatar_url}
+            onPick={(p) => setCommittedText(p)}
+            onOpenSettings={() => router.push("/app/settings")}
+          />
         ) : (
           messages.map((m, idx) => {
             const isLastAssistant =
@@ -813,7 +806,22 @@ export default function ConversationPage({
                         }`}
                       >
                         {m.role === "user" ? (
-                          m.content
+                          <>
+                            {m._files && m._files.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mb-2">
+                                {m._files.map((f) => (
+                                  <span
+                                    key={f.id}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 bg-white/10 px-2 py-1 text-xs text-white"
+                                  >
+                                    <FileText className="w-3.5 h-3.5" />
+                                    {f.name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {m.content}
+                          </>
                         ) : m.content || m._image || m._topic_image ? (
                           <>
                             {m._topic_image && (
@@ -1008,11 +1016,73 @@ export default function ConversationPage({
         <div ref={bottomRef} />
       </div>
 
-      {/* ─── Input bar ─── */}
+      {/* Input bar */}
       <form
         onSubmit={handleSend}
         className="border-t border-slate-800/60 bg-slate-950 px-3 md:px-4 py-3"
       >
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.pptx,.json,.zip"
+          onChange={handleFilesPicked}
+          className="hidden"
+        />
+
+        {/* Attachment chips */}
+        {pickedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {pickedFiles.map((f) => (
+              <div
+                key={f.id}
+                className={`group flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs max-w-full ${
+                  f.error
+                    ? "border-red-500/50 bg-red-500/10 text-red-300"
+                    : f.uploading
+                    ? "border-slate-700 bg-slate-900/60 text-slate-400"
+                    : "border-violet-500/40 bg-violet-500/10 text-violet-200"
+                }`}
+              >
+                {f.previewUrl ? (
+                  <img
+                    src={f.previewUrl}
+                    alt={f.name}
+                    className="w-7 h-7 rounded object-cover shrink-0"
+                  />
+                ) : f.file.type.startsWith("video/") ? (
+                  <Film className="w-4 h-4 shrink-0" />
+                ) : f.file.type.startsWith("image/") ? (
+                  <ImageIcon className="w-4 h-4 shrink-0" />
+                ) : (
+                  <FileText className="w-4 h-4 shrink-0" />
+                )}
+                <span
+                  className="truncate max-w-[160px]"
+                  title={f.name}
+                >
+                  {f.name}
+                </span>
+                <span className="text-[10px] shrink-0 opacity-60">
+                  {f.uploading
+                    ? "uploading…"
+                    : f.error
+                    ? "failed"
+                    : `${(f.size / 1024).toFixed(0)} KB`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removePickedFile(f.id)}
+                  className="ml-1 shrink-0 text-slate-500 hover:text-red-400"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-center gap-1 mb-2 overflow-x-auto scrollbar-thin">
           <ModeButton
             active={mode === "chat"}
@@ -1037,8 +1107,9 @@ export default function ConversationPage({
         <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 pl-2 pr-1.5 py-1.5 focus-within:border-blue-500/60 transition">
           <button
             type="button"
+            onClick={openFilePicker}
             className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-300 transition"
-            title="Attach file"
+            title="Attach files (max 5, 50 MB each)"
           >
             <Paperclip className="w-4 h-4" />
           </button>
@@ -1113,7 +1184,6 @@ export default function ConversationPage({
         </div>
       </form>
 
-      {/* ✅ Spacer for fixed bottom nav — mobile only, so input sits snug */}
       <div
         className="md:hidden shrink-0"
         style={{ height: "calc(env(safe-area-inset-bottom) + 4.5rem)" }}
@@ -1132,6 +1202,188 @@ export default function ConversationPage({
           onReply={(text) => setCommittedText(text)}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Empty state ────────────────────────────────────────────────────
+function EmptyState({
+  firstName,
+  avatarUrl,
+  onPick,
+  onOpenSettings,
+}: {
+  firstName: string;
+  avatarUrl?: string | null;
+  onPick: (p: string) => void;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <div className="pt-2 space-y-5">
+      <div className="flex items-center gap-3">
+        <div
+          className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/40"
+          style={{
+            background: "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
+          }}
+        >
+          <span
+            className="text-white font-black text-2xl italic leading-none"
+            style={{ fontFamily: "Inter, system-ui, sans-serif" }}
+          >
+            X
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-base font-bold text-slate-100">AI Chat</div>
+          <div className="text-xs text-slate-400">
+            Your personal AI assistant.
+          </div>
+        </div>
+        <button
+          onClick={onOpenSettings}
+          className="w-9 h-9 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200 transition"
+          title="Settings"
+        >
+          <SettingsIcon className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt={firstName}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <span className="text-xs font-semibold text-slate-300">
+              {firstName[0]?.toUpperCase() || "U"}
+            </span>
+          )}
+        </div>
+        <div className="flex-1 max-w-[85%] rounded-2xl rounded-tl-md border border-blue-500/40 bg-gradient-to-br from-blue-500/15 via-slate-900/70 to-slate-900/50 px-4 py-3">
+          <div className="text-sm text-slate-100 leading-relaxed">
+            Hey {firstName}! 👋
+            <br />
+            How can I help you today?
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            {
+              id: "explain",
+              label: "Explain this topic",
+              prompt: "Explain this topic: ",
+            },
+            {
+              id: "program",
+              label: "Write a program",
+              prompt: "Write a program that ",
+            },
+            {
+              id: "pdf",
+              label: "Summarize a PDF",
+              prompt: "Summarize a PDF about ",
+            },
+            {
+              id: "study",
+              label: "Help with study",
+              prompt: "Help me study for ",
+            },
+          ].map((p) => (
+            <button
+              key={p.id}
+              onClick={() => onPick(p.prompt)}
+              className="flex items-center gap-2 rounded-full border border-blue-500/50 bg-slate-900/80 px-3 py-2.5 text-left hover:border-blue-400 hover:bg-slate-800 transition active:scale-[0.97]"
+            >
+              <span
+                className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="10"
+                  height="10"
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  {p.id === "explain" && (
+                    <>
+                      <circle cx="12" cy="12" r="9" />
+                      <line x1="12" y1="8" x2="12" y2="12" />
+                      <line x1="12" y1="15" x2="12" y2="15.01" />
+                    </>
+                  )}
+                  {p.id === "program" && (
+                    <>
+                      <polyline points="8 6 3 12 8 18" />
+                      <polyline points="16 6 21 12 16 18" />
+                    </>
+                  )}
+                  {p.id === "pdf" && (
+                    <>
+                      <rect x="5" y="4" width="14" height="16" rx="2" />
+                      <line x1="9" y1="9" x2="15" y2="9" />
+                      <line x1="9" y1="13" x2="13" y2="13" />
+                    </>
+                  )}
+                  {p.id === "study" && (
+                    <>
+                      <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+                      <line x1="8" y1="10" x2="16" y2="10" />
+                      <line x1="8" y1="14" x2="14" y2="14" />
+                    </>
+                  )}
+                </svg>
+              </span>
+              <span className="text-xs text-slate-100 leading-tight font-medium">
+                {p.label}
+              </span>
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => onPick("Plan my day: ")}
+          className="flex items-center gap-2 rounded-full border border-blue-500/50 bg-slate-900/80 px-3 py-2.5 hover:border-blue-400 hover:bg-slate-800 transition active:scale-[0.97]"
+        >
+          <span
+            className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+            style={{
+              background:
+                "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
+            }}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="10"
+              height="10"
+              fill="none"
+              stroke="white"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            >
+              <rect x="3" y="5" width="18" height="16" rx="2" />
+              <line x1="8" y1="3" x2="8" y2="7" />
+              <line x1="16" y1="3" x2="16" y2="7" />
+              <line x1="3" y1="11" x2="21" y2="11" />
+            </svg>
+          </span>
+          <span className="text-xs text-slate-100 font-medium">
+            Plan my day
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -1192,7 +1444,9 @@ function Sources({
           )}
           <div className="flex items-center gap-1.5 text-[11px]">
             <span className="text-slate-500">Avg trust</span>
-            <span className={`font-mono font-semibold ${trustTextColor(avgTrust)}`}>
+            <span
+              className={`font-mono font-semibold ${trustTextColor(avgTrust)}`}
+            >
               {Math.round(avgTrust)}
             </span>
           </div>
@@ -1477,7 +1731,14 @@ function ImageLightbox({
             onClick={zoomOut}
             label="Zoom out (−)"
             icon={
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <circle cx="11" cy="11" r="7" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 <line x1="8" y1="11" x2="14" y2="11" />
@@ -1491,7 +1752,14 @@ function ImageLightbox({
             onClick={zoomIn}
             label="Zoom in (+)"
             icon={
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <circle cx="11" cy="11" r="7" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 <line x1="8" y1="11" x2="14" y2="11" />
@@ -1503,7 +1771,14 @@ function ImageLightbox({
             onClick={resetZoom}
             label="Reset zoom (0)"
             icon={
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
                 <polyline points="3 3 3 8 8 8" />
               </svg>
@@ -1533,31 +1808,75 @@ function ImageLightbox({
         className="flex items-center justify-center gap-2 px-3 md:px-4 py-3 border-t border-slate-800 bg-slate-950/80 flex-wrap"
         onClick={(e) => e.stopPropagation()}
       >
-        <ActionButton onClick={download} label="Download" icon={
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-        } />
-        <ActionButton onClick={copyUrl} label={copied ? "Copied!" : "Copy URL"} icon={
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" />
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-          </svg>
-        } />
-        <ActionButton onClick={handleReply} label="Reply" icon={
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="9 17 4 12 9 7" />
-            <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
-          </svg>
-        } />
-        <ActionButton onClick={onClose} label="Close" icon={
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        } />
+        <ActionButton
+          onClick={download}
+          label="Download"
+          icon={
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          }
+        />
+        <ActionButton
+          onClick={copyUrl}
+          label={copied ? "Copied!" : "Copy URL"}
+          icon={
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          }
+        />
+        <ActionButton
+          onClick={handleReply}
+          label="Reply"
+          icon={
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <polyline points="9 17 4 12 9 7" />
+              <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+            </svg>
+          }
+        />
+        <ActionButton
+          onClick={onClose}
+          label="Close"
+          icon={
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          }
+        />
       </div>
     </div>
   );
