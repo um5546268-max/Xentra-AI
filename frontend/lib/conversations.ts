@@ -149,6 +149,7 @@ export const streamChat = async (
   onDelta: (text: string) => void,
   options?: {
     useWebSearch?: boolean;
+    attachedFileIds?: string[];
     onSources?: (sources: Source[]) => void;
     onImage?: (image: GeneratedImageEvent) => void;
     onFiles?: (files: AttachedFile[]) => void;
@@ -170,6 +171,7 @@ export const streamChat = async (
       conversation_id: conversationId,
       messages,
       use_web_search: options?.useWebSearch || false,
+      attached_file_ids: options?.attachedFileIds || [],
     }),
     signal: options?.signal,
   });
