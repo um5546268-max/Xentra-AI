@@ -17,7 +17,6 @@ export type Feedback = {
     reply?: string;
     replied_at?: string;
     replied_by?: string;
-    internal_note?: string;
     [k: string]: any;
   } | null;
   created_at: string;
@@ -35,14 +34,21 @@ export type FeedbackStats = {
 export type ListParams = {
   status?: string;
   category?: string;
-  rating?: number;
   q?: string;
   page?: number;
   limit?: number;
 };
 
 export const listFeedback = async (params: ListParams) => {
-  const { data } = await api.get("/api/v1/admin/feedback", { params });
+  const { data } = await api.get("/api/v1/feedback/admin/list", {
+    params: {
+      status_filter: params.status && params.status !== "all" ? params.status : undefined,
+      category_filter: params.category && params.category !== "all" ? params.category : undefined,
+      q: params.q || undefined,
+      page: params.page ?? 1,
+      limit: params.limit ?? 20,
+    },
+  });
   return data as {
     items: Feedback[];
     total: number;
@@ -53,47 +59,43 @@ export const listFeedback = async (params: ListParams) => {
 };
 
 export const getStats = async () => {
-  const { data } = await api.get("/api/v1/admin/feedback/stats");
+  const { data } = await api.get("/api/v1/feedback/admin/stats");
   return data as FeedbackStats;
 };
 
 export const getFeedback = async (id: string) => {
-  const { data } = await api.get(`/api/v1/admin/feedback/${id}`);
+  const { data } = await api.get(`/api/v1/feedback/admin/${id}`);
   return data as Feedback;
 };
 
 export const patchFeedback = async (
   id: string,
-  patch: { status?: string; meta?: Record<string, any> }
+  patch: { status?: Feedback["status"]; meta?: Record<string, any> }
 ) => {
-  const { data } = await api.patch(`/api/v1/admin/feedback/${id}`, patch);
+  const { data } = await api.patch(`/api/v1/feedback/admin/${id}`, patch);
   return data as Feedback;
 };
 
 export const replyFeedback = async (id: string, message: string) => {
-  const { data } = await api.post(`/api/v1/admin/feedback/${id}/reply`, {
+  const { data } = await api.post(`/api/v1/feedback/admin/${id}/reply`, {
     message,
   });
   return data as Feedback;
 };
 
 export const deleteFeedback = async (id: string) => {
-  await api.delete(`/api/v1/admin/feedback/${id}`);
+  await api.delete(`/api/v1/feedback/admin/${id}`);
 };
 
 export const bulkAction = async (
   ids: string[],
   action: "read" | "resolved" | "closed" | "delete"
 ) => {
-  const { data } = await api.post(`/api/v1/admin/feedback/bulk`, {
-    ids,
-    action,
-  });
+  const { data } = await api.post(`/api/v1/feedback/admin/bulk`, { ids, action });
   return data;
 };
 
-export const exportCsvUrl = (status?: string) => {
+export const exportCsvUrl = (_status?: string) => {
   const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  const qs = status && status !== "all" ? `?status=${status}` : "";
-  return `${base}/api/v1/admin/feedback/export.csv${qs}`;
+  return `${base}/api/v1/feedback/admin/export.csv`;
 };
