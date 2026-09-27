@@ -49,7 +49,6 @@ export type MemoryUsage = {
   pinned: boolean;
 };
 
-// 🐝 Bee stream event
 export type BeeStreamEvent = {
   id: string;
   type: string;
@@ -59,7 +58,6 @@ export type BeeStreamEvent = {
   stoppable: boolean;
 };
 
-// 🖼 Topic image (image-first chat)
 export type TopicImage = {
   url: string;
   source: string;
@@ -78,8 +76,30 @@ export type Message = {
   _image?: GeneratedImageEvent;
   _files?: AttachedFile[];
   _memories?: MemoryUsage[];
-  _topic_image?: TopicImage;      // 👈 NEW
+  _topic_image?: TopicImage;
 };
+
+// ═══════════════════════════════════════════════════════════════
+// AUTH HELPER — reads from BOTH storages
+// ═══════════════════════════════════════════════════════════════
+function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return (
+    localStorage.getItem("xentra_token") ||
+    sessionStorage.getItem("xentra_token") ||
+    null
+  );
+}
+
+function buildAuthHeaders(): Record<string, string> {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "true",
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // CONVERSATIONS
@@ -136,20 +156,16 @@ export const streamChat = async (
     onBees?: (bees: BeeStreamEvent[]) => void;
     onBeeProgress?: (map: Record<string, number>) => void;
     onBeesDone?: (ids: string[]) => void;
-    onTopicImage?: (img: TopicImage) => void;      // 👈 NEW
+    onTopicImage?: (img: TopicImage) => void;
     signal?: AbortSignal;
   }
 ): Promise<void> => {
-  const token = localStorage.getItem("xentra_token");
   const API_URL =
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   const res = await fetch(`${API_URL}/api/chat/stream`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
+    headers: buildAuthHeaders(),       // ← token + ngrok header
     body: JSON.stringify({
       conversation_id: conversationId,
       messages,
@@ -187,7 +203,6 @@ export const streamChat = async (
         if (parsed.memories && options?.onMemories)
           options.onMemories(parsed.memories);
 
-        // 🐝 Bee events
         if (parsed.bees && options?.onBees) options.onBees(parsed.bees);
         if (parsed.bee_progress && options?.onBeeProgress) {
           const map: Record<string, number> = {};
@@ -197,7 +212,6 @@ export const streamChat = async (
         if (parsed.bees_done && options?.onBeesDone)
           options.onBeesDone(parsed.bees_done);
 
-        // 🖼 Topic image event
         if (parsed.topic_image && options?.onTopicImage)
           options.onTopicImage(parsed.topic_image);
 
@@ -220,20 +234,16 @@ export const streamResearch = async (
     onBees?: (bees: BeeStreamEvent[]) => void;
     onBeeProgress?: (map: Record<string, number>) => void;
     onBeesDone?: (ids: string[]) => void;
-    onTopicImage?: (img: TopicImage) => void;      // 👈 NEW
+    onTopicImage?: (img: TopicImage) => void;
     signal?: AbortSignal;
   }
 ): Promise<void> => {
-  const token = localStorage.getItem("xentra_token");
   const API_URL =
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   const res = await fetch(`${API_URL}/api/chat/research`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
+    headers: buildAuthHeaders(),       // ← token + ngrok header
     body: JSON.stringify({
       conversation_id: conversationId,
       messages,
@@ -268,7 +278,6 @@ export const streamResearch = async (
         if (parsed.memories && options?.onMemories)
           options.onMemories(parsed.memories);
 
-        // 🐝 Bee events
         if (parsed.bees && options?.onBees) options.onBees(parsed.bees);
         if (parsed.bee_progress && options?.onBeeProgress) {
           const map: Record<string, number> = {};
@@ -278,7 +287,6 @@ export const streamResearch = async (
         if (parsed.bees_done && options?.onBeesDone)
           options.onBeesDone(parsed.bees_done);
 
-        // 🖼 Topic image event
         if (parsed.topic_image && options?.onTopicImage)
           options.onTopicImage(parsed.topic_image);
 
