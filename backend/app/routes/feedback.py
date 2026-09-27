@@ -31,6 +31,8 @@ class FeedbackRead(BaseModel):
     message: str
     status: str
     created_at: datetime
+    reply: Optional[str] = None            # ← NEW
+    replied_at: Optional[datetime] = None  # ← NEW
 
     class Config:
         from_attributes = True
@@ -122,17 +124,28 @@ def my_feedback(
         .limit(50)
     ).scalars().all()
 
-    return [
-        FeedbackRead(
-            id=str(r.id),
-            category=r.category,
-            rating=r.rating,
-            message=r.message,
-            status=r.status,
-            created_at=r.created_at,
+    out: list[FeedbackRead] = []
+    for r in rows:
+        meta = r.meta or {}
+        replied_at = None
+        if meta.get("replied_at"):
+            try:
+                replied_at = datetime.fromisoformat(meta["replied_at"])
+            except Exception:
+                replied_at = None
+        out.append(
+            FeedbackRead(
+                id=str(r.id),
+                category=r.category,
+                rating=r.rating,
+                message=r.message,
+                status=r.status,
+                created_at=r.created_at,
+                reply=meta.get("reply"),
+                replied_at=replied_at,
+            )
         )
-        for r in rows
-    ]
+    return out
 
 
 # ═══════════════════════════════════════════════════════════════════════

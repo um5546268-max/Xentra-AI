@@ -8,7 +8,7 @@ import {
   FolderOpen, ChevronDown, ChevronRight, Wrench, Settings,
   ShieldCheck, Activity, PanelLeftClose, PanelLeftOpen,
   GraduationCap, Users, Home, Code as CodeIcon, CreditCard,
-  Sun, Moon,
+  Sun, Moon, Inbox,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
@@ -71,6 +71,7 @@ export default function Sidebar() {
     { path: "/app/system-health", label: "System Health", icon: Activity },
     { path: "/app/permissions", label: "Security", icon: ShieldCheck },
     { path: "/app/settings", label: "Settings", icon: Settings },
+    { path: "/app/feedback", label: "My Feedback", icon: Inbox },
   ];
 
   // ✅ Only show Feedback Inbox to admins
