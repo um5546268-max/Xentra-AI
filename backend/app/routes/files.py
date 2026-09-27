@@ -34,6 +34,25 @@ from app.services.usage_guard import enforce_limit
 router = APIRouter(prefix="/files", tags=["files"])
 
 
+# ─────────────────────────────────────────────────────────────
+# Image extensions that should bypass the "extracted_text required"
+# check — images don't have text to extract, so `status == "failed"`
+# is expected and should NOT block attaching them to a conversation.
+# ─────────────────────────────────────────────────────────────
+IMAGE_EXTENSIONS = {
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "heic", "heif", "avif", "ico",
+}
+
+
+def _is_image(user_file: UserFile) -> bool:
+    """True if this file is an image (by extension or MIME type)."""
+    ext = (user_file.extension or "").lower().lstrip(".")
+    if ext in IMAGE_EXTENSIONS:
+        return True
+    mime = (user_file.mime_type or "").lower()
+    return mime.startswith("image/")
+
+
 # ============================================================
 # List / Upload
 # ============================================================
@@ -58,7 +77,7 @@ def upload_file(
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("files.write")),
-    _limit: None = Depends(enforce_limit("file_upload")),   # ← ADD
+    _limit: None = Depends(enforce_limit("file_upload")),
 ):
     """Upload a file, extract its text, and chunk it."""
     # Save file to disk
@@ -124,9 +143,9 @@ def upload_file(
                         f"{user_file.original_name}"
                     )
 
-                    meta = user_file.extracted_meta or {}
-                    meta["chunks"] = len(chunks)
-                    user_file.extracted_meta = meta
+                    meta_dict = user_file.extracted_meta or {}
+                    meta_dict["chunks"] = len(chunks)
+                    user_file.extracted_meta = meta_dict
                     db.commit()
                     db.refresh(user_file)
                 except Exception as e:
@@ -137,11 +156,11 @@ def upload_file(
         db.commit()
         db.refresh(user_file)
         log_quick(
-        db, current_user.id,
-        action="files.upload",
-        summary=f"Uploaded {user_file.original_name}",
-        payload={"name": user_file.original_name, "size": user_file.size_bytes},
-    )
+            db, current_user.id,
+            action="files.upload",
+            summary=f"Uploaded {user_file.original_name}",
+            payload={"name": user_file.original_name, "size": user_file.size_bytes},
+        )
 
     return user_file
 
@@ -203,7 +222,6 @@ def delete_file(
 
     # Check if confirmation required
     if requires_confirmation("files.delete"):
-        # Check if there's already a pending action for this file
         if not pa_service.user_has_pending_confirmation(db, current_user.id, "files.delete"):
             pa = pa_service.create_pending_action(
                 db,
@@ -213,7 +231,7 @@ def delete_file(
                 payload={"file_id": str(f.id), "name": f.original_name},
             )
             raise HTTPException(
-                status_code=202,  # Accepted, but not yet executed
+                status_code=202,
                 detail={
                     "message": "Confirmation required",
                     "pending_action_id": str(pa.id),
@@ -221,7 +239,7 @@ def delete_file(
                 },
             )
 
-    # If no confirmation required, execute immediately (existing behavior)
+    # If no confirmation required, execute immediately
     db.query(FileChunk).filter(FileChunk.file_id == f.id).delete()
     delete_file_on_disk(str(current_user.id), f.stored_name)
     db.delete(f)
@@ -255,11 +273,16 @@ def attach_to_conversation(
     if not convo or convo.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    if f.status != "ready" or not f.extracted_text:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File text not ready (status: {f.status})",
-        )
+    # ─── FIX: Images bypass the "must have extracted text" check ───
+    # Images don't have text to extract, so their extraction status
+    # will be "failed" — but they should still be attachable so the
+    # AI can see them in the chat as image inputs.
+    if not _is_image(f):
+        if f.status != "ready" or not f.extracted_text:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File text not ready (status: {f.status})",
+            )
 
     f.conversation_id = payload.conversation_id
     db.commit()
