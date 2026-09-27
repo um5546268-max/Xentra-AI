@@ -59,12 +59,12 @@ export const listFeedback = async (params: ListParams) => {
 };
 
 export const getStats = async () => {
-  const { data } = await api.get("/api/v1/feedback/admin/stats");
+  const { data } = await api.get("/api/feedback/admin/stats");
   return data as FeedbackStats;
 };
 
 export const getFeedback = async (id: string) => {
-  const { data } = await api.get(`/api/v1/feedback/admin/${id}`);
+  const { data } = await api.get(`/api/feedback/admin/${id}`);
   return data as Feedback;
 };
 
@@ -72,30 +72,30 @@ export const patchFeedback = async (
   id: string,
   patch: { status?: Feedback["status"]; meta?: Record<string, any> }
 ) => {
-  const { data } = await api.patch(`/api/v1/feedback/admin/${id}`, patch);
+  const { data } = await api.patch(`/api/feedback/admin/${id}`, patch);
   return data as Feedback;
 };
 
 export const replyFeedback = async (id: string, message: string) => {
-  const { data } = await api.post(`/api/v1/feedback/admin/${id}/reply`, {
+  const { data } = await api.post(`/api/feedback/admin/${id}/reply`, {
     message,
   });
   return data as Feedback;
 };
 
 export const deleteFeedback = async (id: string) => {
-  await api.delete(`/api/v1/feedback/admin/${id}`);
+  await api.delete(`/api/feedback/admin/${id}`);
 };
 
 export const bulkAction = async (
   ids: string[],
   action: "read" | "resolved" | "closed" | "delete"
 ) => {
-  const { data } = await api.post(`/api/v1/feedback/admin/bulk`, { ids, action });
+  const { data } = await api.post(`/api/feedback/admin/bulk`, { ids, action });
   return data;
 };
 
 export const exportCsvUrl = (_status?: string) => {
   const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  return `${base}/api/v1/feedback/admin/export.csv`;
+  return `${base}/api/feedback/admin/export.csv`;
 };
