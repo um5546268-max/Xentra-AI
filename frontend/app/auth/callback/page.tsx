@@ -11,7 +11,6 @@ function CallbackInner() {
     // Get the params from the URL
     const code = searchParams.get("code");       // Used by GitHub
     const error = searchParams.get("error");     // Used by both
-    const state = searchParams.get("state");     // We will use this to pass the provider
     
     // Get BOTH functions from your Zustand store
     const githubSignIn = useAuth((state) => state.githubSignIn);
@@ -29,33 +28,46 @@ function CallbackInner() {
             return;
         }
 
-        // Detect the provider. 
-        // If there is a 'code', it's GitHub.
-        // If there is no 'code' but there is a 'credential' (or we set state=google), it's Google.
-        // For Google, the credential usually comes in the hash fragment, but your app seems to be using a 'code' flow for both.
-        
         if (code) {
             // It's a GitHub login
             console.log("Attempting GitHub sign-in...");
-            githubSignIn(code).then((ok: boolean) => {
+            githubSignIn(code).then((ok) => {
                 if (ok) {
                     router.replace("/app"); 
                 } else {
                     router.replace("/welcome");
                 }
-            }).catch((err: any) => {
+            }).catch((err) => {
                 console.error("GitHub Auth error:", err);
                 router.replace("/welcome");
             });
         } else {
-            // It might be a Google login, or the code is missing
-            console.warn("No code found. This might be a Google login that needs a different flow.");
-            // If your Google flow uses a credential in the URL, handle it here.
-            // For now, send back to welcome.
-            router.replace("/welcome");
+            // It might be a Google login
+            // Google can send the credential as a query param OR in the URL hash
+            const credential = 
+                searchParams.get("credential") || 
+                new URLSearchParams(window.location.hash.substring(1)).get("credential");
+
+            if (credential) {
+                console.log("Attempting Google sign-in...");
+                googleSignIn(credential).then((ok) => {
+                    if (ok) {
+                        router.replace("/app"); 
+                    } else {
+                        router.replace("/welcome");
+                    }
+                }).catch((err) => {
+                    console.error("Google Auth error:", err);
+                    router.replace("/welcome");
+                });
+            } else {
+                // No code and no credential found
+                console.warn("No code or credential found in the URL.");
+                router.replace("/welcome");
+            }
         }
 
-    }, [code, error, router, githubSignIn, googleSignIn]);
+    }, [code, error, router, githubSignIn, googleSignIn, searchParams]);
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-950">
