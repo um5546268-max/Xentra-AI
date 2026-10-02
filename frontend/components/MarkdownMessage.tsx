@@ -2,6 +2,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 
 type Source = { title: string; url: string };
@@ -30,7 +31,7 @@ export default function MarkdownMessage({
   content: string;
   sources?: Source[];
 }) {
-  // Replace [1], [2], ... in content with markdown links so they become clickable.
+  // 1. Replace [1], [2], ... in content with markdown links so they become clickable.
   const withLinks = sources?.length
     ? content.replace(/\[(\d+)\](?!\()/g, (match, n) => {
         const idx = parseInt(n, 10) - 1;
@@ -40,10 +41,16 @@ export default function MarkdownMessage({
       })
     : content;
 
+  // 2. Safety net: if the AI output literal HTML `<br>` strings, convert them to real newlines
+  // so remark-breaks can render them properly.
+  const sanitized = withLinks
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<BR\s*\/?>/g, "\n");
+
   return (
     <div className="prose prose-invert prose-sm max-w-none">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkBreaks]}
         rehypePlugins={[rehypeHighlight]}
         components={{
           code({ inline, className, children, ...props }: any) {
@@ -160,7 +167,7 @@ export default function MarkdownMessage({
           },
         }}
       >
-        {withLinks}
+        {sanitized}
       </ReactMarkdown>
     </div>
   );
