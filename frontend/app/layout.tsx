@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Toaster } from "sonner";
 import AuthLoader from "@/components/AuthLoader";
+import StructuredData from "@/components/StructuredData";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -87,6 +88,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="bg-slate-950 text-white antialiased">
+        <StructuredData />
         <AuthLoader />
         {children}
         <Toaster />
