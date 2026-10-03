@@ -59,11 +59,13 @@ export default function Release2027Page() {
 
         <div className="mt-12">
           <a
-            href="/"
-            className="inline-flex rounded-lg bg-white px-6 py-3 font-semibold text-slate-950 transition hover:bg-slate-200"
-          >
-            Explore Xentra AI
-          </a>
+  href="https://xentra-marketing.vercel.app/"
+  target="_blank"
+  rel="noopener noreferrer"
+  className="inline-flex items-center justify-center rounded-xl bg-white px-6 py-3 font-semibold text-black transition hover:bg-slate-200"
+>
+  Explore Xentra AI
+</a>
         </div>
       </div>
     </main>
